@@ -1,7 +1,7 @@
 // ========== src/components/BarcodeScanner.jsx ==========
 import React, { useEffect, useRef } from 'react';
 import { Modal, Alert, Spin } from 'antd';
-import Quagga from 'quagga2';
+import Quagga from 'quagga';
 
 const BarcodeScanner = ({ visible, onClose, onScan }) => {
   const scannerRef = useRef(null);
