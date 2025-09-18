@@ -5,13 +5,6 @@ const isDev = process.env.ELECTRON_IS_DEV === '1';
 
 let mainWindow;
 
-// Mitigate GPU process crashes on some Windows setups
-app.disableHardwareAcceleration();
-if (process.platform === 'win32') {
-  app.commandLine.appendSwitch('disable-gpu');
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
