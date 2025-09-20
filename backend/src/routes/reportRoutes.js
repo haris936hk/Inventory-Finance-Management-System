@@ -35,6 +35,37 @@ router.get('/sales',
   reportController.getSalesReport
 );
 
+// =========== COMPREHENSIVE FINANCIAL REPORTS ===========
+router.get('/profit-loss',
+  hasPermission(['reports.view']),
+  reportController.getProfitLossStatement
+);
+
+router.get('/balance-sheet',
+  hasPermission(['reports.view']),
+  reportController.getBalanceSheet
+);
+
+router.get('/cash-flow',
+  hasPermission(['reports.view']),
+  reportController.getCashFlowStatement
+);
+
+router.get('/accounts-receivable-aging',
+  hasPermission(['reports.view']),
+  reportController.getAccountsReceivableAging
+);
+
+router.get('/gst',
+  hasPermission(['reports.view']),
+  reportController.getGSTReport
+);
+
+router.get('/financial-dashboard',
+  hasPermission(['reports.view']),
+  reportController.getFinancialDashboard
+);
+
 // Export
 router.post('/export',
   hasPermission(['reports.export']),

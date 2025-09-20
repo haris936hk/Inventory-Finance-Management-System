@@ -16,6 +16,7 @@ const userRoutes = require('./routes/userRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const financeRoutes = require('./routes/financeRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const importExportRoutes = require('./routes/importExportRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -50,6 +51,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/import', importExportRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -94,10 +96,3 @@ process.on('SIGTERM', async () => {
 });
 
 startServer();
-
-// ========== Add to src/server.js (update imports) ==========
-// Add this import with other route imports:
-// const importExportRoutes = require('./routes/importExportRoutes');
-
-// Add this route with other API routes:
-// app.use('/api/import', importExportRoutes);

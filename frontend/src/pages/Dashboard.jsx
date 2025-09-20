@@ -1,6 +1,6 @@
 // ========== src/pages/Dashboard.jsx ==========
 import React from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Progress, Space, Button, List } from 'antd';
+import { Row, Col, Card, Statistic, Table, Tag, Progress, Space, Button, List, Typography } from 'antd';
 import {
   ShoppingCartOutlined,
   DollarOutlined,
@@ -19,6 +19,8 @@ import { useNavigate } from 'react-router-dom';
 import { Line, Bar, Pie } from 'recharts';
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
+
+const { Text } = Typography;
 
 const Dashboard = () => {
   const navigate = useNavigate();

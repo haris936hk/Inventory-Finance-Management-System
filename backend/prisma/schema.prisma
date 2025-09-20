@@ -36,6 +36,7 @@ model User {
   handovers         Item[]    @relation("HandoverByUser")
   invoicesCreated   Invoice[] @relation("CreatedByUser")
   paymentsRecorded  Payment[] @relation("RecordedByUser")
+  inventoryMovements InventoryMovement[] @relation("InventoryMovements")
   
   @@index([roleId])
   @@index([deletedAt])
@@ -175,7 +176,10 @@ model Item {
   
   // Invoice relationship
   invoiceItems   InvoiceItem[]
-  
+
+  // Inventory movements
+  movements      InventoryMovement[]
+
   // User tracking
   createdById    String
   createdBy      User      @relation("CreatedByUser", fields: [createdById], references: [id])
@@ -254,6 +258,10 @@ model Customer {
   address         String?
   nic             String?   // National ID
   taxNumber       String?
+  gstinNumber     String?   // GST Identification Number
+  panNumber       String?   // PAN Number for tax compliance
+  state           String?   // State for GST jurisdiction
+  businessType    String?   // "B2B", "B2C", "Export"
   
   // Financial
   creditLimit     Decimal   @default(0) @db.Decimal(10, 2)
@@ -401,10 +409,25 @@ model Invoice {
   subtotal      Decimal   @db.Decimal(10, 2)
   discountType  String?   // "Percentage", "Fixed"
   discountValue Decimal   @default(0) @db.Decimal(10, 2)
+
+  // GST/VAT Compliance
+  taxType       String    @default("GST") // "GST", "VAT", "CGST+SGST", "IGST"
   taxRate       Decimal   @default(0) @db.Decimal(5, 2)
   taxAmount     Decimal   @default(0) @db.Decimal(10, 2)
+  cgstRate      Decimal   @default(0) @db.Decimal(5, 2)
+  cgstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  sgstRate      Decimal   @default(0) @db.Decimal(5, 2)
+  sgstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  igstRate      Decimal   @default(0) @db.Decimal(5, 2)
+  igstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+
   total         Decimal   @db.Decimal(10, 2)
   paidAmount    Decimal   @default(0) @db.Decimal(10, 2)
+
+  // Tax Compliance Details
+  placeOfSupply String?   // State/Province for tax jurisdiction
+  hsn           String?   // HSN/SAC Code
+  gstinNumber   String?   // Customer's GSTIN
   
   // Terms
   terms         String?   @db.Text
@@ -613,4 +636,94 @@ model TaxConfiguration {
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// ==================== GST REPORTING ====================
+
+model GSTReturn {
+  id            String    @id @default(uuid())
+  returnType    String    // "GSTR1", "GSTR2", "GSTR3B"
+  period        String    // "2025-01" (YYYY-MM format)
+  year          Int
+  month         Int
+  status        String    @default("Draft") // "Draft", "Filed", "Revised"
+
+  // GST Summary
+  totalSales    Decimal   @default(0) @db.Decimal(12, 2)
+  totalPurchases Decimal  @default(0) @db.Decimal(12, 2)
+  cgstPayable   Decimal   @default(0) @db.Decimal(10, 2)
+  sgstPayable   Decimal   @default(0) @db.Decimal(10, 2)
+  igstPayable   Decimal   @default(0) @db.Decimal(10, 2)
+
+  filedDate     DateTime?
+  filedBy       String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([returnType, year, month])
+  @@index([year, month])
+}
+
+// ==================== AUTOMATION TRACKING ====================
+
+model AutomationLog {
+  id            String    @id @default(uuid())
+  action        String    // "PURCHASE_INVENTORY_UPDATE", "BILL_EXPENSE_UPDATE"
+  sourceType    String    // "PurchaseOrder", "Bill", "Invoice"
+  sourceId      String    // ID of the source document
+
+  // Details of what was automated
+  description   String
+  affectedRecords Json    // Array of {model, id, action} objects
+
+  // Status
+  status        String    @default("Success") // "Success", "Failed", "Partial"
+  errorMessage  String?
+
+  executedAt    DateTime  @default(now())
+
+  @@index([action])
+  @@index([sourceType, sourceId])
+  @@index([executedAt])
+}
+
+// ==================== FINANCIAL REPORTS CACHE ====================
+
+model ReportCache {
+  id            String    @id @default(uuid())
+  reportType    String    // "PL", "BS", "CF", "AR_AGING"
+  parameters    Json      // Report parameters like date range, filters
+  parameterHash String    // Hash of parameters for quick lookup
+
+  data          Json      // Cached report data
+  generatedAt   DateTime  @default(now())
+  expiresAt     DateTime  // Cache expiry
+
+  @@unique([reportType, parameterHash])
+  @@index([reportType])
+  @@index([expiresAt])
+}
+
+// ==================== INVENTORY MOVEMENT TRACKING ====================
+
+model InventoryMovement {
+  id            String    @id @default(uuid())
+  itemId        String
+  item          Item      @relation(fields: [itemId], references: [id])
+  movementType  String    // "PURCHASE_RECEIPT", "SALE", "ADJUSTMENT", "TRANSFER", "HANDOVER"
+  fromStatus    String?
+  toStatus      String
+  quantity      Int       @default(1)
+  reference     String?   // PO number, Invoice number, etc.
+  notes         String?
+
+  userId        String
+  user          User      @relation("InventoryMovements", fields: [userId], references: [id])
+
+  createdAt     DateTime  @default(now())
+
+  @@index([itemId])
+  @@index([movementType])
+  @@index([createdAt])
 }

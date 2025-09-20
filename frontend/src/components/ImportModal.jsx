@@ -67,9 +67,26 @@ const ImportModal = ({ visible, onClose }) => {
 
   const handleDownloadTemplate = async () => {
     try {
-      const response = await axios.get('/import/template');
-      window.open(response.data.data.url, '_blank');
+      const response = await axios.get('/import/template', {
+        responseType: 'blob'
+      });
+      
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `import_template_${Date.now()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      message.success('Template downloaded successfully');
     } catch (error) {
+      console.error('Download error:', error);
       message.error('Failed to download template');
     }
   };

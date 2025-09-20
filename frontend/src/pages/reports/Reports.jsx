@@ -1,19 +1,23 @@
 // ========== src/pages/reports/Reports.jsx ==========
 import React, { useState } from 'react';
-import { 
-  Card, Tabs, DatePicker, Button, Table, Row, Col, 
-  Statistic, Select, Space, Spin 
+import {
+  Card, Tabs, DatePicker, Button, Table, Row, Col,
+  Statistic, Select, Space, Spin, message
 } from 'antd';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { 
-  DownloadOutlined, ReloadOutlined, PrinterOutlined 
+import {
+  DownloadOutlined, ReloadOutlined, PrinterOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
+
+// Import comprehensive financial reports
+import ProfitLossStatement from '../../components/reports/ProfitLossStatement';
+import BalanceSheet from '../../components/reports/BalanceSheet';
 
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
@@ -371,10 +375,16 @@ const Reports = () => {
           <TabPane tab="Inventory" key="inventory">
             {renderInventoryReport()}
           </TabPane>
-          <TabPane tab="Financial" key="financial">
+          <TabPane tab="Financial Summary" key="financial">
             {renderFinancialReport()}
           </TabPane>
-          <TabPane tab="Sales" key="sales">
+          <TabPane tab="Profit & Loss" key="profit-loss">
+            <ProfitLossStatement />
+          </TabPane>
+          <TabPane tab="Balance Sheet" key="balance-sheet">
+            <BalanceSheet />
+          </TabPane>
+          <TabPane tab="Sales Analysis" key="sales">
             {renderSalesReport()}
           </TabPane>
           <TabPane tab="Stock Valuation" key="valuation">

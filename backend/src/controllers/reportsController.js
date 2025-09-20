@@ -1,71 +1,5 @@
-// ========== src/controllers/reportController.js ==========
 const asyncHandler = require('express-async-handler');
-const reportService = require('../services/reportService');
 const financialReportsService = require('../services/financialReportsService');
-
-// @desc    Get dashboard KPIs
-// @route   GET /api/reports/dashboard
-// @access  Private
-const getDashboard = asyncHandler(async (req, res) => {
-  const dashboard = await reportService.getDashboardData();
-  
-  res.json({
-    success: true,
-    data: dashboard
-  });
-});
-
-// @desc    Get inventory report
-// @route   GET /api/reports/inventory
-// @access  Private
-const getInventoryReport = asyncHandler(async (req, res) => {
-  const report = await reportService.getInventoryReport(req.query);
-  
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get financial summary
-// @route   GET /api/reports/financial-summary
-// @access  Private
-const getFinancialSummary = asyncHandler(async (req, res) => {
-  const { startDate, endDate } = req.query;
-  const summary = await reportService.getFinancialSummary(startDate, endDate);
-  
-  res.json({
-    success: true,
-    data: summary
-  });
-});
-
-// @desc    Get sales report
-// @route   GET /api/reports/sales
-// @access  Private
-const getSalesReport = asyncHandler(async (req, res) => {
-  const { startDate, endDate, groupBy } = req.query;
-  const report = await reportService.getSalesReport(startDate, endDate, groupBy);
-  
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get stock valuation report
-// @route   GET /api/reports/stock-valuation
-// @access  Private
-const getStockValuation = asyncHandler(async (req, res) => {
-  const valuation = await reportService.getStockValuation();
-  
-  res.json({
-    success: true,
-    data: valuation
-  });
-});
-
-// ===================== COMPREHENSIVE FINANCIAL REPORTS =====================
 
 // @desc    Generate Profit & Loss Statement
 // @route   GET /api/reports/profit-loss
@@ -152,10 +86,10 @@ const getGSTReport = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get Enhanced Financial Dashboard Summary
-// @route   GET /api/reports/financial-dashboard
+// @desc    Get Financial Dashboard Summary
+// @route   GET /api/reports/financial-summary
 // @access  Private
-const getFinancialDashboard = asyncHandler(async (req, res) => {
+const getFinancialSummary = asyncHandler(async (req, res) => {
   const { period = 'month' } = req.query;
 
   let startDate, endDate;
@@ -195,7 +129,7 @@ const getFinancialDashboard = asyncHandler(async (req, res) => {
       margin: profitLoss.summary.netProfitMargin
     },
     cashFlow: {
-      operating: 0,
+      operating: 0, // Would need cash flow data
       available: balanceSheet.assets.current.cash
     },
     receivables: {
@@ -214,35 +148,60 @@ const getFinancialDashboard = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Export report to Excel
+// @desc    Export Report to PDF/Excel
 // @route   POST /api/reports/export
 // @access  Private
 const exportReport = asyncHandler(async (req, res) => {
-  const { reportType, filters } = req.body;
+  const { reportType, format, parameters } = req.body;
 
-  const file = await reportService.exportToExcel(reportType, filters);
+  // Validate inputs
+  if (!reportType || !format) {
+    res.status(400);
+    throw new Error('Report type and format are required');
+  }
 
+  let reportData;
+
+  switch (reportType) {
+    case 'profit-loss':
+      reportData = await financialReportsService.generateProfitLossStatement(
+        parameters.startDate,
+        parameters.endDate
+      );
+      break;
+    case 'balance-sheet':
+      reportData = await financialReportsService.generateBalanceSheet(parameters.asOfDate);
+      break;
+    case 'cash-flow':
+      reportData = await financialReportsService.generateCashFlowStatement(
+        parameters.startDate,
+        parameters.endDate
+      );
+      break;
+    case 'ar-aging':
+      reportData = await financialReportsService.generateAccountsReceivableAging(
+        new Date(parameters.asOfDate)
+      );
+      break;
+    default:
+      res.status(400);
+      throw new Error('Invalid report type');
+  }
+
+  // For now, return the data (implement actual export later)
   res.json({
     success: true,
-    data: {
-      filename: file.filename,
-      url: file.url
-    }
+    message: `${reportType} report exported as ${format}`,
+    data: reportData
   });
 });
 
 module.exports = {
-  getDashboard,
-  getInventoryReport,
-  getFinancialSummary,
-  getSalesReport,
-  getStockValuation,
-  exportReport,
-  // New comprehensive financial reports
   getProfitLossStatement,
   getBalanceSheet,
   getCashFlowStatement,
   getAccountsReceivableAging,
   getGSTReport,
-  getFinancialDashboard
+  getFinancialSummary,
+  exportReport
 };

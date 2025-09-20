@@ -3,6 +3,12 @@ const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
 const isDev = process.env.ELECTRON_IS_DEV === '1';
 
+// Disable GPU acceleration on Windows to prevent crashes
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+}
+
 let mainWindow;
 
 function createWindow() {

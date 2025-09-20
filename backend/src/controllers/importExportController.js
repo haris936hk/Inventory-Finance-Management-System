@@ -76,10 +76,13 @@ const validateExcel = asyncHandler(async (req, res) => {
 const downloadTemplate = asyncHandler(async (req, res) => {
   const template = await importExportService.exportTemplate();
 
-  res.json({
-    success: true,
-    data: template
-  });
+  // Set headers for file download
+  res.setHeader('Content-Type', template.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${template.filename}"`);
+  res.setHeader('Content-Length', Buffer.from(template.buffer, 'base64').length);
+
+  // Send the file buffer
+  res.send(Buffer.from(template.buffer, 'base64'));
 });
 
 module.exports = {

@@ -321,22 +321,14 @@ class ImportExportService {
     // Convert to buffer
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-    // Upload to Supabase
+    // Return buffer directly instead of uploading to Supabase
     const filename = `import_template_${Date.now()}.xlsx`;
-    await supabaseStorage.upload(
-      supabaseStorage.buckets.exports,
-      filename,
-      buffer,
-      { contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
-    );
-
-    const url = await supabaseStorage.createSignedUrl(
-      supabaseStorage.buckets.exports,
-      filename,
-      3600
-    );
-
-    return { filename, url };
+    
+    return { 
+      filename, 
+      buffer: buffer.toString('base64'),
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
   }
 
   getHeadersForCategory(category) {
