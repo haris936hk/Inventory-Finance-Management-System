@@ -7,12 +7,21 @@ const financialReportsService = require('../services/financialReportsService');
 // @route   GET /api/reports/dashboard
 // @access  Private
 const getDashboard = asyncHandler(async (req, res) => {
-  const dashboard = await reportService.getDashboardData();
-  
-  res.json({
-    success: true,
-    data: dashboard
-  });
+  try {
+    const dashboard = await reportService.getDashboardData();
+
+    res.json({
+      success: true,
+      data: dashboard
+    });
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to load dashboard data',
+      error: error.message
+    });
+  }
 });
 
 // @desc    Get inventory report

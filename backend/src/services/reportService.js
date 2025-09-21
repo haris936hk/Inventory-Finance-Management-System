@@ -6,15 +6,20 @@ const path = require('path');
 
 class ReportService {
   async getDashboardData() {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    try {
+      console.log('Starting getDashboardData...');
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      console.log('Date calculations completed');
 
-    // Get inventory metrics
-    const totalItems = await db.prisma.item.count({
-      where: { deletedAt: null }
-    });
+      // Get inventory metrics
+      console.log('Starting inventory metrics...');
+      const totalItems = await db.prisma.item.count({
+        where: { deletedAt: null }
+      });
+      console.log('Total items:', totalItems);
 
     const availableItems = await db.prisma.item.count({
       where: {
@@ -93,6 +98,9 @@ class ReportService {
       by: ['modelId'],
       where: {
         status: 'Sold',
+        modelId: {
+          not: null
+        },
         outboundDate: {
           gte: startOfMonth
         }
@@ -111,17 +119,25 @@ class ReportService {
     // Fetch model details for top products
     const topProductDetails = await Promise.all(
       topProducts.map(async (product) => {
-        const model = await db.prisma.productModel.findUnique({
-          where: { id: product.modelId },
-          include: {
-            company: true,
-            category: true
-          }
-        });
-        return {
-          model,
-          count: product._count.id
-        };
+        try {
+          const model = await db.prisma.productModel.findUnique({
+            where: { id: product.modelId },
+            include: {
+              company: true,
+              category: true
+            }
+          });
+          return {
+            model,
+            count: product._count.id
+          };
+        } catch (error) {
+          console.error('Error fetching model details:', error);
+          return {
+            model: null,
+            count: product._count.id
+          };
+        }
       })
     );
 
@@ -144,30 +160,57 @@ class ReportService {
       take: 10
     });
 
-    return {
-      inventory: {
-        totalItems,
-        availableItems,
-        soldThisMonth,
-        utilizationRate: ((totalItems - availableItems) / totalItems * 100).toFixed(2)
-      },
-      financial: {
-        totalRevenue: totalRevenue._sum.paidAmount || 0,
-        monthlyRevenue: monthlyRevenue._sum.total || 0,
-        outstandingAmount: outstanding,
-        averageInvoiceValue: monthlyRevenue._sum.total ? 
-          (monthlyRevenue._sum.total / soldThisMonth).toFixed(2) : 0
-      },
-      customers: {
-        total: totalCustomers,
-        newThisMonth: newCustomersThisMonth
-      },
-      topProducts: topProductDetails,
-      recentTransactions: {
-        invoices: recentInvoices,
-        payments: recentPayments
-      }
-    };
+      return {
+        inventory: {
+          totalItems,
+          availableItems,
+          soldThisMonth,
+          utilizationRate: totalItems > 0 ? ((totalItems - availableItems) / totalItems * 100).toFixed(2) : 0
+        },
+        financial: {
+          totalRevenue: totalRevenue._sum.paidAmount || 0,
+          monthlyRevenue: monthlyRevenue._sum.total || 0,
+          outstandingAmount: outstanding,
+          averageInvoiceValue: (monthlyRevenue._sum.total && soldThisMonth > 0) ?
+            (monthlyRevenue._sum.total / soldThisMonth).toFixed(2) : 0
+        },
+        customers: {
+          total: totalCustomers,
+          newThisMonth: newCustomersThisMonth
+        },
+        topProducts: topProductDetails,
+        recentTransactions: {
+          invoices: recentInvoices,
+          payments: recentPayments
+        }
+      };
+    } catch (error) {
+      console.error('Error in getDashboardData:', error);
+      // Return default dashboard data in case of error
+      return {
+        inventory: {
+          totalItems: 0,
+          availableItems: 0,
+          soldThisMonth: 0,
+          utilizationRate: 0
+        },
+        financial: {
+          totalRevenue: 0,
+          monthlyRevenue: 0,
+          outstandingAmount: 0,
+          averageInvoiceValue: 0
+        },
+        customers: {
+          total: 0,
+          newThisMonth: 0
+        },
+        topProducts: [],
+        recentTransactions: {
+          invoices: [],
+          payments: []
+        }
+      };
+    }
   }
 
   async getInventoryReport(filters = {}) {
