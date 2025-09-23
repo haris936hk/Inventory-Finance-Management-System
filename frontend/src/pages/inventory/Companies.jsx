@@ -77,6 +77,12 @@ const Companies = () => {
       render: (code) => <Tag>{code}</Tag>
     },
     {
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description',
+      render: (description) => description ? description : '-'
+    },
+    {
       title: 'Models',
       dataIndex: 'models',
       key: 'models',
@@ -164,6 +170,16 @@ const Companies = () => {
             <Input placeholder="e.g., SAM" maxLength={5} />
           </Form.Item>
 
+          <Form.Item
+            label="Description"
+            name="description"
+          >
+            <Input.TextArea
+              placeholder="Brief description of the company"
+              rows={3}
+              maxLength={500}
+            />
+          </Form.Item>
 
           <Form.Item
             label="Active"
