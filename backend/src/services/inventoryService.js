@@ -157,7 +157,13 @@ class InventoryService {
     }
 
     return await db.prisma.productModel.create({
-      data,
+      data: {
+        name: data.name,
+        code: data.code,
+        description: data.description,
+        categoryId: data.categoryId,
+        companyId: data.companyId
+      },
       include: {
         category: true,
         company: true

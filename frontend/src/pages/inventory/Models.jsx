@@ -11,33 +11,53 @@ const Models = () => {
   const [editingModel, setEditingModel] = useState(null);
   const [form] = Form.useForm();
 
-  const { data: models, isLoading } = useQuery('models', async () => {
+  const { data: models, isLoading, error } = useQuery('models', async () => {
     const response = await axios.get('/inventory/models');
     return response.data.data;
+  }, {
+    onError: (error) => {
+      console.error('Failed to load models:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load models';
+      message.error(errorMessage);
+    }
   });
 
   const { data: categories } = useQuery('categories', async () => {
     const response = await axios.get('/inventory/categories');
     return response.data.data;
+  }, {
+    onError: (error) => {
+      console.error('Failed to load categories:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load categories';
+      message.error(errorMessage);
+    }
   });
 
   const { data: companies } = useQuery('companies', async () => {
     const response = await axios.get('/inventory/companies');
     return response.data.data;
+  }, {
+    onError: (error) => {
+      console.error('Failed to load companies:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load companies';
+      message.error(errorMessage);
+    }
   });
 
   const modelMutation = useMutation(
     (data) => {
-      if (editingModel) {
-        return axios.put(`/inventory/models/${editingModel.id}`, data);
-      }
       return axios.post('/inventory/models', data);
     },
     {
       onSuccess: () => {
-        message.success(`Model ${editingModel ? 'updated' : 'created'} successfully`);
+        message.success('Model created successfully');
         queryClient.invalidateQueries('models');
         handleCloseModal();
+      },
+      onError: (error) => {
+        console.error('Model creation failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        message.error(errorMessage);
       }
     }
   );
@@ -48,6 +68,11 @@ const Models = () => {
       onSuccess: () => {
         message.success('Model deleted successfully');
         queryClient.invalidateQueries('models');
+      },
+      onError: (error) => {
+        console.error('Delete failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete model';
+        message.error(errorMessage);
       }
     }
   );
@@ -101,26 +126,14 @@ const Models = () => {
         <Space>
           <Button
             icon={<EditOutlined />}
-            onClick={() => {
-              setEditingModel(record);
-              form.setFieldsValue({
-                ...record,
-                companyId: record.company?.id,
-                categoryId: record.category?.id
-              });
-              setModalVisible(true);
-            }}
+            disabled
+            title="Edit functionality not yet implemented"
           />
           <Button
             icon={<DeleteOutlined />}
             danger
-            onClick={() => {
-              Modal.confirm({
-                title: 'Delete Model',
-                content: 'Are you sure? This will affect all related items.',
-                onOk: () => deleteMutation.mutate(record.id)
-              });
-            }}
+            disabled
+            title="Delete functionality not yet implemented"
           />
         </Space>
       )
@@ -148,7 +161,7 @@ const Models = () => {
       />
 
       <Modal
-        title={editingModel ? 'Edit Model' : 'Add Model'}
+        title="Add Model"
         open={modalVisible}
         onCancel={handleCloseModal}
         footer={null}
@@ -204,11 +217,7 @@ const Models = () => {
           </Form.Item>
 
           <Form.Item label="Description" name="description">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-
-          <Form.Item label="Specifications" name="specifications">
-            <Input.TextArea rows={3} placeholder="Technical specifications" />
+            <Input.TextArea rows={3} placeholder="Brief description of the model" />
           </Form.Item>
 
           <Form.Item
@@ -224,7 +233,7 @@ const Models = () => {
             <Space>
               <Button onClick={handleCloseModal}>Cancel</Button>
               <Button type="primary" htmlType="submit" loading={modelMutation.isLoading}>
-                {editingModel ? 'Update' : 'Create'}
+                Create
               </Button>
             </Space>
           </div>
