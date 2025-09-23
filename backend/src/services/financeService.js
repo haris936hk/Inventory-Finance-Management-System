@@ -18,12 +18,24 @@ class FinanceService {
     });
 
     if (existing) {
-      throw new Error('Customer with this phone number already exists');
+      const error = new Error('Customer with this phone number already exists');
+      error.status = 400;
+      throw error;
     }
 
-    return await db.prisma.customer.create({
-      data
-    });
+    try {
+      return await db.prisma.customer.create({
+        data
+      });
+    } catch (error) {
+      // Handle Prisma constraint errors
+      if (error.code === 'P2002') {
+        const constraintError = new Error('Customer with this phone number already exists');
+        constraintError.status = 400;
+        throw constraintError;
+      }
+      throw error;
+    }
   }
 
   async getCustomers(filters = {}) {

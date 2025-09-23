@@ -82,7 +82,9 @@ class AuthService {
 
     // Validate required fields
     if (!username || !password || !fullName || !roleId) {
-      throw new Error('Username, password, fullName, and roleId are required');
+      const error = new Error('Username, password, fullName, and roleId are required');
+      error.status = 400;
+      throw error;
     }
 
     // Check if username exists

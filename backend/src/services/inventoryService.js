@@ -18,12 +18,24 @@ class InventoryService {
     });
 
     if (existing) {
-      throw new Error('Category name or code already exists');
+      const error = new Error('Category name or code already exists');
+      error.status = 400;
+      throw error;
     }
 
-    return await db.prisma.productCategory.create({
-      data
-    });
+    try {
+      return await db.prisma.productCategory.create({
+        data
+      });
+    } catch (error) {
+      // Handle Prisma constraint errors
+      if (error.code === 'P2002') {
+        const constraintError = new Error('Category name or code already exists');
+        constraintError.status = 400;
+        throw constraintError;
+      }
+      throw error;
+    }
   }
 
   async getCategories(includeDeleted = false) {
@@ -141,6 +153,13 @@ class InventoryService {
    * Item Management (Core Inventory)
    */
   async createItem(itemData, userId) {
+    // Validate required fields
+    if (!itemData.modelId || !itemData.condition) {
+      const error = new Error('Model ID and condition are required');
+      error.status = 400;
+      throw error;
+    }
+
     // Validate model exists first
     const model = await db.prisma.productModel.findUnique({
       where: { id: itemData.modelId },
@@ -148,7 +167,9 @@ class InventoryService {
     });
 
     if (!model) {
-      throw new Error('Invalid product model');
+      const error = new Error('Invalid product model');
+      error.status = 400;
+      throw error;
     }
 
     // Generate serial number if not provided
@@ -163,7 +184,9 @@ class InventoryService {
     });
 
     if (existing) {
-      throw new Error(`Serial number ${itemData.serialNumber} already exists`);
+      const error = new Error(`Serial number ${itemData.serialNumber} already exists`);
+      error.status = 400;
+      throw error;
     }
 
     // Get warehouse (using default if not provided)
@@ -176,42 +199,57 @@ class InventoryService {
     }
 
     // Create item with initial status
-    const item = await db.prisma.item.create({
-      data: {
-        serialNumber: itemData.serialNumber,
-        condition: itemData.condition || 'New',
-        status: itemData.status || 'In Store',
-        statusHistory: [{
+    try {
+      const item = await db.prisma.item.create({
+        data: {
+          serialNumber: itemData.serialNumber,
+          condition: itemData.condition || 'New',
           status: itemData.status || 'In Store',
-          date: new Date(),
-          userId,
-          notes: 'Initial entry'
-        }],
-        specifications: itemData.specifications,
-        purchasePrice: itemData.purchasePrice,
-        purchaseDate: itemData.purchaseDate,
-        inboundDate: itemData.inboundDate || new Date(),
-        categoryId: model.category.id,
-        modelId: itemData.modelId,
-        vendorId: itemData.vendorId,
-        warehouseId,
-        purchaseOrderId: itemData.purchaseOrderId,
-        createdById: userId
-      },
-      include: {
-        category: true,
-        model: {
-          include: {
-            company: true
-          }
+          statusHistory: [{
+            status: itemData.status || 'In Store',
+            date: new Date(),
+            userId,
+            notes: 'Initial entry'
+          }],
+          specifications: itemData.specifications,
+          purchasePrice: itemData.purchasePrice,
+          purchaseDate: itemData.purchaseDate,
+          inboundDate: itemData.inboundDate || new Date(),
+          categoryId: model.category.id,
+          modelId: itemData.modelId,
+          vendorId: itemData.vendorId,
+          warehouseId,
+          purchaseOrderId: itemData.purchaseOrderId,
+          createdById: userId
         },
-        vendor: true,
-        warehouse: true
-      }
-    });
+        include: {
+          category: true,
+          model: {
+            include: {
+              company: true
+            }
+          },
+          vendor: true,
+          warehouse: true
+        }
+      });
 
-    logger.info(`Item created: ${item.serialNumber}`);
-    return item;
+      logger.info(`Item created: ${item.serialNumber}`);
+      return item;
+    } catch (error) {
+      // Handle Prisma constraint errors
+      if (error.code === 'P2003') {
+        const constraintError = new Error('Invalid foreign key reference');
+        constraintError.status = 400;
+        throw constraintError;
+      }
+      if (error.code === 'P2002') {
+        const constraintError = new Error('Serial number already exists');
+        constraintError.status = 400;
+        throw constraintError;
+      }
+      throw error;
+    }
   }
 
   async getItems(filters = {}) {

@@ -81,7 +81,7 @@ async function seedTestData() {
       name: 'Inventory Operator',
       description: 'Inventory only access',
       permissions: [
-        'inventory.view', 'inventory.create', 'inventory.edit',
+        'inventory.view', 'inventory.edit',
         'reports.view'
       ]
     }
