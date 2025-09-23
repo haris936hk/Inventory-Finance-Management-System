@@ -22,7 +22,10 @@
       "Bash(npx prisma:*)",
       "Bash(tasklist)",
       "Bash(Get-Process node)",
-      "Bash(Stop-Process -Force)"
+      "Bash(Stop-Process -Force)",
+      "Bash(Stop-Process -Force -Id 5832)",
+      "Bash(wmic process where:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

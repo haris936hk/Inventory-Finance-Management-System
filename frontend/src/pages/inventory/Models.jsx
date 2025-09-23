@@ -46,16 +46,20 @@ const Models = () => {
 
   const modelMutation = useMutation(
     (data) => {
-      return axios.post('/inventory/models', data);
+      if (editingModel) {
+        return axios.put(`/inventory/models/${editingModel.id}`, data);
+      } else {
+        return axios.post('/inventory/models', data);
+      }
     },
     {
       onSuccess: () => {
-        message.success('Model created successfully');
+        message.success(editingModel ? 'Model updated successfully' : 'Model created successfully');
         queryClient.invalidateQueries('models');
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('Model creation failed:', error);
+        console.error('Model operation failed:', error);
         const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
         message.error(errorMessage);
       }
@@ -81,6 +85,32 @@ const Models = () => {
     setModalVisible(false);
     setEditingModel(null);
     form.resetFields();
+  };
+
+  const handleEdit = (record) => {
+    setEditingModel(record);
+    setModalVisible(true);
+    form.setFieldsValue({
+      name: record.name,
+      code: record.code,
+      description: record.description,
+      companyId: record.company?.id,
+      categoryId: record.category?.id,
+      isActive: record.isActive
+    });
+  };
+
+  const handleDelete = (record) => {
+    Modal.confirm({
+      title: 'Delete Model',
+      content: `Are you sure you want to delete "${record.name}"?`,
+      okText: 'Yes, Delete',
+      cancelText: 'Cancel',
+      okType: 'danger',
+      onOk: () => {
+        deleteMutation.mutate(record.id);
+      }
+    });
   };
 
   const columns = [
@@ -126,14 +156,15 @@ const Models = () => {
         <Space>
           <Button
             icon={<EditOutlined />}
-            disabled
-            title="Edit functionality not yet implemented"
+            onClick={() => handleEdit(record)}
+            title="Edit model"
           />
           <Button
             icon={<DeleteOutlined />}
             danger
-            disabled
-            title="Delete functionality not yet implemented"
+            onClick={() => handleDelete(record)}
+            loading={deleteMutation.isLoading}
+            title="Delete model"
           />
         </Space>
       )
@@ -161,7 +192,7 @@ const Models = () => {
       />
 
       <Modal
-        title="Add Model"
+        title={editingModel ? 'Edit Model' : 'Add Model'}
         open={modalVisible}
         onCancel={handleCloseModal}
         footer={null}
@@ -194,7 +225,7 @@ const Models = () => {
             rules={[{ required: true, message: 'Company is required' }]}
           >
             <Select placeholder="Select company">
-              {companies?.map(company => (
+              {companies?.filter(company => company.isActive).map(company => (
                 <Select.Option key={company.id} value={company.id}>
                   {company.name}
                 </Select.Option>
@@ -208,7 +239,7 @@ const Models = () => {
             rules={[{ required: true, message: 'Category is required' }]}
           >
             <Select placeholder="Select category">
-              {categories?.map(category => (
+              {categories?.filter(category => category.isActive).map(category => (
                 <Select.Option key={category.id} value={category.id}>
                   {category.name}
                 </Select.Option>
@@ -233,7 +264,7 @@ const Models = () => {
             <Space>
               <Button onClick={handleCloseModal}>Cancel</Button>
               <Button type="primary" htmlType="submit" loading={modelMutation.isLoading}>
-                Create
+                {editingModel ? 'Update' : 'Create'}
               </Button>
             </Space>
           </div>

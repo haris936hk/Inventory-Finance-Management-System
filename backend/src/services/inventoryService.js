@@ -65,6 +65,44 @@ class InventoryService {
     });
   }
 
+  async deleteCategory(id) {
+    // Check if category exists
+    const existing = await db.prisma.productCategory.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: {
+            models: {
+              where: { deletedAt: null }
+            },
+            items: {
+              where: { deletedAt: null }
+            }
+          }
+        }
+      }
+    });
+
+    if (!existing) {
+      const error = new Error('Category not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Check if category has associated active models or items
+    if (existing._count.models > 0 || existing._count.items > 0) {
+      const error = new Error('Cannot delete category with associated models or items');
+      error.status = 400;
+      throw error;
+    }
+
+    // Soft delete
+    return await db.prisma.productCategory.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+  }
+
   /**
    * Company/Make Management
    */
@@ -117,11 +155,13 @@ class InventoryService {
   }
 
   async deleteCompany(id) {
-    // Check if company has any related models or items
+    // Check if company exists and has any related active models
     const companyWithRelations = await db.prisma.company.findUnique({
-      where: { id },
+      where: { id, deletedAt: null },
       include: {
-        models: true
+        models: {
+          where: { deletedAt: null }
+        }
       }
     });
 
@@ -137,8 +177,10 @@ class InventoryService {
       throw error;
     }
 
-    return await db.prisma.company.delete({
-      where: { id }
+    // Soft delete
+    return await db.prisma.company.update({
+      where: { id },
+      data: { deletedAt: new Date() }
     });
   }
 
@@ -189,6 +231,79 @@ class InventoryService {
         company: true
       },
       orderBy: { name: 'asc' }
+    });
+  }
+
+  async updateModel(id, data) {
+    // Check if model exists
+    const existing = await db.prisma.productModel.findUnique({
+      where: { id, deletedAt: null }
+    });
+
+    if (!existing) {
+      const error = new Error('Model not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Check if code is being changed and if it conflicts
+    if (data.code && data.code !== existing.code) {
+      const codeExists = await db.prisma.productModel.findUnique({
+        where: { code: data.code, deletedAt: null }
+      });
+
+      if (codeExists) {
+        const error = new Error('Model code already exists');
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    return await db.prisma.productModel.update({
+      where: { id },
+      data: {
+        name: data.name,
+        code: data.code,
+        description: data.description,
+        categoryId: data.categoryId,
+        companyId: data.companyId,
+        isActive: data.isActive
+      },
+      include: {
+        category: true,
+        company: true
+      }
+    });
+  }
+
+  async deleteModel(id) {
+    // Check if model exists
+    const existing = await db.prisma.productModel.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: { items: true }
+        }
+      }
+    });
+
+    if (!existing) {
+      const error = new Error('Model not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Check if model has associated items
+    if (existing._count.items > 0) {
+      const error = new Error('Cannot delete model with associated inventory items');
+      error.status = 400;
+      throw error;
+    }
+
+    // Soft delete
+    return await db.prisma.productModel.update({
+      where: { id },
+      data: { deletedAt: new Date() }
     });
   }
 
@@ -607,6 +722,32 @@ class InventoryService {
     return await db.prisma.vendor.update({
       where: { id },
       data
+    });
+  }
+
+  async deleteVendor(id) {
+    const vendorWithRelations = await db.prisma.vendor.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: {
+            purchaseOrders: { where: { deletedAt: null } }
+          }
+        }
+      }
+    });
+
+    if (!vendorWithRelations) {
+      throw new Error('Vendor not found');
+    }
+
+    if (vendorWithRelations._count.purchaseOrders > 0) {
+      throw new Error('Cannot delete vendor with existing purchase orders. Archive it instead.');
+    }
+
+    return await db.prisma.vendor.update({
+      where: { id },
+      data: { deletedAt: new Date() }
     });
   }
 

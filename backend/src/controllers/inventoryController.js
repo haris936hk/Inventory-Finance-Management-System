@@ -51,10 +51,22 @@ const createCategory = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const updateCategory = asyncHandler(async (req, res) => {
   const category = await inventoryService.updateCategory(req.params.id, req.body);
-  
+
   res.json({
     success: true,
     data: category
+  });
+});
+
+// @desc    Delete category
+// @route   DELETE /api/inventory/categories/:id
+// @access  Private/Admin
+const deleteCategory = asyncHandler(async (req, res) => {
+  await inventoryService.deleteCategory(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Category deleted successfully'
   });
 });
 
@@ -151,10 +163,34 @@ const getModels = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const createModel = asyncHandler(async (req, res) => {
   const model = await inventoryService.createModel(req.body);
-  
+
   res.status(201).json({
     success: true,
     data: model
+  });
+});
+
+// @desc    Update model
+// @route   PUT /api/inventory/models/:id
+// @access  Private/Admin
+const updateModel = asyncHandler(async (req, res) => {
+  const model = await inventoryService.updateModel(req.params.id, req.body);
+
+  res.json({
+    success: true,
+    data: model
+  });
+});
+
+// @desc    Delete model
+// @route   DELETE /api/inventory/models/:id
+// @access  Private/Admin
+const deleteModel = asyncHandler(async (req, res) => {
+  await inventoryService.deleteModel(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Model deleted successfully'
   });
 });
 
@@ -311,10 +347,19 @@ const createVendor = asyncHandler(async (req, res) => {
 // @access  Private
 const updateVendor = asyncHandler(async (req, res) => {
   const vendor = await inventoryService.updateVendor(req.params.id, req.body);
-  
+
   res.json({
     success: true,
     data: vendor
+  });
+});
+
+const deleteVendor = asyncHandler(async (req, res) => {
+  await inventoryService.deleteVendor(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Vendor deleted successfully'
   });
 });
 
@@ -324,6 +369,7 @@ module.exports = {
   getCategory,
   createCategory,
   updateCategory,
+  deleteCategory,
   // Companies
   getCompanies,
   getCompany,
@@ -333,6 +379,8 @@ module.exports = {
   // Models
   getModels,
   createModel,
+  updateModel,
+  deleteModel,
   // Items
   getItems,
   getItem,
@@ -344,5 +392,6 @@ module.exports = {
   getVendors,
   getVendor,
   createVendor,
-  updateVendor
+  updateVendor,
+  deleteVendor
 };

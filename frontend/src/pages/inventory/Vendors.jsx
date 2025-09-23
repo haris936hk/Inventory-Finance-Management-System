@@ -28,6 +28,11 @@ const Vendors = () => {
         message.success(`Vendor ${editingVendor ? 'updated' : 'created'} successfully`);
         queryClient.invalidateQueries('vendors');
         handleCloseModal();
+      },
+      onError: (error) => {
+        console.error('Vendor operation failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        message.error(errorMessage);
       }
     }
   );
@@ -38,6 +43,11 @@ const Vendors = () => {
       onSuccess: () => {
         message.success('Vendor deleted successfully');
         queryClient.invalidateQueries('vendors');
+      },
+      onError: (error) => {
+        console.error('Delete failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete vendor';
+        message.error(errorMessage);
       }
     }
   );
@@ -88,15 +98,22 @@ const Vendors = () => {
       )
     },
     {
-      title: 'City',
-      dataIndex: 'city',
-      key: 'city'
+      title: 'Tax Number',
+      dataIndex: 'taxNumber',
+      key: 'taxNumber',
+      render: (taxNumber) => taxNumber || '-'
     },
     {
-      title: 'Active',
-      dataIndex: 'isActive',
-      key: 'isActive',
-      render: (active) => <Switch checked={active} disabled />
+      title: 'Payment Terms',
+      dataIndex: 'paymentTerms',
+      key: 'paymentTerms',
+      render: (terms) => terms || '-'
+    },
+    {
+      title: 'Current Balance',
+      dataIndex: 'currentBalance',
+      key: 'currentBalance',
+      render: (balance) => balance ? `PKR ${Number(balance).toLocaleString()}` : 'PKR 0'
     },
     {
       title: 'Actions',
@@ -158,7 +175,15 @@ const Vendors = () => {
         <Form
           form={form}
           layout="vertical"
-          onFinish={(values) => vendorMutation.mutate(values)}
+          onFinish={(values) => {
+            // Convert balance fields to numbers for backend
+            const processedValues = {
+              ...values,
+              openingBalance: values.openingBalance ? parseFloat(values.openingBalance) : 0,
+              currentBalance: values.currentBalance ? parseFloat(values.currentBalance) : 0
+            };
+            vendorMutation.mutate(processedValues);
+          }}
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item
@@ -199,27 +224,41 @@ const Vendors = () => {
               <Input placeholder="vendor@example.com" />
             </Form.Item>
 
-            <Form.Item label="City" name="city">
-              <Input placeholder="e.g., Karachi" />
-            </Form.Item>
           </div>
 
           <Form.Item label="Address" name="address">
             <Input.TextArea rows={2} placeholder="Complete address" />
           </Form.Item>
 
-          <Form.Item label="Notes" name="notes">
-            <Input.TextArea rows={2} placeholder="Additional notes about vendor" />
-          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <Form.Item label="Tax Number" name="taxNumber">
+              <Input placeholder="e.g., 12345-6789012-3" />
+            </Form.Item>
 
-          <Form.Item
-            label="Active"
-            name="isActive"
-            valuePropName="checked"
-            initialValue={true}
-          >
-            <Switch />
-          </Form.Item>
+            <Form.Item label="Payment Terms" name="paymentTerms">
+              <Input placeholder="e.g., Net 30, Due on Receipt" />
+            </Form.Item>
+
+            <Form.Item
+              label="Opening Balance (PKR)"
+              name="openingBalance"
+              rules={[
+                { pattern: /^\d+(\.\d{1,2})?$/, message: 'Enter valid amount (e.g., 1000.50)' }
+              ]}
+            >
+              <Input placeholder="0.00" />
+            </Form.Item>
+
+            <Form.Item
+              label="Current Balance (PKR)"
+              name="currentBalance"
+              rules={[
+                { pattern: /^\d+(\.\d{1,2})?$/, message: 'Enter valid amount (e.g., 1000.50)' }
+              ]}
+            >
+              <Input placeholder="0.00" />
+            </Form.Item>
+          </div>
 
           <div style={{ textAlign: 'right' }}>
             <Space>

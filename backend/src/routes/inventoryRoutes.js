@@ -14,7 +14,8 @@ router.route('/categories')
 
 router.route('/categories/:id')
   .get(hasPermission(['inventory.view']), inventoryController.getCategory)
-  .put(hasPermission(['inventory.edit']), inventoryController.updateCategory);
+  .put(hasPermission(['inventory.edit']), inventoryController.updateCategory)
+  .delete(hasPermission(['inventory.delete']), inventoryController.deleteCategory);
 
 // Company routes
 router.route('/companies')
@@ -30,6 +31,10 @@ router.route('/companies/:id')
 router.route('/models')
   .get(hasPermission(['inventory.view']), inventoryController.getModels)
   .post(hasPermission(['inventory.create']), inventoryController.createModel);
+
+router.route('/models/:id')
+  .put(hasPermission(['inventory.edit']), inventoryController.updateModel)
+  .delete(hasPermission(['inventory.delete']), inventoryController.deleteModel);
 
 // Item routes
 router.route('/items')
@@ -62,6 +67,7 @@ router.route('/vendors')
 
 router.route('/vendors/:id')
   .get(hasPermission(['inventory.view']), inventoryController.getVendor)
-  .put(hasPermission(['inventory.edit']), inventoryController.updateVendor);
+  .put(hasPermission(['inventory.edit']), inventoryController.updateVendor)
+  .delete(hasPermission(['inventory.delete']), inventoryController.deleteVendor);
 
 module.exports = router;
