@@ -65,14 +65,17 @@ class Database {
   // Find with soft delete filter
   async findMany(model, options = {}) {
     const whereClause = options.where || {};
-    
+
     // Add soft delete filter by default
     if (!options.includeDeleted) {
       whereClause.deletedAt = null;
     }
 
+    // Remove includeDeleted from options before passing to Prisma
+    const { includeDeleted, ...prismaOptions } = options;
+
     return await this.prisma[model].findMany({
-      ...options,
+      ...prismaOptions,
       where: whereClause
     });
   }

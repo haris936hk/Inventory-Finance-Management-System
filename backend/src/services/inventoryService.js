@@ -141,16 +141,7 @@ class InventoryService {
    * Item Management (Core Inventory)
    */
   async createItem(itemData, userId) {
-    // Validate serial number uniqueness
-    const existing = await db.prisma.item.findUnique({
-      where: { serialNumber: itemData.serialNumber }
-    });
-
-    if (existing) {
-      throw new Error(`Serial number ${itemData.serialNumber} already exists`);
-    }
-
-    // Validate model exists
+    // Validate model exists first
     const model = await db.prisma.productModel.findUnique({
       where: { id: itemData.modelId },
       include: { category: true }
@@ -158,6 +149,21 @@ class InventoryService {
 
     if (!model) {
       throw new Error('Invalid product model');
+    }
+
+    // Generate serial number if not provided
+    if (!itemData.serialNumber) {
+      const year = new Date().getFullYear();
+      itemData.serialNumber = await generateSerialNumber(model.category.code, year);
+    }
+
+    // Validate serial number uniqueness
+    const existing = await db.prisma.item.findUnique({
+      where: { serialNumber: itemData.serialNumber }
+    });
+
+    if (existing) {
+      throw new Error(`Serial number ${itemData.serialNumber} already exists`);
     }
 
     // Get warehouse (using default if not provided)

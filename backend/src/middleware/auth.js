@@ -38,8 +38,9 @@ const protect = asyncHandler(async (req, res, next) => {
       });
 
       if (!req.user) {
-        res.status(401);
-        throw new Error('User not found or inactive');
+        const error = new Error('User not found or inactive');
+        error.status = 401;
+        throw error;
       }
 
       // Update last login
@@ -51,14 +52,16 @@ const protect = asyncHandler(async (req, res, next) => {
       next();
     } catch (error) {
       logger.error('Auth error:', error);
-      res.status(401);
-      throw new Error('Not authorized, token failed');
+      const authError = new Error('Not authorized, token failed');
+      authError.status = 401;
+      throw authError;
     }
   }
 
   if (!token) {
-    res.status(401);
-    throw new Error('Not authorized, no token');
+    const error = new Error('Not authorized, no token');
+    error.status = 401;
+    throw error;
   }
 });
 
@@ -66,8 +69,9 @@ const protect = asyncHandler(async (req, res, next) => {
 const hasPermission = (requiredPermissions) => {
   return asyncHandler(async (req, res, next) => {
     if (!req.user) {
-      res.status(401);
-      throw new Error('Not authenticated');
+      const error = new Error('Not authenticated');
+      error.status = 401;
+      throw error;
     }
 
     const userPermissions = req.user.role.permissions || [];
@@ -76,8 +80,9 @@ const hasPermission = (requiredPermissions) => {
     );
 
     if (!hasAllPermissions) {
-      res.status(403);
-      throw new Error('Insufficient permissions');
+      const error = new Error('Insufficient permissions');
+      error.status = 403;
+      throw error;
     }
 
     next();
@@ -88,13 +93,15 @@ const hasPermission = (requiredPermissions) => {
 const hasRole = (allowedRoles) => {
   return asyncHandler(async (req, res, next) => {
     if (!req.user) {
-      res.status(401);
-      throw new Error('Not authenticated');
+      const error = new Error('Not authenticated');
+      error.status = 401;
+      throw error;
     }
 
     if (!allowedRoles.includes(req.user.role.name)) {
-      res.status(403);
-      throw new Error(`Role ${req.user.role.name} is not authorized`);
+      const error = new Error(`Role ${req.user.role.name} is not authorized`);
+      error.status = 403;
+      throw error;
     }
 
     next();

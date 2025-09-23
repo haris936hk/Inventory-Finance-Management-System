@@ -9,8 +9,9 @@ const login = asyncHandler(async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
-    res.status(400);
-    throw new Error('Please provide username and password');
+    const error = new Error('Please provide username and password');
+    error.status = 400;
+    throw error;
   }
 
   const result = await authService.login(username, password);

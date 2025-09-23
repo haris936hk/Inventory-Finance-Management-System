@@ -9,7 +9,15 @@
       "Bash(curl:*)",
       "Bash(taskkill:*)",
       "Bash(netstat:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(npm start)",
+      "Bash(npm run:*)",
+      "Bash(export:*)",
+      "Bash(for i in {1..5})",
+      "Bash(done)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npm test)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

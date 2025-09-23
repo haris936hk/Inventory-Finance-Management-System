@@ -80,6 +80,11 @@ class AuthService {
   async createUser(userData, createdBy) {
     const { username, password, fullName, email, phone, roleId } = userData;
 
+    // Validate required fields
+    if (!username || !password || !fullName || !roleId) {
+      throw new Error('Username, password, fullName, and roleId are required');
+    }
+
     // Check if username exists
     const existing = await db.prisma.user.findUnique({
       where: { username }
@@ -161,14 +166,18 @@ class AuthService {
     });
 
     if (!user) {
-      throw new Error('Invalid credentials');
+      const error = new Error('Invalid credentials');
+      error.status = 400;
+      throw error;
     }
 
     // Check password
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     if (!isValidPassword) {
-      throw new Error('Invalid credentials');
+      const error = new Error('Invalid credentials');
+      error.status = 400;
+      throw error;
     }
 
     // Generate tokens
