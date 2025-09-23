@@ -23,7 +23,8 @@ router.route('/companies')
 
 router.route('/companies/:id')
   .get(hasPermission(['inventory.view']), inventoryController.getCompany)
-  .put(hasPermission(['inventory.edit']), inventoryController.updateCompany);
+  .put(hasPermission(['inventory.edit']), inventoryController.updateCompany)
+  .delete(hasPermission(['inventory.delete']), inventoryController.deleteCompany);
 
 // Model routes
 router.route('/models')

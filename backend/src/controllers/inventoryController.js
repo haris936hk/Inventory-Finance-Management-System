@@ -114,6 +114,18 @@ const updateCompany = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Delete company
+// @route   DELETE /api/inventory/companies/:id
+// @access  Private/Admin
+const deleteCompany = asyncHandler(async (req, res) => {
+  await inventoryService.deleteCompany(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Company deleted successfully'
+  });
+});
+
 // ============= PRODUCT MODELS =============
 
 // @desc    Get all models
@@ -317,6 +329,7 @@ module.exports = {
   getCompany,
   createCompany,
   updateCompany,
+  deleteCompany,
   // Models
   getModels,
   createModel,

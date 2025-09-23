@@ -116,6 +116,32 @@ class InventoryService {
     });
   }
 
+  async deleteCompany(id) {
+    // Check if company has any related models or items
+    const companyWithRelations = await db.prisma.company.findUnique({
+      where: { id },
+      include: {
+        models: true
+      }
+    });
+
+    if (!companyWithRelations) {
+      const error = new Error('Company not found');
+      error.status = 404;
+      throw error;
+    }
+
+    if (companyWithRelations.models && companyWithRelations.models.length > 0) {
+      const error = new Error('Cannot delete company with existing product models. Please delete or reassign the models first.');
+      error.status = 400;
+      throw error;
+    }
+
+    return await db.prisma.company.delete({
+      where: { id }
+    });
+  }
+
   /**
    * Product Model Management
    */
