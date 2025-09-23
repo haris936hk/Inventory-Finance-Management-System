@@ -84,11 +84,13 @@ model Company {
   id           String    @id @default(uuid())
   name         String    @unique // "Vision", "Sacred Sun", "Narada", "Vertiv"
   code         String?   @unique
+  description  String?
   contactPerson String?
   email        String?
   phone        String?
   address      String?
   website      String?
+  isActive     Boolean   @default(true)
 
   // Relationships
   models       ProductModel[]
@@ -96,7 +98,7 @@ model Company {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
-  
+
   @@index([deletedAt])
 }
 

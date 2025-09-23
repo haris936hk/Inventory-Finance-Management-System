@@ -109,6 +109,13 @@ class InventoryService {
     });
   }
 
+  async updateCompany(id, data) {
+    return await db.prisma.company.update({
+      where: { id },
+      data
+    });
+  }
+
   /**
    * Product Model Management
    */

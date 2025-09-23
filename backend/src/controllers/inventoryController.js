@@ -95,8 +95,20 @@ const getCompany = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const createCompany = asyncHandler(async (req, res) => {
   const company = await inventoryService.createCompany(req.body);
-  
+
   res.status(201).json({
+    success: true,
+    data: company
+  });
+});
+
+// @desc    Update company
+// @route   PUT /api/inventory/companies/:id
+// @access  Private/Admin
+const updateCompany = asyncHandler(async (req, res) => {
+  const company = await inventoryService.updateCompany(req.params.id, req.body);
+
+  res.json({
     success: true,
     data: company
   });
@@ -304,6 +316,7 @@ module.exports = {
   getCompanies,
   getCompany,
   createCompany,
+  updateCompany,
   // Models
   getModels,
   createModel,

@@ -22,7 +22,8 @@ router.route('/companies')
   .post(hasPermission(['inventory.create']), inventoryController.createCompany);
 
 router.route('/companies/:id')
-  .get(hasPermission(['inventory.view']), inventoryController.getCompany);
+  .get(hasPermission(['inventory.view']), inventoryController.getCompany)
+  .put(hasPermission(['inventory.edit']), inventoryController.updateCompany);
 
 // Model routes
 router.route('/models')
