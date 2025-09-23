@@ -79,7 +79,9 @@ class InventoryService {
     });
 
     if (existing) {
-      throw new Error('Company name or code already exists');
+      const error = new Error('Company name or code already exists');
+      error.status = 400;
+      throw error;
     }
 
     return await db.prisma.company.create({
@@ -116,7 +118,9 @@ class InventoryService {
     });
 
     if (existing) {
-      throw new Error('Model code already exists');
+      const error = new Error('Model code already exists');
+      error.status = 400;
+      throw error;
     }
 
     return await db.prisma.productModel.create({

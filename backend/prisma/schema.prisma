@@ -89,10 +89,10 @@ model Company {
   phone        String?
   address      String?
   website      String?
-  
+
   // Relationships
   models       ProductModel[]
-  
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?

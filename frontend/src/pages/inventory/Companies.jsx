@@ -11,9 +11,15 @@ const Companies = () => {
   const [editingCompany, setEditingCompany] = useState(null);
   const [form] = Form.useForm();
 
-  const { data: companies, isLoading } = useQuery('companies', async () => {
+  const { data: companies, isLoading, error } = useQuery('companies', async () => {
     const response = await axios.get('/inventory/companies');
     return response.data.data;
+  }, {
+    onError: (error) => {
+      console.error('Failed to load companies:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load companies';
+      message.error(errorMessage);
+    }
   });
 
   const companyMutation = useMutation(
@@ -28,6 +34,11 @@ const Companies = () => {
         message.success(`Company ${editingCompany ? 'updated' : 'created'} successfully`);
         queryClient.invalidateQueries('companies');
         handleCloseModal();
+      },
+      onError: (error) => {
+        console.error('Company operation failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        message.error(errorMessage);
       }
     }
   );
@@ -38,6 +49,11 @@ const Companies = () => {
       onSuccess: () => {
         message.success('Company deleted successfully');
         queryClient.invalidateQueries('companies');
+      },
+      onError: (error) => {
+        console.error('Delete failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete company';
+        message.error(errorMessage);
       }
     }
   );
@@ -59,11 +75,6 @@ const Companies = () => {
       dataIndex: 'code',
       key: 'code',
       render: (code) => <Tag>{code}</Tag>
-    },
-    {
-      title: 'Description',
-      dataIndex: 'description',
-      key: 'description'
     },
     {
       title: 'Models',
@@ -153,9 +164,6 @@ const Companies = () => {
             <Input placeholder="e.g., SAM" maxLength={5} />
           </Form.Item>
 
-          <Form.Item label="Description" name="description">
-            <Input.TextArea rows={2} />
-          </Form.Item>
 
           <Form.Item
             label="Active"

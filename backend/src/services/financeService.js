@@ -108,6 +108,24 @@ class FinanceService {
    * Invoice Management
    */
   async createInvoice(invoiceData, userId) {
+    // Validate required fields
+    if (!invoiceData.customerId || !invoiceData.items || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {
+      const error = new Error('Customer ID and items array are required');
+      error.status = 400;
+      throw error;
+    }
+
+    // Validate customer exists
+    const customer = await db.prisma.customer.findUnique({
+      where: { id: invoiceData.customerId }
+    });
+
+    if (!customer) {
+      const error = new Error('Customer not found');
+      error.status = 400;
+      throw error;
+    }
+
     return await db.transaction(async (prisma) => {
       // Generate invoice number
       const invoiceNumber = await generateInvoiceNumber();
@@ -123,11 +141,15 @@ class FinanceService {
         });
 
         if (!inventoryItem) {
-          throw new Error(`Item ${item.itemId} not found`);
+          const error = new Error(`Item ${item.itemId} not found`);
+          error.status = 400;
+          throw error;
         }
 
         if (inventoryItem.status !== 'In Store' && inventoryItem.status !== 'In Hand') {
-          throw new Error(`Item ${inventoryItem.serialNumber} is not available (Status: ${inventoryItem.status})`);
+          const error = new Error(`Item ${inventoryItem.serialNumber} is not available (Status: ${inventoryItem.status})`);
+          error.status = 400;
+          throw error;
         }
 
         const lineTotal = item.quantity * item.unitPrice;
@@ -417,6 +439,13 @@ class FinanceService {
    * Payment Management
    */
   async recordPayment(paymentData, userId) {
+    // Validate required fields
+    if (!paymentData.customerId || !paymentData.amount) {
+      const error = new Error('Customer ID and amount are required');
+      error.status = 400;
+      throw error;
+    }
+
     return await db.transaction(async (prisma) => {
       // Generate payment number
       const paymentNumber = await generatePaymentNumber();
@@ -427,7 +456,9 @@ class FinanceService {
       });
 
       if (!customer) {
-        throw new Error('Customer not found');
+        const error = new Error('Customer not found');
+        error.status = 400;
+        throw error;
       }
 
       // Create payment
@@ -645,6 +676,165 @@ class FinanceService {
     }
 
     return aging;
+  }
+
+  /**
+   * Installment Plans
+   */
+  async createInstallmentPlan(planData, userId) {
+    const { customerId, invoiceId, totalAmount, numberOfInstallments, installmentAmount, startDate, frequency } = planData;
+
+    // Validate customer and invoice
+    const customer = await db.prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    if (!customer) {
+      const error = new Error('Customer not found');
+      error.status = 400;
+      throw error;
+    }
+
+    if (invoiceId) {
+      const invoice = await db.prisma.invoice.findUnique({
+        where: { id: invoiceId }
+      });
+
+      if (!invoice) {
+        const error = new Error('Invoice not found');
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    // Create installment plan
+    const installmentPlan = await db.prisma.installmentPlan.create({
+      data: {
+        customerId,
+        invoiceId,
+        totalAmount,
+        numberOfInstallments,
+        installmentAmount,
+        startDate: new Date(startDate),
+        frequency,
+        status: 'Active',
+        createdById: userId
+      }
+    });
+
+    // Create individual installments
+    const installments = [];
+    for (let i = 1; i <= numberOfInstallments; i++) {
+      let dueDate = new Date(startDate);
+
+      if (frequency === 'Monthly') {
+        dueDate.setMonth(dueDate.getMonth() + (i - 1));
+      } else if (frequency === 'Weekly') {
+        dueDate.setDate(dueDate.getDate() + (i - 1) * 7);
+      }
+
+      const installment = await db.prisma.installment.create({
+        data: {
+          installmentPlanId: installmentPlan.id,
+          installmentNumber: i,
+          amount: installmentAmount,
+          dueDate,
+          status: 'Pending'
+        }
+      });
+
+      installments.push(installment);
+    }
+
+    return {
+      ...installmentPlan,
+      installments
+    };
+  }
+
+  /**
+   * Customer Ledger
+   */
+  async getCustomerLedger(customerId) {
+    const customer = await db.prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    if (!customer) {
+      const error = new Error('Customer not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Get all financial transactions for this customer
+    const ledgerEntries = [];
+
+    // Get invoices
+    const invoices = await db.prisma.invoice.findMany({
+      where: {
+        customerId,
+        deletedAt: null
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    for (const invoice of invoices) {
+      ledgerEntries.push({
+        date: invoice.createdAt,
+        type: 'Invoice',
+        reference: invoice.invoiceNumber,
+        description: `Invoice ${invoice.invoiceNumber}`,
+        amount: invoice.totalAmount,
+        balance: 0 // Will be calculated below
+      });
+    }
+
+    // Get payments
+    const payments = await db.prisma.payment.findMany({
+      where: {
+        customerId,
+        deletedAt: null
+      },
+      orderBy: { paymentDate: 'asc' }
+    });
+
+    for (const payment of payments) {
+      ledgerEntries.push({
+        date: payment.paymentDate,
+        type: 'Payment',
+        reference: payment.paymentNumber,
+        description: `Payment ${payment.paymentMethod}`,
+        amount: -payment.amount, // Negative for payments
+        balance: 0 // Will be calculated below
+      });
+    }
+
+    // Sort by date and calculate running balance
+    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let runningBalance = customer.openingBalance || 0;
+
+    // Add opening balance entry if it exists
+    if (customer.openingBalance && customer.openingBalance !== 0) {
+      ledgerEntries.unshift({
+        date: customer.createdAt,
+        type: 'Opening Balance',
+        reference: 'OB',
+        description: 'Opening Balance',
+        amount: customer.openingBalance,
+        balance: customer.openingBalance
+      });
+    }
+
+    // Calculate running balance for each entry
+    for (const entry of ledgerEntries) {
+      if (entry.type !== 'Opening Balance') {
+        runningBalance += entry.amount;
+      }
+      entry.balance = runningBalance;
+    }
+
+    return ledgerEntries;
   }
 }
 

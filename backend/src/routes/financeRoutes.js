@@ -21,6 +21,11 @@ router.get('/customers/:id/statement',
   financeController.getCustomerStatement
 );
 
+router.get('/customers/:id/ledger',
+  hasPermission(['finance.view']),
+  financeController.getCustomerLedger
+);
+
 // Invoice routes
 router.route('/invoices')
   .get(hasPermission(['finance.view']), financeController.getInvoices)

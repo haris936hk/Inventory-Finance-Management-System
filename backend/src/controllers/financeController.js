@@ -62,6 +62,18 @@ const updateCustomer = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get customer ledger
+// @route   GET /api/finance/customers/:id/ledger
+// @access  Private
+const getCustomerLedger = asyncHandler(async (req, res) => {
+  const ledger = await financeService.getCustomerLedger(req.params.id);
+
+  res.json({
+    success: true,
+    data: ledger
+  });
+});
+
 // ============= INVOICES =============
 
 // @desc    Get all invoices
@@ -406,6 +418,7 @@ module.exports = {
   getCustomer,
   createCustomer,
   updateCustomer,
+  getCustomerLedger,
   // Invoices
   getInvoices,
   getInvoice,
