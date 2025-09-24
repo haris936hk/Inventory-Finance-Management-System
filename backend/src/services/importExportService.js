@@ -119,7 +119,8 @@ class ImportExportService {
         category = await db.prisma.productCategory.create({
           data: {
             name: categoryName,
-            code: this.generateCategoryCode(categoryName)
+            code: this.generateCategoryCode(categoryName),
+            isActive: true
           }
         });
       }
@@ -136,7 +137,8 @@ class ImportExportService {
           company = await db.prisma.company.create({
             data: {
               name: companyName,
-              code: this.generateCompanyCode(companyName)
+              code: this.generateCompanyCode(companyName),
+              isActive: true
             }
           });
         }
@@ -159,7 +161,8 @@ class ImportExportService {
               name: modelName,
               code: `${company.code}-${modelName}`,
               categoryId: category.id,
-              companyId: company.id
+              companyId: company.id,
+              isActive: true
             }
           });
         }
@@ -260,7 +263,8 @@ class ImportExportService {
       category = await db.prisma.productCategory.create({
         data: {
           name: categoryName,
-          code: this.generateCategoryCode(categoryName)
+          code: this.generateCategoryCode(categoryName),
+          isActive: true
         }
       });
     }
@@ -277,7 +281,8 @@ class ImportExportService {
         company = await db.prisma.company.create({
           data: {
             name: companyName,
-            code: this.generateCompanyCode(companyName)
+            code: this.generateCompanyCode(companyName),
+            isActive: true
           }
         });
       }
@@ -299,7 +304,8 @@ class ImportExportService {
             name: row.Model,
             code: `${company.code}-${row.Model}`,
             categoryId: category.id,
-            companyId: company.id
+            companyId: company.id,
+            isActive: true
           }
         });
       }

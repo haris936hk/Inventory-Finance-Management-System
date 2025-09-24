@@ -41,7 +41,12 @@ class InventoryService {
   async getCategories(includeDeleted = false) {
     return await db.findMany('productCategory', {
       includeDeleted,
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
+      include: {
+        models: {
+          where: { deletedAt: null }
+        }
+      }
     });
   }
 
@@ -130,7 +135,12 @@ class InventoryService {
   async getCompanies(includeDeleted = false) {
     return await db.findMany('company', {
       includeDeleted,
-      orderBy: { name: 'asc' }
+      orderBy: { name: 'asc' },
+      include: {
+        models: {
+          where: { deletedAt: null }
+        }
+      }
     });
   }
 
@@ -228,7 +238,11 @@ class InventoryService {
       where,
       include: {
         category: true,
-        company: true
+        company: true,
+        items: {
+          where: { deletedAt: null },
+          select: { id: true }
+        }
       },
       orderBy: { name: 'asc' }
     });
