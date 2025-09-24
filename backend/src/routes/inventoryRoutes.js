@@ -36,16 +36,37 @@ router.route('/models/:id')
   .put(hasPermission(['inventory.edit']), inventoryController.updateModel)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteModel);
 
+// ============= ITEM RESERVATION SYSTEM =============
+const reservationController = require('../controllers/reservationController');
+
+// Grouped item selection routes (must come BEFORE parameterized routes)
+router.get('/items/grouped',
+  hasPermission(['inventory.view']),
+  reservationController.getGroupedAvailableItems
+);
+
+// Item reservation routes
+router.post('/items/reserve',
+  hasPermission(['inventory.create']),
+  reservationController.reserveSpecificItems
+);
+
+router.post('/items/auto-assign',
+  hasPermission(['inventory.create']),
+  reservationController.autoAssignItems
+);
+
 // Item routes
 router.route('/items')
   .get(hasPermission(['inventory.view']), inventoryController.getItems)
   .post(hasPermission(['inventory.create']), inventoryController.createItem);
 
-router.post('/items/bulk', 
-  hasPermission(['inventory.create']), 
+router.post('/items/bulk',
+  hasPermission(['inventory.create']),
   inventoryController.bulkCreateItems
 );
 
+// Parameterized routes must come AFTER specific routes
 router.route('/items/:serialNumber')
   .get(hasPermission(['inventory.view']), inventoryController.getItem);
 
@@ -69,26 +90,6 @@ router.route('/vendors/:id')
   .get(hasPermission(['inventory.view']), inventoryController.getVendor)
   .put(hasPermission(['inventory.edit']), inventoryController.updateVendor)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteVendor);
-
-// ============= ITEM RESERVATION SYSTEM =============
-const reservationController = require('../controllers/reservationController');
-
-// Grouped item selection routes
-router.get('/items/grouped',
-  hasPermission(['inventory.view']),
-  reservationController.getGroupedAvailableItems
-);
-
-// Item reservation routes
-router.post('/items/reserve',
-  hasPermission(['inventory.create']),
-  reservationController.reserveSpecificItems
-);
-
-router.post('/items/auto-assign',
-  hasPermission(['inventory.create']),
-  reservationController.autoAssignItems
-);
 
 // Reservation management routes
 router.route('/reservations/:sessionId')

@@ -103,8 +103,9 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
   };
 
   const handlePriceChange = (itemId, newPrice) => {
+    const price = Number(newPrice) || 0;
     const updatedItems = selectedItems.map(item =>
-      item.itemId === itemId ? { ...item, unitPrice: newPrice } : item
+      item.itemId === itemId ? { ...item, unitPrice: price } : item
     );
     onItemsChange(updatedItems);
     calculateTotal(updatedItems);
@@ -159,19 +160,23 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
       key: 'unitPrice',
       width: 120,
       render: (_, record) => {
-        const avgPrice = record.totalPrice / record.items.length;
+        // Get unit price from first item (all items in group should have same unit price)
+        const unitPrice = record.items.length > 0 ? (record.items[0].unitPrice || 0) : 0;
         return (
           <InputNumber
-            value={avgPrice}
+            value={unitPrice}
             onChange={(value) => {
-              // Update all items in this group with the same price
+              const newPrice = value || 0;
+              // Update all items in this group with the same unit price
               record.items.forEach(item => {
-                handlePriceChange(item.itemId, value);
+                handlePriceChange(item.itemId, newPrice);
               });
             }}
             min={0}
+            precision={2}
             prefix="PKR"
             style={{ width: '100%' }}
+            placeholder="0.00"
           />
         );
       }
@@ -180,9 +185,15 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
       title: 'Total',
       key: 'total',
       width: 120,
-      render: (_, record) => (
-        <Text strong>PKR {record.totalPrice.toLocaleString()}</Text>
-      )
+      render: (_, record) => {
+        // Total = Unit Price × Quantity
+        const unitPrice = record.items.length > 0 ? (record.items[0].unitPrice || 0) : 0;
+        const quantity = record.items.length;
+        const total = unitPrice * quantity;
+        return (
+          <Text strong>PKR {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+        );
+      }
     },
     {
       title: 'Actions',

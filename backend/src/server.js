@@ -96,3 +96,4 @@ process.on('SIGTERM', async () => {
 });
 
 startServer();/* trigger restart */
+// trigger restart
