@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Form, Input, Select, InputNumber, DatePicker, Button,
-  Row, Col, Space, message, Steps, Divider, Checkbox
+  Row, Col, Space, message, Steps, Divider, Checkbox, Switch
 } from 'antd';
 import {
   SaveOutlined, ArrowLeftOutlined, PlusOutlined, ScanOutlined
@@ -141,7 +141,24 @@ const AddItem = () => {
               </Form.Item>
             </Col>
           );
-        
+
+        case 'boolean':
+          return (
+            <Col xs={24} sm={12} key={key}>
+              <Form.Item
+                label={key.charAt(0).toUpperCase() + key.slice(1)}
+                name={fieldName}
+                rules={[{ required: spec.required }]}
+                valuePropName="checked"
+              >
+                <Switch
+                  checkedChildren="Yes"
+                  unCheckedChildren="No"
+                />
+              </Form.Item>
+            </Col>
+          );
+
         default:
           return (
             <Col xs={24} sm={12} key={key}>

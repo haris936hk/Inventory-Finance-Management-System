@@ -211,12 +211,10 @@ class ImportExportService {
 
       // Add customer and outbound details if item is sold/delivered/handover
       if (['Sold', 'Delivered', 'Handover'].includes(itemData.status)) {
-        // Create or find customer if client data provided
-        if (row.Client || row.CELL || row.NIC) {
+        // Create or find customer if client data provided (only from Client field)
+        if (row.Client) {
           const customer = await this.createOrFindCustomer({
-            name: row.Client,
-            phone: row.CELL,
-            nic: row.NIC
+            name: row.Client
           });
           if (customer) {
             itemData.customerId = customer.id;
@@ -225,10 +223,30 @@ class ImportExportService {
 
         itemData.outboundDate = outboundDate || new Date();
 
-        if (itemData.status === 'Handover') {
-          itemData.handoverTo = row['Hand over To'];
-          itemData.handoverBy = row['Handover By'];
-          itemData.handoverDetails = row['HO Details'];
+        // Add handover information for all outbound statuses (Sold, Delivered, Handover)
+        // when handover data is available
+        if (row['Hand over To'] || row['Handover By'] || row.NIC || row.CELL || row['HO Details']) {
+          // External person who picks up the product
+          if (row['Hand over To']) {
+            itemData.handoverTo = row['Hand over To'];
+          }
+          if (row.NIC) {
+            itemData.handoverToNIC = row.NIC;        // External person's NIC
+          }
+          if (row.CELL) {
+            itemData.handoverToPhone = row.CELL;     // External person's phone
+          }
+
+          // Internal company employee who hands over
+          if (row['Handover By']) {
+            itemData.handoverBy = row['Handover By'];
+          }
+
+          // Handover process details (vehicle info, transport details)
+          if (row['HO Details']) {
+            itemData.handoverDetails = row['HO Details'];
+          }
+
           itemData.handoverDate = outboundDate || new Date();
         }
       }

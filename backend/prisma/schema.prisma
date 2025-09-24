@@ -155,11 +155,13 @@ model Item {
   customer       Customer? @relation(fields: [customerId], references: [id])
   
   // Handover details (when status = "Handover" or "Delivered")
-  handoverTo     String?   // Transportation company or intermediary person
-  handoverBy     String?   // Employee who handed over
+  handoverTo     String?   // External person who receives/picks up the product
+  handoverToNIC  String?   // External person's NIC
+  handoverToPhone String?  // External person's phone/CELL number
+  handoverBy     String?   // Internal company employee who hands over
   handoverById   String?
   handoverByUser User?     @relation("HandoverByUser", fields: [handoverById], references: [id])
-  handoverDetails String?  // Bus number, contact details, etc.
+  handoverDetails String?  // Handover process details (vehicle info, transport details, etc.)
   handoverDate   DateTime?
   
   // Relationships
