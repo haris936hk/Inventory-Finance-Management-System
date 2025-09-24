@@ -38,6 +38,7 @@ model User {
   invoicesCreated   Invoice[] @relation("CreatedByUser")
   paymentsRecorded  Payment[] @relation("RecordedByUser")
   inventoryMovements InventoryMovement[] @relation("InventoryMovements")
+  itemReservations  ItemReservation[] @relation("ReservedByUser")
   
   @@index([roleId])
   @@index([deletedAt])
@@ -181,6 +182,9 @@ model Item {
 
   // Inventory movements
   movements      InventoryMovement[]
+
+  // Reservations
+  reservations   ItemReservation[] @relation("ItemReservations")
 
   // User tracking
   createdById    String
@@ -729,4 +733,28 @@ model InventoryMovement {
   @@index([itemId])
   @@index([movementType])
   @@index([createdAt])
+}
+
+// ==================== ITEM RESERVATION SYSTEM ====================
+
+model ItemReservation {
+  id            String    @id @default(uuid())
+  itemId        String
+  item          Item      @relation("ItemReservations", fields: [itemId], references: [id])
+  sessionId     String    // Unique session ID for grouping reservations
+  reservedBy    String
+  user          User      @relation("ReservedByUser", fields: [reservedBy], references: [id])
+  reason        String    // "INVOICE_CREATION", "MANUAL_HOLD"
+  reservedAt    DateTime  @default(now())
+  expiresAt     DateTime  // Auto-expire reservations after X minutes
+
+  // Optional reference to document being created
+  referenceType String?   // "Invoice", "PurchaseOrder", etc.
+  referenceId   String?   // ID of the document
+
+  @@index([itemId])
+  @@index([sessionId])
+  @@index([reservedBy])
+  @@index([expiresAt])
+  @@unique([itemId, sessionId]) // Prevent double-reservation of same item in same session
 }

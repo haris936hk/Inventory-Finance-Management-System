@@ -70,4 +70,40 @@ router.route('/vendors/:id')
   .put(hasPermission(['inventory.edit']), inventoryController.updateVendor)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteVendor);
 
+// ============= ITEM RESERVATION SYSTEM =============
+const reservationController = require('../controllers/reservationController');
+
+// Grouped item selection routes
+router.get('/items/grouped',
+  hasPermission(['inventory.view']),
+  reservationController.getGroupedAvailableItems
+);
+
+// Item reservation routes
+router.post('/items/reserve',
+  hasPermission(['inventory.create']),
+  reservationController.reserveSpecificItems
+);
+
+router.post('/items/auto-assign',
+  hasPermission(['inventory.create']),
+  reservationController.autoAssignItems
+);
+
+// Reservation management routes
+router.route('/reservations/:sessionId')
+  .get(hasPermission(['inventory.view']), reservationController.getReservationsBySession)
+  .delete(hasPermission(['inventory.edit']), reservationController.releaseReservations);
+
+router.put('/reservations/:sessionId/extend',
+  hasPermission(['inventory.edit']),
+  reservationController.extendReservation
+);
+
+// Admin route for cleanup
+router.delete('/reservations/expired',
+  hasPermission(['inventory.admin']),
+  reservationController.cleanupExpiredReservations
+);
+
 module.exports = router;

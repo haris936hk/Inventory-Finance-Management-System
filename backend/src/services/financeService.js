@@ -115,6 +115,13 @@ class FinanceService {
       throw error;
     }
 
+    // Validate required sessionId for reservation system
+    if (!invoiceData.sessionId) {
+      const error = new Error('Session ID is required for item reservation');
+      error.status = 400;
+      throw error;
+    }
+
     // Validate customer exists
     const customer = await db.prisma.customer.findUnique({
       where: { id: invoiceData.customerId }
@@ -126,39 +133,62 @@ class FinanceService {
       throw error;
     }
 
+    const reservationService = require('./reservationService');
+
     return await db.transaction(async (prisma) => {
       // Generate invoice number
       const invoiceNumber = await generateInvoiceNumber(prisma);
 
-      // Calculate totals
+      // Get all reserved items for this session
+      const reservedItems = await reservationService.getReservationsBySession(invoiceData.sessionId);
+
+      if (reservedItems.length === 0) {
+        const error = new Error('No items found in reservation session');
+        error.status = 400;
+        throw error;
+      }
+
+      // Verify all invoice items are reserved in this session
+      const invoiceItemIds = invoiceData.items.map(item => item.itemId);
+      const reservedItemIds = reservedItems.map(r => r.itemId);
+
+      for (const itemId of invoiceItemIds) {
+        if (!reservedItemIds.includes(itemId)) {
+          const error = new Error(`Item ${itemId} is not reserved in this session`);
+          error.status = 400;
+          throw error;
+        }
+      }
+
+      // Calculate totals (no quantity - each item is individual)
       let subtotal = 0;
       const itemsToUpdate = [];
 
-      // Validate items and calculate subtotal
-      for (const item of invoiceData.items) {
-        const inventoryItem = await prisma.item.findUnique({
-          where: { id: item.itemId }
-        });
-
-        if (!inventoryItem) {
-          const error = new Error(`Item ${item.itemId} not found`);
+      // Validate items and calculate subtotal - each item must have quantity = 1
+      for (const invoiceItem of invoiceData.items) {
+        if (invoiceItem.quantity && invoiceItem.quantity !== 1) {
+          const error = new Error(`Invalid quantity ${invoiceItem.quantity} for item ${invoiceItem.itemId}. Each item must have quantity = 1`);
           error.status = 400;
           throw error;
         }
 
-        if (inventoryItem.status !== 'In Store' && inventoryItem.status !== 'In Hand') {
-          const error = new Error(`Item ${inventoryItem.serialNumber} is not available (Status: ${inventoryItem.status})`);
+        const reservation = reservedItems.find(r => r.itemId === invoiceItem.itemId);
+        if (!reservation) {
+          const error = new Error(`Item ${invoiceItem.itemId} not found in reservation`);
           error.status = 400;
           throw error;
         }
 
-        const lineTotal = item.quantity * item.unitPrice;
+        const inventoryItem = reservation.item;
+
+        // Each line item is exactly 1 unit with its own price
+        const lineTotal = invoiceItem.unitPrice;
         subtotal += lineTotal;
 
         itemsToUpdate.push({
           item: inventoryItem,
           newStatus: 'Sold',
-          sellingPrice: item.unitPrice
+          sellingPrice: invoiceItem.unitPrice
         });
       }
 
@@ -207,9 +237,9 @@ class FinanceService {
           createdById: userId,
           items: {
             create: invoiceData.items.map(item => ({
-              quantity: item.quantity,
+              quantity: 1, // Always 1 for individual items
               unitPrice: item.unitPrice,
-              total: item.quantity * item.unitPrice,
+              total: item.unitPrice, // Total = unitPrice for single items
               description: item.description,
               itemId: item.itemId
             }))
@@ -318,7 +348,10 @@ class FinanceService {
         });
       }
 
-      logger.info(`Invoice created: ${invoiceNumber}`);
+      // Release reservations after successful invoice creation
+      await reservationService.releaseReservations(invoiceData.sessionId);
+
+      logger.info(`Invoice created: ${invoiceNumber}, reservations released`);
       return invoice;
     });
   }
