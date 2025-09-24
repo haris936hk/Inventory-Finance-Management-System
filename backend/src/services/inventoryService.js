@@ -466,16 +466,18 @@ class InventoryService {
       }
     }
 
-    // Client filters
-    if (filters.clientPhone) {
-      where.clientPhone = filters.clientPhone;
-    }
-
-    if (filters.clientName) {
-      where.clientName = {
-        contains: filters.clientName,
-        mode: 'insensitive'
-      };
+    // Customer filters
+    if (filters.clientPhone || filters.clientName) {
+      where.customer = {};
+      if (filters.clientPhone) {
+        where.customer.phone = filters.clientPhone;
+      }
+      if (filters.clientName) {
+        where.customer.name = {
+          contains: filters.clientName,
+          mode: 'insensitive'
+        };
+      }
     }
 
     return await db.prisma.item.findMany({
@@ -489,6 +491,7 @@ class InventoryService {
         },
         vendor: true,
         warehouse: true,
+        customer: true,
         handoverByUser: {
           select: {
             fullName: true
@@ -513,6 +516,7 @@ class InventoryService {
         },
         vendor: true,
         warehouse: true,
+        customer: true,
         invoiceItems: {
           include: {
             invoice: {
@@ -563,28 +567,22 @@ class InventoryService {
       updateData.handoverTo = statusData.handoverTo;
       updateData.handoverById = userId;
       updateData.handoverDetails = statusData.handoverDetails;
-      
-      // Client details
-      if (statusData.clientName) updateData.clientName = statusData.clientName;
-      if (statusData.clientCompany) updateData.clientCompany = statusData.clientCompany;
-      if (statusData.clientNIC) updateData.clientNIC = statusData.clientNIC;
-      if (statusData.clientPhone) updateData.clientPhone = statusData.clientPhone;
-      if (statusData.clientEmail) updateData.clientEmail = statusData.clientEmail;
-      if (statusData.clientAddress) updateData.clientAddress = statusData.clientAddress;
+
+      // Customer relationship
+      if (statusData.customerId) {
+        updateData.customerId = statusData.customerId;
+      }
     }
 
     // Handle sale status
     if (statusData.status === 'Sold') {
       updateData.outboundDate = statusData.outboundDate || new Date();
       if (statusData.sellingPrice) updateData.sellingPrice = statusData.sellingPrice;
-      
-      // Client details
-      if (statusData.clientName) updateData.clientName = statusData.clientName;
-      if (statusData.clientCompany) updateData.clientCompany = statusData.clientCompany;
-      if (statusData.clientNIC) updateData.clientNIC = statusData.clientNIC;
-      if (statusData.clientPhone) updateData.clientPhone = statusData.clientPhone;
-      if (statusData.clientEmail) updateData.clientEmail = statusData.clientEmail;
-      if (statusData.clientAddress) updateData.clientAddress = statusData.clientAddress;
+
+      // Customer relationship
+      if (statusData.customerId) {
+        updateData.customerId = statusData.customerId;
+      }
     }
 
     const updatedItem = await db.prisma.item.update({
@@ -599,6 +597,7 @@ class InventoryService {
         },
         vendor: true,
         warehouse: true,
+        customer: true,
         handoverByUser: true
       }
     });

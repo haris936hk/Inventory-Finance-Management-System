@@ -209,11 +209,20 @@ class ImportExportService {
         }]
       };
 
-      // Add client details if item is sold/delivered/handover
+      // Add customer and outbound details if item is sold/delivered/handover
       if (['Sold', 'Delivered', 'Handover'].includes(itemData.status)) {
-        itemData.clientName = row.Client;
-        itemData.clientNIC = row.NIC;
-        itemData.clientPhone = row.CELL;
+        // Create or find customer if client data provided
+        if (row.Client || row.CELL || row.NIC) {
+          const customer = await this.createOrFindCustomer({
+            name: row.Client,
+            phone: row.CELL,
+            nic: row.NIC
+          });
+          if (customer) {
+            itemData.customerId = customer.id;
+          }
+        }
+
         itemData.outboundDate = outboundDate || new Date();
 
         if (itemData.status === 'Handover') {
@@ -358,17 +367,28 @@ class ImportExportService {
       }]
     };
 
-    // Add client details if item is sold/delivered
+    // Add customer details if item is sold/delivered
     if (itemData.status === 'Sold' || itemData.status === 'Delivered' || itemData.status === 'Handover') {
-      itemData.clientName = row['Client Name'] || row.ClientName;
-      itemData.clientCompany = row['Client Company'] || row.ClientCompany;
-      itemData.clientNIC = row['Client NIC'] || row.ClientNIC || row.NIC;
-      itemData.clientPhone = row['Client Phone'] || row.ClientPhone || row.Phone;
-      itemData.clientEmail = row['Client Email'] || row.ClientEmail || row.Email;
-      itemData.clientAddress = row['Client Address'] || row.ClientAddress || row.Address;
+      // Create or find customer if client data provided
+      const clientData = {
+        name: row['Client Name'] || row.ClientName || row.Client,
+        company: row['Client Company'] || row.ClientCompany,
+        nic: row['Client NIC'] || row.ClientNIC || row.NIC,
+        phone: row['Client Phone'] || row.ClientPhone || row.Phone || row.CELL,
+        email: row['Client Email'] || row.ClientEmail || row.Email,
+        address: row['Client Address'] || row.ClientAddress || row.Address
+      };
+
+      if (clientData.name || clientData.phone || clientData.nic) {
+        const customer = await this.createOrFindCustomer(clientData);
+        if (customer) {
+          itemData.customerId = customer.id;
+        }
+      }
+
       itemData.outboundDate = this.parseDate(row['Outbound Date'] || row.OutboundDate) || new Date();
       itemData.sellingPrice = this.parseNumber(row['Selling Price'] || row.SellingPrice);
-      
+
       // Handover specific
       if (itemData.status === 'Handover') {
         itemData.handoverTo = row['Handover To'] || row.HandoverTo;
@@ -886,7 +906,7 @@ class ImportExportService {
     };
 
     const clientHeaders = [
-      'Client Name',
+      'Client',
       'Client Company',
       'Client NIC',
       'Client Phone',
@@ -1163,6 +1183,55 @@ class ImportExportService {
       .split(/(?=[A-Z])|_|-/)
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
+  }
+
+  /**
+   * Create or find customer based on client data
+   */
+  async createOrFindCustomer(clientData) {
+    try {
+      if (!clientData.name && !clientData.phone && !clientData.nic) {
+        return null;
+      }
+
+      // Try to find existing customer by unique identifiers (phone or NIC)
+      let customer = null;
+
+      if (clientData.phone) {
+        customer = await db.prisma.customer.findFirst({
+          where: { phone: clientData.phone }
+        });
+      }
+
+      if (!customer && clientData.nic) {
+        customer = await db.prisma.customer.findFirst({
+          where: { nic: clientData.nic }
+        });
+      }
+
+      // If not found, create new customer
+      if (!customer && clientData.name) {
+        customer = await db.prisma.customer.create({
+          data: {
+            name: clientData.name,
+            company: clientData.company,
+            phone: clientData.phone,
+            nic: clientData.nic,
+            email: clientData.email,
+            address: clientData.address,
+            creditLimit: 0,
+            openingBalance: 0,
+            currentBalance: 0
+          }
+        });
+        logger.info(`Created customer: ${customer.name} (ID: ${customer.id})`);
+      }
+
+      return customer;
+    } catch (error) {
+      logger.error('Error creating/finding customer:', error);
+      return null;
+    }
   }
 }
 

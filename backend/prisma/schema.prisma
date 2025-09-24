@@ -150,13 +150,9 @@ model Item {
   sellingPrice   Decimal?  @db.Decimal(10, 2)
   outboundDate   DateTime?
   
-  // Client & Handover details
-  clientName     String?
-  clientCompany  String?
-  clientNIC      String?
-  clientPhone    String?
-  clientEmail    String?
-  clientAddress  String?
+  // Customer relationship (normalized)
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id])
   
   // Handover details (when status = "Handover" or "Delivered")
   handoverTo     String?   // Transportation company or intermediary person
@@ -198,7 +194,7 @@ model Item {
   @@index([modelId])
   @@index([vendorId])
   @@index([warehouseId])
-  @@index([clientPhone])
+  @@index([customerId])
   @@index([deletedAt])
 }
 
@@ -273,6 +269,7 @@ model Customer {
   currentBalance  Decimal   @default(0) @db.Decimal(10, 2)
   
   // Relationships
+  items           Item[]
   invoices        Invoice[]
   ledgerEntries   CustomerLedger[]
   payments        Payment[]

@@ -352,15 +352,15 @@ class PDFService {
         }
         doc.moveDown();
 
-        // Client details if available
-        if (item.clientName) {
-          doc.text('Client Details:', { underline: true });
-          doc.text(`Name: ${item.clientName}`);
-          if (item.clientCompany) doc.text(`Company: ${item.clientCompany}`);
-          if (item.clientNIC) doc.text(`NIC: ${item.clientNIC}`);
-          if (item.clientPhone) doc.text(`Phone: ${item.clientPhone}`);
-          if (item.clientEmail) doc.text(`Email: ${item.clientEmail}`);
-          if (item.clientAddress) doc.text(`Address: ${item.clientAddress}`);
+        // Customer details if available
+        if (item.customer) {
+          doc.text('Customer Details:', { underline: true });
+          doc.text(`Name: ${item.customer.name}`);
+          if (item.customer.company) doc.text(`Company: ${item.customer.company}`);
+          if (item.customer.nic) doc.text(`NIC: ${item.customer.nic}`);
+          if (item.customer.phone) doc.text(`Phone: ${item.customer.phone}`);
+          if (item.customer.email) doc.text(`Email: ${item.customer.email}`);
+          if (item.customer.address) doc.text(`Address: ${item.customer.address}`);
           doc.moveDown();
         }
 

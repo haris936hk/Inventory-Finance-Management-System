@@ -25,7 +25,8 @@
       "Bash(Stop-Process -Force)",
       "Bash(Stop-Process -Force -Id 5832)",
       "Bash(wmic process where:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(tasklist:*)"
     ],
     "deny": [],
     "ask": []

@@ -26,8 +26,8 @@ const UpdateStatusModal = ({ visible, item, onClose, onSuccess }) => {
 
   const handleStatusChange = (status) => {
     // Show/hide fields based on status
-    form.resetFields(['clientName', 'clientPhone', 'clientCompany', 'clientNIC', 
-                      'clientEmail', 'clientAddress', 'handoverTo', 'handoverDetails']);
+    form.resetFields(['clientName', 'clientPhone', 'clientCompany', 'clientNIC',
+                      'clientEmail', 'clientAddress', 'handoverTo', 'handoverDetails', 'customerId']);
   };
 
   const onFinish = (values) => {
@@ -96,7 +96,7 @@ const UpdateStatusModal = ({ visible, item, onClose, onSuccess }) => {
 
             return (
               <>
-                {/* Client Information */}
+                {/* Client Information - Note: Backend will create Customer record from these fields */}
                 <Form.Item
                   label="Client Name"
                   name="clientName"

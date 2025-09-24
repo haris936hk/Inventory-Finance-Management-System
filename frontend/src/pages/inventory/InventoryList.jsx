@@ -152,15 +152,29 @@ const InventoryList = () => {
       sorter: (a, b) => (a.purchasePrice || 0) - (b.purchasePrice || 0),
     },
     {
-      title: 'Client',
-      dataIndex: 'clientName',
-      key: 'clientName',
+      title: 'Customer',
+      dataIndex: 'customer',
+      key: 'customer',
       width: 150,
-      render: (name, record) => {
-        if (!name) return '-';
+      render: (customer, record) => {
+        if (!customer) return '-';
         return (
-          <Tooltip title={`${record.clientPhone || ''} ${record.clientCompany || ''}`}>
-            {name}
+          <Tooltip title={`${customer.phone || ''} ${customer.company || ''}`}>
+            {customer.name}
+          </Tooltip>
+        );
+      }
+    },
+    {
+      title: 'Vendor',
+      dataIndex: 'vendor',
+      key: 'vendor',
+      width: 150,
+      render: (vendor, record) => {
+        if (!vendor) return '-';
+        return (
+          <Tooltip title={vendor.phone || vendor.email || ''}>
+            {vendor.name}
           </Tooltip>
         );
       }
@@ -172,6 +186,19 @@ const InventoryList = () => {
       width: 120,
       render: (date) => new Date(date).toLocaleDateString(),
       sorter: (a, b) => new Date(a.inboundDate) - new Date(b.inboundDate),
+    },
+    {
+      title: 'Outbound Date',
+      dataIndex: 'outboundDate',
+      key: 'outboundDate',
+      width: 120,
+      render: (date) => date ? new Date(date).toLocaleDateString() : '-',
+      sorter: (a, b) => {
+        if (!a.outboundDate && !b.outboundDate) return 0;
+        if (!a.outboundDate) return 1;
+        if (!b.outboundDate) return -1;
+        return new Date(a.outboundDate) - new Date(b.outboundDate);
+      },
     },
     {
       title: 'Actions',
@@ -366,7 +393,7 @@ const InventoryList = () => {
           dataSource={itemsData}
           loading={isLoading}
           rowSelection={rowSelection}
-          scroll={{ x: 1500 }}
+          scroll={{ x: 1800 }}
           pagination={{
             total: itemsData?.length || 0,
             pageSize: 20,
@@ -446,36 +473,36 @@ const InventoryList = () => {
               </>
             )}
 
-            {selectedItem.clientName && (
+            {selectedItem.customer && (
               <>
-                <h3 style={{ marginTop: 24 }}>Client Information</h3>
+                <h3 style={{ marginTop: 24 }}>Customer Information</h3>
                 <Descriptions bordered column={1}>
                   <Descriptions.Item label="Name">
-                    {selectedItem.clientName}
+                    {selectedItem.customer.name}
                   </Descriptions.Item>
-                  {selectedItem.clientCompany && (
+                  {selectedItem.customer.company && (
                     <Descriptions.Item label="Company">
-                      {selectedItem.clientCompany}
+                      {selectedItem.customer.company}
                     </Descriptions.Item>
                   )}
-                  {selectedItem.clientPhone && (
+                  {selectedItem.customer.phone && (
                     <Descriptions.Item label="Phone">
-                      {selectedItem.clientPhone}
+                      {selectedItem.customer.phone}
                     </Descriptions.Item>
                   )}
-                  {selectedItem.clientEmail && (
+                  {selectedItem.customer.email && (
                     <Descriptions.Item label="Email">
-                      {selectedItem.clientEmail}
+                      {selectedItem.customer.email}
                     </Descriptions.Item>
                   )}
-                  {selectedItem.clientNIC && (
+                  {selectedItem.customer.nic && (
                     <Descriptions.Item label="NIC">
-                      {selectedItem.clientNIC}
+                      {selectedItem.customer.nic}
                     </Descriptions.Item>
                   )}
-                  {selectedItem.clientAddress && (
+                  {selectedItem.customer.address && (
                     <Descriptions.Item label="Address">
-                      {selectedItem.clientAddress}
+                      {selectedItem.customer.address}
                     </Descriptions.Item>
                   )}
                 </Descriptions>
