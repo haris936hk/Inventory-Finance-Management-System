@@ -22,6 +22,8 @@ const AddItem = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
   // Fetch categories
   const { data: categories } = useQuery('categories', async () => {
@@ -36,21 +38,23 @@ const AddItem = () => {
   });
 
   // Fetch models based on selected category and company
-  const { data: models } = useQuery(
-    ['models', form.getFieldValue('categoryId'), form.getFieldValue('companyId')],
+  const { data: models, error: modelsError, isLoading: modelsLoading } = useQuery(
+    ['models', selectedCategoryId, selectedCompanyId],
     async () => {
       const params = {};
-      const categoryId = form.getFieldValue('categoryId');
-      const companyId = form.getFieldValue('companyId');
-      
-      if (categoryId) params.categoryId = categoryId;
-      if (companyId) params.companyId = companyId;
-      
+      if (selectedCategoryId) params.categoryId = selectedCategoryId;
+      if (selectedCompanyId) params.companyId = selectedCompanyId;
+
+      console.log('Fetching models with params:', params);
       const response = await axios.get('/inventory/models', { params });
+      console.log('Models API response:', response.data);
       return response.data.data;
     },
     {
-      enabled: !!(form.getFieldValue('categoryId') || form.getFieldValue('companyId'))
+      enabled: !!selectedCategoryId, // Only require categoryId to load models
+      onError: (error) => {
+        console.error('Models fetch error:', error);
+      }
     }
   );
 
@@ -83,7 +87,15 @@ const AddItem = () => {
   const onCategoryChange = (categoryId) => {
     const category = categories?.find(c => c.id === categoryId);
     setSelectedCategory(category);
-    form.setFieldsValue({ specifications: {} });
+    setSelectedCategoryId(categoryId);
+    // Clear model selection when category changes
+    form.setFieldsValue({ modelId: undefined, specifications: {} });
+  };
+
+  const onCompanyChange = (companyId) => {
+    setSelectedCompanyId(companyId);
+    // Clear model selection when company changes
+    form.setFieldsValue({ modelId: undefined });
   };
 
   const getSpecificationFields = () => {
@@ -146,7 +158,55 @@ const AddItem = () => {
     });
   };
 
+  const getCurrentStepFields = (step) => {
+    switch (step) {
+      case 0: // Basic Information
+        return [
+          'serialNumber',
+          'categoryId',
+          'modelId',
+          'condition',
+          'status',
+          // Include specification fields if any
+          ...Object.keys(selectedCategory?.specTemplate || {}).map(key => ['specifications', key])
+        ];
+      case 1: // Purchase Information
+        return [
+          'inboundDate', // This is required
+          'vendorId',
+          'purchasePrice',
+          'purchaseDate',
+          'notes'
+        ];
+      default:
+        return [];
+    }
+  };
+
   const onFinish = (values) => {
+    // Debug logging
+    console.log('Form values being submitted:', values);
+    console.log('ModelId:', values.modelId);
+    console.log('Condition:', values.condition);
+    console.log('Available categories:', categories?.length || 0);
+    console.log('Available companies:', companies?.length || 0);
+    console.log('Available models:', models?.length || 0);
+    console.log('Selected category ID:', selectedCategoryId);
+    console.log('Selected company ID:', selectedCompanyId);
+
+    // Ensure required fields are present
+    if (!values.modelId) {
+      console.error('Model validation failed - no modelId provided');
+      console.log('Models available:', models);
+      message.error('Please select a model');
+      return;
+    }
+
+    if (!values.condition) {
+      message.error('Please select a condition');
+      return;
+    }
+
     // Format dates
     if (values.inboundDate) {
       values.inboundDate = values.inboundDate.toISOString();
@@ -154,6 +214,9 @@ const AddItem = () => {
     if (values.purchaseDate) {
       values.purchaseDate = values.purchaseDate.toISOString();
     }
+
+    // Log final payload
+    console.log('Final payload being sent to API:', values);
 
     createMutation.mutate(values);
   };
@@ -214,6 +277,7 @@ const AddItem = () => {
                   showSearch
                   optionFilterProp="children"
                   allowClear
+                  onChange={onCompanyChange}
                 >
                   {companies?.map(company => (
                     <Select.Option key={company.id} value={company.id}>
@@ -234,13 +298,21 @@ const AddItem = () => {
                   placeholder="Select model"
                   showSearch
                   optionFilterProp="children"
+                  loading={modelsLoading}
                   notFoundContent={
-                    form.getFieldValue('categoryId') ? 'No models found' : 'Select category first'
+                    modelsLoading ? 'Loading models...' :
+                    modelsError ? 'Error loading models' :
+                    selectedCategoryId ? 'No models found for selected filters' :
+                    'Select category first'
                   }
+                  onFocus={() => {
+                    console.log('Models dropdown focused. Available models:', models?.length || 0);
+                    console.log('Models data:', models);
+                  }}
                 >
                   {models?.map(model => (
                     <Select.Option key={model.id} value={model.id}>
-                      {model.name} ({model.company.name})
+                      {model.name} ({model.company?.name || 'No Company'})
                     </Select.Option>
                   ))}
                 </Select>
@@ -382,7 +454,12 @@ const AddItem = () => {
           layout="vertical"
           onFinish={onFinish}
         >
-          <div>{steps[currentStep].content}</div>
+          <div style={{ display: currentStep === 0 ? 'block' : 'none' }}>
+            {steps[0].content}
+          </div>
+          <div style={{ display: currentStep === 1 ? 'block' : 'none' }}>
+            {steps[1].content}
+          </div>
 
           <div style={{ marginTop: 24, textAlign: 'right' }}>
             <Space>
@@ -394,8 +471,12 @@ const AddItem = () => {
               
               {currentStep < steps.length - 1 && (
                 <Button type="primary" onClick={() => {
-                  form.validateFields().then(() => {
+                  // Only validate fields for the current step
+                  const currentStepFields = getCurrentStepFields(currentStep);
+                  form.validateFields(currentStepFields).then(() => {
                     setCurrentStep(currentStep + 1);
+                  }).catch((errorInfo) => {
+                    console.log('Validation failed for step:', currentStep, errorInfo);
                   });
                 }}>
                   Next

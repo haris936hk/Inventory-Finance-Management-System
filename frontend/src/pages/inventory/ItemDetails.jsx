@@ -265,8 +265,19 @@ const ItemDetails = () => {
 
                   {item.specifications && (
                     <Descriptions.Item label="Specifications" span={2}>
-                      <div style={{ whiteSpace: 'pre-wrap' }}>
-                        {item.specifications}
+                      <div>
+                        {typeof item.specifications === 'object' ? (
+                          Object.entries(item.specifications).map(([key, value]) => (
+                            <div key={key} style={{ marginBottom: 4 }}>
+                              <Text strong>{key.charAt(0).toUpperCase() + key.slice(1)}: </Text>
+                              <Text>{value}</Text>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ whiteSpace: 'pre-wrap' }}>
+                            {item.specifications}
+                          </div>
+                        )}
                       </div>
                     </Descriptions.Item>
                   )}

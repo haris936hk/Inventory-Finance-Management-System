@@ -19,7 +19,8 @@ class ImportExportService {
         summary: {
           totalRows: 0,
           imported: 0,
-          failed: 0
+          failed: 0,
+          templatesUpdated: []
         }
       };
 
@@ -236,6 +237,11 @@ class ImportExportService {
         }
       });
 
+      // Analyze specifications and update category template
+      if (specifications && Object.keys(specifications).length > 0) {
+        await this.analyzeAndUpdateCategoryTemplates(category.id, specifications);
+      }
+
       return {
         serialNumber: item.serialNumber,
         status: 'imported',
@@ -391,6 +397,11 @@ class ImportExportService {
         }
       }
     });
+
+    // Analyze specifications and update category template
+    if (specifications && Object.keys(specifications).length > 0) {
+      await this.analyzeAndUpdateCategoryTemplates(category.id, specifications);
+    }
 
     return {
       serialNumber: item.serialNumber,
@@ -997,6 +1008,161 @@ class ImportExportService {
         sheets: []
       };
     }
+  }
+
+  /**
+   * Analyze imported specifications and update category templates
+   */
+  async analyzeAndUpdateCategoryTemplates(categoryId, specifications, results = null) {
+    try {
+      if (!specifications || typeof specifications !== 'object') {
+        return;
+      }
+
+      // Get current category with existing template
+      const category = await db.prisma.productCategory.findUnique({
+        where: { id: categoryId }
+      });
+
+      if (!category) {
+        return;
+      }
+
+      let currentTemplate = category.specTemplate || {};
+      let hasUpdates = false;
+      let newFields = [];
+      let updatedFields = [];
+
+      // Analyze each specification field
+      Object.entries(specifications).forEach(([fieldName, value]) => {
+        if (!currentTemplate[fieldName]) {
+          // New field discovered, add it to template
+          const fieldType = this.detectFieldType(value);
+          const newField = {
+            type: fieldType.type,
+            label: this.generateFieldLabel(fieldName),
+            required: false, // Set as optional for imported specs
+            order: Object.keys(currentTemplate).length
+          };
+
+          // Add additional properties based on field type
+          if (fieldType.type === 'select' && fieldType.options) {
+            newField.options = fieldType.options;
+          }
+          if (fieldType.unit) {
+            newField.unit = fieldType.unit;
+          }
+          if (fieldType.validation) {
+            newField.validation = fieldType.validation;
+          }
+
+          currentTemplate[fieldName] = newField;
+          hasUpdates = true;
+          newFields.push(fieldName);
+          logger.info(`Added new specification field '${fieldName}' to category '${category.name}' template`);
+        } else {
+          // Field exists, check if we need to update options for select fields
+          const existingField = currentTemplate[fieldName];
+          if (existingField.type === 'select' && typeof value === 'string') {
+            const options = existingField.options || [];
+            if (!options.includes(value)) {
+              existingField.options = [...options, value];
+              hasUpdates = true;
+              updatedFields.push(`${fieldName} (+${value})`);
+              logger.info(`Added option '${value}' to field '${fieldName}' in category '${category.name}' template`);
+            }
+          }
+        }
+      });
+
+      // Update category template if there are changes
+      if (hasUpdates) {
+        await db.prisma.productCategory.update({
+          where: { id: categoryId },
+          data: { specTemplate: currentTemplate }
+        });
+        logger.info(`Updated specification template for category '${category.name}'`);
+
+        // Track template updates in results if provided
+        if (results && results.summary) {
+          const existingUpdate = results.summary.templatesUpdated.find(t => t.categoryId === categoryId);
+          if (existingUpdate) {
+            existingUpdate.newFields.push(...newFields);
+            existingUpdate.updatedFields.push(...updatedFields);
+          } else {
+            results.summary.templatesUpdated.push({
+              categoryId,
+              categoryName: category.name,
+              newFields,
+              updatedFields
+            });
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to analyze and update category template:', error);
+    }
+  }
+
+  /**
+   * Detect field type based on value
+   */
+  detectFieldType(value) {
+    const stringValue = String(value).trim();
+
+    // Check for boolean-like values
+    if (['true', 'false', 'yes', 'no', 'supported', 'not supported', 'enabled', 'disabled'].includes(stringValue.toLowerCase())) {
+      return { type: 'boolean' };
+    }
+
+    // Check for numeric values with units
+    const numericWithUnit = stringValue.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z%]+)$/);
+    if (numericWithUnit) {
+      const [, number, unit] = numericWithUnit;
+      return {
+        type: 'number',
+        unit: unit,
+        validation: { min: 0, decimals: number.includes('.') ? 2 : 0 }
+      };
+    }
+
+    // Check for pure numeric values
+    if (!isNaN(parseFloat(stringValue)) && isFinite(stringValue)) {
+      return {
+        type: 'number',
+        validation: { min: 0 }
+      };
+    }
+
+    // Check for common select options patterns
+    const commonSelectPatterns = [
+      /^(small|medium|large)$/i,
+      /^(low|medium|high)$/i,
+      /^(basic|standard|premium)$/i,
+      /^(single|dual|multiple)$/i
+    ];
+
+    for (const pattern of commonSelectPatterns) {
+      if (pattern.test(stringValue)) {
+        return {
+          type: 'select',
+          options: [stringValue]
+        };
+      }
+    }
+
+    // Default to text
+    return { type: 'text' };
+  }
+
+  /**
+   * Generate user-friendly field label from field name
+   */
+  generateFieldLabel(fieldName) {
+    return fieldName
+      .split(/(?=[A-Z])|_|-/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
   }
 }
 
