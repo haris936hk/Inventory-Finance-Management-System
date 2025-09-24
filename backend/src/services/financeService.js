@@ -128,7 +128,7 @@ class FinanceService {
 
     return await db.transaction(async (prisma) => {
       // Generate invoice number
-      const invoiceNumber = await generateInvoiceNumber();
+      const invoiceNumber = await generateInvoiceNumber(prisma);
 
       // Calculate totals
       let subtotal = 0;
@@ -448,7 +448,7 @@ class FinanceService {
 
     return await db.transaction(async (prisma) => {
       // Generate payment number
-      const paymentNumber = await generatePaymentNumber();
+      const paymentNumber = await generatePaymentNumber('PAY', prisma);
 
       // Get customer
       const customer = await prisma.customer.findUnique({

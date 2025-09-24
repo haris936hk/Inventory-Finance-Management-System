@@ -118,7 +118,7 @@ const getInvoice = asyncHandler(async (req, res) => {
 // @access  Private
 const createInvoice = asyncHandler(async (req, res) => {
   const invoice = await financeService.createInvoice(req.body, req.user.id);
-  
+
   res.status(201).json({
     success: true,
     data: invoice

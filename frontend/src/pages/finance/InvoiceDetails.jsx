@@ -164,8 +164,8 @@ const InvoiceDetails = () => {
     },
     {
       title: 'Amount',
-      dataIndex: 'amount',
-      key: 'amount',
+      dataIndex: 'total',
+      key: 'total',
       width: 120,
       align: 'right',
       render: (amount) => (
@@ -365,7 +365,7 @@ const InvoiceDetails = () => {
                 <Table
                   rowKey="id"
                   columns={lineItemColumns}
-                  dataSource={invoice.lineItems}
+                  dataSource={invoice.items}
                   pagination={false}
                   size="small"
                   style={{ marginBottom: 24 }}

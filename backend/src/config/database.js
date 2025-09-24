@@ -43,7 +43,10 @@ class Database {
 
   // Transaction helper
   async transaction(callback) {
-    return await this.prisma.$transaction(callback);
+    return await this.prisma.$transaction(callback, {
+      maxWait: 10000, // default: 2000
+      timeout: 15000, // default: 5000
+    });
   }
 
   // Soft delete helper

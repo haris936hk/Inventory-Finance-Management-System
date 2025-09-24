@@ -3,11 +3,12 @@
  * Generate custom IDs for various entities
  */
 
-const generateSerialNumber = async (category, year) => {
+const generateSerialNumber = async (category, year, prismaInstance = null) => {
   const db = require('../config/database');
-  
+  const prisma = prismaInstance || db.prisma;
+
   // Get the last serial number for this category and year
-  const lastItem = await db.prisma.item.findFirst({
+  const lastItem = await prisma.item.findFirst({
     where: {
       serialNumber: {
         startsWith: `${category}-${year}-`
@@ -19,7 +20,7 @@ const generateSerialNumber = async (category, year) => {
   });
 
   let nextNumber = 1;
-  
+
   if (lastItem) {
     const lastNumber = parseInt(lastItem.serialNumber.split('-').pop());
     nextNumber = lastNumber + 1;
@@ -28,12 +29,13 @@ const generateSerialNumber = async (category, year) => {
   return `${category}-${year}-${nextNumber.toString().padStart(4, '0')}`;
 };
 
-const generateInvoiceNumber = async () => {
+const generateInvoiceNumber = async (prismaInstance = null) => {
   const db = require('../config/database');
+  const prisma = prismaInstance || db.prisma;
   const year = new Date().getFullYear();
   const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-  
-  const lastInvoice = await db.prisma.invoice.findFirst({
+
+  const lastInvoice = await prisma.invoice.findFirst({
     where: {
       invoiceNumber: {
         startsWith: `INV-${year}${month}-`
@@ -45,7 +47,7 @@ const generateInvoiceNumber = async () => {
   });
 
   let nextNumber = 1;
-  
+
   if (lastInvoice) {
     const lastNumber = parseInt(lastInvoice.invoiceNumber.split('-').pop());
     nextNumber = lastNumber + 1;
@@ -54,11 +56,12 @@ const generateInvoiceNumber = async () => {
   return `INV-${year}${month}-${nextNumber.toString().padStart(4, '0')}`;
 };
 
-const generatePONumber = async () => {
+const generatePONumber = async (prismaInstance = null) => {
   const db = require('../config/database');
+  const prisma = prismaInstance || db.prisma;
   const year = new Date().getFullYear();
-  
-  const lastPO = await db.prisma.purchaseOrder.findFirst({
+
+  const lastPO = await prisma.purchaseOrder.findFirst({
     where: {
       poNumber: {
         startsWith: `PO-${year}-`
@@ -70,7 +73,7 @@ const generatePONumber = async () => {
   });
 
   let nextNumber = 1;
-  
+
   if (lastPO) {
     const lastNumber = parseInt(lastPO.poNumber.split('-').pop());
     nextNumber = lastNumber + 1;
@@ -79,14 +82,15 @@ const generatePONumber = async () => {
   return `PO-${year}-${nextNumber.toString().padStart(5, '0')}`;
 };
 
-const generatePaymentNumber = async (type = 'PAY') => {
+const generatePaymentNumber = async (type = 'PAY', prismaInstance = null) => {
   const db = require('../config/database');
+  const prisma = prismaInstance || db.prisma;
   const year = new Date().getFullYear();
   const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-  
+
   const model = type === 'VPAY' ? 'vendorPayment' : 'payment';
-  
-  const lastPayment = await db.prisma[model].findFirst({
+
+  const lastPayment = await prisma[model].findFirst({
     where: {
       paymentNumber: {
         startsWith: `${type}-${year}${month}-`
@@ -98,7 +102,7 @@ const generatePaymentNumber = async (type = 'PAY') => {
   });
 
   let nextNumber = 1;
-  
+
   if (lastPayment) {
     const lastNumber = parseInt(lastPayment.paymentNumber.split('-').pop());
     nextNumber = lastNumber + 1;
