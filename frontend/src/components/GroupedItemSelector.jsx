@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Button, Select, InputNumber, Modal, List, Avatar,
-  Typography, Space, Tag, message, Tooltip, Radio, Divider
+  Typography, Space, Tag, message, Tooltip, Divider, Row, Col
 } from 'antd';
 import {
   PlusOutlined, EyeOutlined, DeleteOutlined, ShoppingOutlined,
-  TagOutlined, SettingOutlined
+  TagOutlined, SettingOutlined, ClearOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation } from 'react-query';
 import axios from 'axios';
@@ -14,58 +14,102 @@ import axios from 'axios';
 const { Text } = Typography;
 const { Option } = Select;
 
-const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSessionChange }) => {
+const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) => {
   const [groupModalVisible, setGroupModalVisible] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
-  const [assignmentPreference, setAssignmentPreference] = useState('FIFO');
+  // Always use FIFO assignment preference
   const [quantityToAdd, setQuantityToAdd] = useState(1);
   const [serialModalVisible, setSerialModalVisible] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [conditionFilter, setConditionFilter] = useState(''); // '' means all conditions
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState('');
+
+  // Reset dependent filters when parent filter changes
+  useEffect(() => {
+    setModelFilter(''); // Reset model when company changes
+  }, [companyFilter]);
+
+  // Clear all filters function
+  const clearAllFilters = () => {
+    setConditionFilter('');
+    setCategoryFilter('');
+    setCompanyFilter('');
+    setModelFilter('');
+  };
+
+  // Fetch filter data
+  const { data: categories } = useQuery('categories', async () => {
+    const response = await axios.get('/inventory/categories');
+    return response.data.data;
+  });
+
+  const { data: companies } = useQuery('companies', async () => {
+    const response = await axios.get('/inventory/companies');
+    return response.data.data;
+  });
+
+  const { data: models } = useQuery(['models', companyFilter], async () => {
+    const params = companyFilter ? { companyId: companyFilter } : {};
+    const response = await axios.get('/inventory/models', { params });
+    return response.data.data;
+  });
 
   // Fetch grouped available items
   const { data: groupedItems, isLoading, refetch } = useQuery(
-    'groupedItems',
+    ['groupedItems', conditionFilter, categoryFilter, companyFilter, modelFilter],
     async () => {
-      const response = await axios.get('/inventory/items/grouped');
+      const params = {};
+      if (conditionFilter) params.condition = conditionFilter;
+      if (categoryFilter) params.categoryId = categoryFilter;
+      if (modelFilter) params.modelId = modelFilter;
+
+      const response = await axios.get('/inventory/items/grouped', { params });
       return response.data.data;
     }
   );
 
-  // Auto-assign items mutation
-  const autoAssignMutation = useMutation(
-    (data) => axios.post('/inventory/items/auto-assign', data),
-    {
-      onSuccess: (response) => {
-        const result = response.data.data;
-        const sessionId = result.sessionId;
-        setCurrentSessionId(sessionId);
-        onSessionChange?.(sessionId); // Notify parent about session ID
+  // Select items without reserving (just for form display)
+  const selectItemsForForm = (group, quantity) => {
+    // Get available items from the group
+    let availableItems = [...group.items];
 
-        // Add selected items to the invoice
-        const newItems = result.selectedItems.map(item => ({
-          id: item.id,
-          itemId: item.id,
-          serialNumber: item.serialNumber,
-          description: `${result.group.category.name} - ${result.group.model.company.name} ${result.group.model.name}`,
-          unitPrice: result.group.samplePrice,
-          specifications: result.group.specifications,
-          condition: result.group.condition,
-          groupKey: `${result.group.modelId}_${result.group.condition}_${JSON.stringify(result.group.specifications || {})}`
-        }));
-
-        const updatedItems = [...selectedItems, ...newItems];
-        onItemsChange(updatedItems);
-        calculateTotal(updatedItems);
-
-        message.success(`Added ${result.selectedItems.length} items to invoice`);
-        setGroupModalVisible(false);
-        refetch(); // Refresh available items
-      },
-      onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to assign items');
-      }
+    if (availableItems.length < quantity) {
+      message.error(`Only ${availableItems.length} items available, requested ${quantity}`);
+      return;
     }
-  );
+
+    // Always use FIFO (First In, First Out) sorting
+    availableItems.sort((a, b) => new Date(a.inboundDate) - new Date(b.inboundDate));
+
+    // Select the required quantity
+    const selectedItemsFromGroup = availableItems.slice(0, quantity);
+
+    // Add selected items to the invoice form (without reservation)
+    const newItems = selectedItemsFromGroup.map(item => ({
+      id: item.id,
+      itemId: item.id,
+      serialNumber: item.serialNumber,
+      description: `${group.category.name} - ${group.model.company.name} ${group.model.name}`,
+      unitPrice: group.samplePrice,
+      specifications: group.specifications,
+      condition: group.condition,
+      groupKey: `${group.modelId}_${group.condition}_${JSON.stringify(group.specifications || {})}`
+    }));
+
+    const updatedItems = [...selectedItems, ...newItems];
+    onItemsChange(updatedItems);
+    calculateTotal(updatedItems);
+
+    message.success(`Added ${selectedItemsFromGroup.length} items to invoice`);
+    setGroupModalVisible(false);
+    // Reset all filters after successful selection
+    setConditionFilter('');
+    setCategoryFilter('');
+    setCompanyFilter('');
+    setModelFilter('');
+    refetch(); // Refresh available items to show updated counts
+  };
 
   // Calculate total when items change
   const calculateTotal = (items) => {
@@ -80,19 +124,12 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
   };
 
   const handleConfirmAdd = () => {
-    const groupKey = `${selectedGroup.modelId}_${selectedGroup.condition}_${JSON.stringify(selectedGroup.specifications || {})}`;
-
-    autoAssignMutation.mutate({
-      groupKey,
-      quantity: quantityToAdd,
-      assignmentPreference
-    });
+    selectItemsForForm(selectedGroup, quantityToAdd);
   };
 
   const handleViewSerialNumbers = (groupKey) => {
-    // Find all items with the same group key
-    const groupItems = selectedItems.filter(item => item.groupKey === groupKey);
-    setSelectedGroup({ items: groupItems, groupKey });
+    // Store only the groupKey - items will be filtered dynamically
+    setSelectedGroup({ groupKey });
     setSerialModalVisible(true);
   };
 
@@ -103,9 +140,20 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
   };
 
   const handlePriceChange = (itemId, newPrice) => {
-    const price = Number(newPrice) || 0;
+    const price = parseInt(newPrice) || 0;
     const updatedItems = selectedItems.map(item =>
       item.itemId === itemId ? { ...item, unitPrice: price } : item
+    );
+    onItemsChange(updatedItems);
+    calculateTotal(updatedItems);
+  };
+
+  const handleGroupPriceChange = (groupItems, newPrice) => {
+    const price = parseInt(newPrice) || 0;
+    const itemIds = groupItems.map(item => item.itemId);
+
+    const updatedItems = selectedItems.map(item =>
+      itemIds.includes(item.itemId) ? { ...item, unitPrice: price } : item
     );
     onItemsChange(updatedItems);
     calculateTotal(updatedItems);
@@ -168,15 +216,12 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
             onChange={(value) => {
               const newPrice = value || 0;
               // Update all items in this group with the same unit price
-              record.items.forEach(item => {
-                handlePriceChange(item.itemId, newPrice);
-              });
+              handleGroupPriceChange(record.items, newPrice);
             }}
             min={0}
-            precision={2}
             prefix="PKR"
             style={{ width: '100%' }}
-            placeholder="0.00"
+            placeholder="0"
           />
         );
       }
@@ -191,7 +236,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
         const quantity = record.items.length;
         const total = unitPrice * quantity;
         return (
-          <Text strong>PKR {total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+          <Text strong>PKR {total.toLocaleString()}</Text>
         );
       }
     },
@@ -255,10 +300,112 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
       <Modal
         title="Select Items"
         open={groupModalVisible}
-        onCancel={() => setGroupModalVisible(false)}
+        onCancel={() => {
+          setGroupModalVisible(false);
+          // Reset all filters when modal closes
+          setConditionFilter('');
+          setCategoryFilter('');
+          setCompanyFilter('');
+          setModelFilter('');
+        }}
         footer={null}
-        width={800}
+        width={1000}
       >
+        <Card
+          size="small"
+          title="Filters"
+          style={{ marginBottom: 16 }}
+          extra={
+            <Button
+              size="small"
+              icon={<ClearOutlined />}
+              onClick={clearAllFilters}
+              type="text"
+            >
+              Clear All
+            </Button>
+          }
+        >
+          <Row gutter={16}>
+            <Col xs={24} sm={12} md={6}>
+              <Text strong>Condition:</Text>
+              <Select
+                value={conditionFilter}
+                onChange={setConditionFilter}
+                style={{ width: '100%', marginTop: 4 }}
+                placeholder="All conditions"
+                allowClear
+              >
+                <Option value="">All Conditions</Option>
+                <Option value="New">New</Option>
+                <Option value="Used">Used</Option>
+                <Option value="Refurbished">Refurbished</Option>
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <Text strong>Category:</Text>
+              <Select
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                style={{ width: '100%', marginTop: 4 }}
+                placeholder="All categories"
+                allowClear
+                showSearch
+                optionFilterProp="children"
+              >
+                <Option value="">All Categories</Option>
+                {categories?.map(category => (
+                  <Option key={category.id} value={category.id}>
+                    {category.name}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <Text strong>Company:</Text>
+              <Select
+                value={companyFilter}
+                onChange={setCompanyFilter}
+                style={{ width: '100%', marginTop: 4 }}
+                placeholder="All companies"
+                allowClear
+                showSearch
+                optionFilterProp="children"
+              >
+                <Option value="">All Companies</Option>
+                {companies?.map(company => (
+                  <Option key={company.id} value={company.id}>
+                    {company.name}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <Text strong>Model:</Text>
+              <Select
+                value={modelFilter}
+                onChange={setModelFilter}
+                style={{ width: '100%', marginTop: 4 }}
+                placeholder="All models"
+                allowClear
+                showSearch
+                optionFilterProp="children"
+                disabled={!companyFilter}
+              >
+                <Option value="">All Models</Option>
+                {models?.map(model => (
+                  <Option key={model.id} value={model.id}>
+                    {model.name}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+          </Row>
+        </Card>
+
         <List
           loading={isLoading}
           dataSource={groupedItems}
@@ -320,7 +467,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
             setSelectedGroup(null);
             setGroupModalVisible(false);
           }}
-          confirmLoading={autoAssignMutation.isLoading}
+          confirmLoading={false}
         >
           <Space direction="vertical" style={{ width: '100%' }} size="large">
             <div>
@@ -340,17 +487,10 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
             </div>
 
             <div>
-              <Text strong>Assignment Preference:</Text>
-              <Radio.Group
-                value={assignmentPreference}
-                onChange={(e) => setAssignmentPreference(e.target.value)}
-                style={{ width: '100%', marginTop: 8 }}
-              >
-                <Radio value="FIFO">First In, First Out (FIFO)</Radio>
-                <Radio value="LIFO">Last In, First Out (LIFO)</Radio>
-                <Radio value="LOWEST_COST">Lowest Cost First</Radio>
-                <Radio value="HIGHEST_COST">Highest Cost First</Radio>
-              </Radio.Group>
+              <Text strong>Assignment Method:</Text>
+              <div style={{ marginTop: 8, padding: 8, backgroundColor: '#f6f6f6', borderRadius: 4 }}>
+                <Text type="secondary">Items will be automatically assigned using FIFO (First In, First Out) method</Text>
+              </div>
             </div>
           </Space>
         </Modal>
@@ -367,9 +507,9 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange, onSe
           </Button>
         ]}
       >
-        {selectedGroup?.items && (
+        {selectedGroup?.groupKey && (
           <List
-            dataSource={selectedGroup.items}
+            dataSource={selectedItems.filter(item => item.groupKey === selectedGroup.groupKey)}
             renderItem={(item) => (
               <List.Item
                 actions={[

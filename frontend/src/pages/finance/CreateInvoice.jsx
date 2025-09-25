@@ -39,7 +39,6 @@ const CreateInvoice = () => {
   const [taxAmount, setTaxAmount] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [total, setTotal] = useState(0);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
 
   // Fetch customers
   const { data: customers, refetch: refetchCustomers } = useQuery('customers', async () => {
@@ -118,16 +117,10 @@ const CreateInvoice = () => {
       return;
     }
 
-    if (!currentSessionId) {
-      message.error('No items reserved. Please select items first.');
-      return;
-    }
-
     const invoiceData = {
       ...values,
       invoiceDate: values.invoiceDate.toISOString(),
       dueDate: values.dueDate.toISOString(),
-      sessionId: currentSessionId,
       subtotal,
       taxAmount,
       total,
@@ -233,7 +226,6 @@ const CreateInvoice = () => {
               selectedItems={selectedItems}
               onItemsChange={handleItemsChange}
               onTotalChange={handleSubtotalChange}
-              onSessionChange={setCurrentSessionId}
             />
           </div>
 
