@@ -69,8 +69,8 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
     }
   );
 
-  // Select items without reserving (just for form display)
-  const selectItemsForForm = (group, quantity) => {
+  // Select items for UI display only (no reservation yet)
+  const selectItemsForDisplay = (group, quantity) => {
     // Get available items from the group
     let availableItems = [...group.items];
 
@@ -82,16 +82,16 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
     // Always use FIFO (First In, First Out) sorting
     availableItems.sort((a, b) => new Date(a.inboundDate) - new Date(b.inboundDate));
 
-    // Select the required quantity
+    // Select the required quantity for UI display
     const selectedItemsFromGroup = availableItems.slice(0, quantity);
 
-    // Add selected items to the invoice form (without reservation)
+    // Add selected items to the invoice form for display only
     const newItems = selectedItemsFromGroup.map(item => ({
       id: item.id,
       itemId: item.id,
       serialNumber: item.serialNumber,
       description: `${group.category.name} - ${group.model.company.name} ${group.model.name}`,
-      unitPrice: group.samplePrice,
+      unitPrice: Number(group.samplePrice) || 0,
       specifications: group.specifications,
       condition: group.condition,
       groupKey: `${group.modelId}_${group.condition}_${JSON.stringify(group.specifications || {})}`
@@ -101,7 +101,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
     onItemsChange(updatedItems);
     calculateTotal(updatedItems);
 
-    message.success(`Added ${selectedItemsFromGroup.length} items to invoice`);
+    message.success(`Added ${selectedItemsFromGroup.length} items to invoice (items will be reserved when you click "Create Invoice")`);
     setGroupModalVisible(false);
     // Reset all filters after successful selection
     setConditionFilter('');
@@ -113,7 +113,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
 
   // Calculate total when items change
   const calculateTotal = (items) => {
-    const total = items.reduce((sum, item) => sum + (item.unitPrice || 0), 0);
+    const total = items.reduce((sum, item) => sum + (Number(item.unitPrice) || 0), 0);
     onTotalChange(total);
   };
 
@@ -124,7 +124,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
   };
 
   const handleConfirmAdd = () => {
-    selectItemsForForm(selectedGroup, quantityToAdd);
+    selectItemsForDisplay(selectedGroup, quantityToAdd);
   };
 
   const handleViewSerialNumbers = (groupKey) => {
@@ -139,8 +139,15 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
     calculateTotal(updatedItems);
   };
 
+  const handleRemoveGroup = (groupItems) => {
+    const itemIds = groupItems.map(item => item.itemId);
+    const updatedItems = selectedItems.filter(item => !itemIds.includes(item.itemId));
+    onItemsChange(updatedItems);
+    calculateTotal(updatedItems);
+  };
+
   const handlePriceChange = (itemId, newPrice) => {
-    const price = parseInt(newPrice) || 0;
+    const price = Number(newPrice) || 0;
     const updatedItems = selectedItems.map(item =>
       item.itemId === itemId ? { ...item, unitPrice: price } : item
     );
@@ -149,7 +156,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
   };
 
   const handleGroupPriceChange = (groupItems, newPrice) => {
-    const price = parseInt(newPrice) || 0;
+    const price = Number(newPrice) || 0;
     const itemIds = groupItems.map(item => item.itemId);
 
     const updatedItems = selectedItems.map(item =>
@@ -209,12 +216,12 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
       width: 120,
       render: (_, record) => {
         // Get unit price from first item (all items in group should have same unit price)
-        const unitPrice = record.items.length > 0 ? (record.items[0].unitPrice || 0) : 0;
+        const unitPrice = record.items.length > 0 ? (Number(record.items[0].unitPrice) || 0) : 0;
         return (
           <InputNumber
             value={unitPrice}
             onChange={(value) => {
-              const newPrice = value || 0;
+              const newPrice = Number(value) || 0;
               // Update all items in this group with the same unit price
               handleGroupPriceChange(record.items, newPrice);
             }}
@@ -232,7 +239,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
       width: 120,
       render: (_, record) => {
         // Total = Unit Price × Quantity
-        const unitPrice = record.items.length > 0 ? (record.items[0].unitPrice || 0) : 0;
+        const unitPrice = record.items.length > 0 ? (Number(record.items[0].unitPrice) || 0) : 0;
         const quantity = record.items.length;
         const total = unitPrice * quantity;
         return (
@@ -258,9 +265,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
               type="text"
               danger
               icon={<DeleteOutlined />}
-              onClick={() => {
-                record.items.forEach(item => handleRemoveItem(item.itemId));
-              }}
+              onClick={() => handleRemoveGroup(record.items)}
             />
           </Tooltip>
         </Space>

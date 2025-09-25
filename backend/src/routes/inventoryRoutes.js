@@ -38,6 +38,7 @@ router.route('/models/:id')
 
 // ============= ITEM RESERVATION SYSTEM =============
 const reservationController = require('../controllers/reservationController');
+const inventoryLifecycleController = require('../controllers/inventoryLifecycleController');
 
 // Grouped item selection routes (must come BEFORE parameterized routes)
 router.get('/items/grouped',
@@ -105,6 +106,67 @@ router.put('/reservations/:sessionId/extend',
 router.delete('/reservations/expired',
   hasPermission(['inventory.admin']),
   reservationController.cleanupExpiredReservations
+);
+
+// ============= INVENTORY LIFECYCLE MANAGEMENT =============
+
+// Inventory lifecycle operations
+router.post('/lifecycle/reserve',
+  hasPermission(['inventory.edit']),
+  inventoryLifecycleController.reserveItemsForInvoice
+);
+
+router.post('/lifecycle/release',
+  hasPermission(['inventory.edit']),
+  inventoryLifecycleController.releaseItemsForInvoice
+);
+
+router.post('/lifecycle/mark-sold',
+  hasPermission(['inventory.edit']),
+  inventoryLifecycleController.markItemsAsSold
+);
+
+router.post('/lifecycle/mark-delivered',
+  hasPermission(['inventory.edit']),
+  inventoryLifecycleController.markItemsAsDelivered
+);
+
+// Invoice lifecycle management
+router.get('/lifecycle/invoice/:invoiceId/status',
+  hasPermission(['inventory.view']),
+  inventoryLifecycleController.getInvoiceLifecycleStatus
+);
+
+router.post('/lifecycle/invoice/:invoiceId/transition',
+  hasPermission(['inventory.admin']),
+  inventoryLifecycleController.forceInvoiceStatusTransition
+);
+
+router.post('/lifecycle/invoice/:invoiceId/fix-inconsistencies',
+  hasPermission(['inventory.admin']),
+  inventoryLifecycleController.fixInventoryInconsistencies
+);
+
+// Status tracking
+router.get('/lifecycle/items/status',
+  hasPermission(['inventory.view']),
+  inventoryLifecycleController.getItemsStatus
+);
+
+router.get('/lifecycle/items/history',
+  hasPermission(['inventory.view']),
+  inventoryLifecycleController.getItemStatusHistory
+);
+
+// Maintenance and dashboard
+router.delete('/lifecycle/cleanup-expired',
+  hasPermission(['inventory.admin']),
+  inventoryLifecycleController.cleanupExpiredReservations
+);
+
+router.get('/lifecycle/dashboard',
+  hasPermission(['inventory.view']),
+  inventoryLifecycleController.getLifecycleDashboard
 );
 
 module.exports = router;

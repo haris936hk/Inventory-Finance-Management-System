@@ -1,11 +1,12 @@
 // ========== src/services/financeService.js ==========
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { 
-  generateInvoiceNumber, 
-  generatePONumber, 
-  generatePaymentNumber 
+const {
+  generateInvoiceNumber,
+  generatePONumber,
+  generatePaymentNumber
 } = require('../utils/generateId');
+const invoiceLifecycleService = require('./invoiceLifecycleService');
 
 class FinanceService {
   /**
@@ -115,13 +116,6 @@ class FinanceService {
       throw error;
     }
 
-    // Validate required sessionId for reservation system
-    if (!invoiceData.sessionId) {
-      const error = new Error('Session ID is required for item reservation');
-      error.status = 400;
-      throw error;
-    }
-
     // Validate customer exists
     const customer = await db.prisma.customer.findUnique({
       where: { id: invoiceData.customerId }
@@ -133,38 +127,65 @@ class FinanceService {
       throw error;
     }
 
-    const reservationService = require('./reservationService');
-
     return await db.transaction(async (prisma) => {
       // Generate invoice number
       const invoiceNumber = await generateInvoiceNumber(prisma);
 
-      // Get all reserved items for this session
-      const reservedItems = await reservationService.getReservationsBySession(invoiceData.sessionId);
+      // Get the item IDs from the invoice data
+      const invoiceItemIds = invoiceData.items.map(item => item.itemId);
 
-      if (reservedItems.length === 0) {
-        const error = new Error('No items found in reservation session');
+      // Validate and reserve all items atomically
+      const items = await prisma.item.findMany({
+        where: {
+          id: { in: invoiceItemIds },
+          deletedAt: null
+        },
+        // Lock items for update to prevent race conditions
+        orderBy: { id: 'asc' } // Consistent ordering to prevent deadlocks
+      });
+
+      // Validate all items exist
+      if (items.length !== invoiceItemIds.length) {
+        const foundIds = items.map(item => item.id);
+        const missingIds = invoiceItemIds.filter(id => !foundIds.includes(id));
+        const error = new Error(`Items not found: ${missingIds.join(', ')}`);
         error.status = 400;
         throw error;
       }
 
-      // Verify all invoice items are reserved in this session
-      const invoiceItemIds = invoiceData.items.map(item => item.itemId);
-      const reservedItemIds = reservedItems.map(r => r.itemId);
-
-      for (const itemId of invoiceItemIds) {
-        if (!reservedItemIds.includes(itemId)) {
-          const error = new Error(`Item ${itemId} is not reserved in this session`);
-          error.status = 400;
-          throw error;
-        }
+      // Check that all items are available for reservation
+      const unavailableItems = items.filter(item => item.inventoryStatus !== 'Available');
+      if (unavailableItems.length > 0) {
+        const unavailableInfo = unavailableItems.map(item => ({
+          serialNumber: item.serialNumber,
+          currentStatus: item.inventoryStatus,
+          reservedFor: item.reservedForId
+        }));
+        const error = new Error(`Items not available for reservation: ${JSON.stringify(unavailableInfo)}`);
+        error.status = 400;
+        throw error;
       }
 
-      // Calculate totals (no quantity - each item is individual)
+      // Reserve all items atomically
+      const reservationPromises = items.map(item =>
+        prisma.item.update({
+          where: { id: item.id },
+          data: {
+            inventoryStatus: 'Reserved',
+            reservedAt: new Date(),
+            reservedBy: userId,
+            reservedForType: 'Invoice',
+            reservedForId: 'TEMP_INVOICE_ID' // Will be updated after invoice creation
+          }
+        })
+      );
+
+      const reservedItems = await Promise.all(reservationPromises);
+
+      // Calculate subtotal - each item must have quantity = 1
       let subtotal = 0;
       const itemsToUpdate = [];
 
-      // Validate items and calculate subtotal - each item must have quantity = 1
       for (const invoiceItem of invoiceData.items) {
         if (invoiceItem.quantity && invoiceItem.quantity !== 1) {
           const error = new Error(`Invalid quantity ${invoiceItem.quantity} for item ${invoiceItem.itemId}. Each item must have quantity = 1`);
@@ -172,14 +193,12 @@ class FinanceService {
           throw error;
         }
 
-        const reservation = reservedItems.find(r => r.itemId === invoiceItem.itemId);
-        if (!reservation) {
-          const error = new Error(`Item ${invoiceItem.itemId} not found in reservation`);
+        const inventoryItem = items.find(item => item.id === invoiceItem.itemId);
+        if (!inventoryItem) {
+          const error = new Error(`Item ${invoiceItem.itemId} not found`);
           error.status = 400;
           throw error;
         }
-
-        const inventoryItem = reservation.item;
 
         // Each line item is exactly 1 unit with its own price
         const lineTotal = invoiceItem.unitPrice;
@@ -187,7 +206,6 @@ class FinanceService {
 
         itemsToUpdate.push({
           item: inventoryItem,
-          newStatus: 'Sold',
           sellingPrice: invoiceItem.unitPrice
         });
       }
@@ -264,26 +282,32 @@ class FinanceService {
         }
       });
 
-      // Update item statuses
-      for (const update of itemsToUpdate) {
-        await prisma.item.update({
-          where: { id: update.item.id },
+      // Update reserved items to point to the actual invoice ID
+      await Promise.all(invoiceItemIds.map(itemId =>
+        prisma.item.update({
+          where: { id: itemId },
           data: {
-            status: 'Sold',
-            sellingPrice: update.sellingPrice,
-            outboundDate: new Date(),
-            statusHistory: [
-              ...(update.item.statusHistory || []),
-              {
-                status: 'Sold',
-                date: new Date(),
-                userId,
-                notes: `Sold via Invoice ${invoiceNumber}`
-              }
-            ]
+            reservedForId: invoice.id,
+            sellingPrice: invoiceData.items.find(item => item.itemId === itemId).unitPrice
           }
-        });
-      }
+        })
+      ));
+
+      // Create inventory status history entries
+      await Promise.all(invoiceItemIds.map(itemId =>
+        prisma.inventoryStatusHistory.create({
+          data: {
+            itemId: itemId,
+            fromStatus: 'Available',
+            toStatus: 'Reserved',
+            changeReason: 'INVOICE_CREATED',
+            referenceType: 'Invoice',
+            referenceId: invoice.id,
+            changedBy: userId,
+            notes: `Reserved for Invoice ${invoiceNumber}`
+          }
+        })
+      ));
 
       // Create customer ledger entry
       await prisma.customerLedger.create({
@@ -348,10 +372,7 @@ class FinanceService {
         });
       }
 
-      // Release reservations after successful invoice creation
-      await reservationService.releaseReservations(invoiceData.sessionId);
-
-      logger.info(`Invoice created: ${invoiceNumber}, reservations released`);
+      logger.info(`Invoice created: ${invoiceNumber}, items reserved atomically`);
       return invoice;
     });
   }
@@ -360,7 +381,16 @@ class FinanceService {
     const where = { deletedAt: null };
 
     if (filters.status) {
-      where.status = filters.status;
+      // Handle multiple status values separated by comma
+      const statuses = Array.isArray(filters.status)
+        ? filters.status
+        : filters.status.split(',').map(s => s.trim());
+
+      if (statuses.length === 1) {
+        where.status = statuses[0];
+      } else {
+        where.status = { in: statuses };
+      }
     }
 
     if (filters.customerId) {
@@ -437,34 +467,53 @@ class FinanceService {
   }
 
   async updateInvoiceStatus(id, status, userId) {
-    const invoice = await db.prisma.invoice.findUnique({
-      where: { id }
-    });
+    return await db.transaction(async (prisma) => {
+      const invoice = await prisma.invoice.findUnique({
+        where: { id }
+      });
 
-    if (!invoice) {
-      throw new Error('Invoice not found');
-    }
-
-    // Check if status transition is valid
-    const validTransitions = {
-      'Draft': ['Sent', 'Cancelled'],
-      'Sent': ['Partial', 'Paid', 'Overdue', 'Cancelled'],
-      'Partial': ['Paid', 'Overdue'],
-      'Overdue': ['Partial', 'Paid'],
-      'Paid': [],
-      'Cancelled': []
-    };
-
-    if (!validTransitions[invoice.status].includes(status)) {
-      throw new Error(`Cannot change status from ${invoice.status} to ${status}`);
-    }
-
-    return await db.prisma.invoice.update({
-      where: { id },
-      data: { 
-        status,
-        voidReason: status === 'Cancelled' ? 'Cancelled by user' : null
+      if (!invoice) {
+        throw new Error('Invoice not found');
       }
+
+      const oldStatus = invoice.status;
+
+      // Check if status transition is valid
+      const validTransitions = {
+        'Draft': ['Sent', 'Cancelled'],
+        'Sent': ['Partial', 'Paid', 'Overdue', 'Cancelled'],
+        'Partial': ['Paid', 'Overdue'],
+        'Overdue': ['Partial', 'Paid'],
+        'Paid': ['Delivered'], // Allow delivered status
+        'Delivered': [], // Terminal state
+        'Cancelled': []
+      };
+
+      if (!validTransitions[oldStatus].includes(status)) {
+        throw new Error(`Cannot change status from ${oldStatus} to ${status}`);
+      }
+
+      // Update invoice status
+      const updatedInvoice = await prisma.invoice.update({
+        where: { id },
+        data: {
+          status,
+          voidReason: status === 'Cancelled' ? 'Cancelled by user' : null,
+          deliveryDate: status === 'Delivered' ? new Date() : undefined
+        }
+      });
+
+      // Handle inventory lifecycle changes
+      try {
+        await invoiceLifecycleService.handleStatusChange(id, oldStatus, status, userId);
+        logger.info(`Invoice ${id} status updated: ${oldStatus} → ${status} with inventory lifecycle handling`);
+      } catch (lifecycleError) {
+        logger.error(`Error in lifecycle handling for Invoice ${id} status change:`, lifecycleError);
+        // Don't fail the status update, but log the error
+        // The inventory can be corrected later using admin endpoints
+      }
+
+      return updatedInvoice;
     });
   }
 
@@ -517,7 +566,8 @@ class FinanceService {
         });
 
         const newPaidAmount = parseFloat(invoice.paidAmount) + paymentData.amount;
-        let newStatus = invoice.status;
+        const oldStatus = invoice.status;
+        let newStatus = oldStatus;
 
         if (newPaidAmount >= invoice.total) {
           newStatus = 'Paid';
@@ -532,6 +582,21 @@ class FinanceService {
             status: newStatus
           }
         });
+
+        // Handle inventory lifecycle changes if status changed to 'Paid'
+        if (oldStatus !== newStatus && newStatus === 'Paid') {
+          try {
+            await invoiceLifecycleService.handleStatusChange(
+              paymentData.invoiceId,
+              oldStatus,
+              newStatus,
+              userId
+            );
+          } catch (lifecycleError) {
+            logger.error(`Error in lifecycle handling for Invoice ${paymentData.invoiceId} payment:`, lifecycleError);
+            // Don't fail the payment, but log the error
+          }
+        }
       }
 
       // Create customer ledger entry

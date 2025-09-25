@@ -39,6 +39,7 @@ model User {
   paymentsRecorded  Payment[] @relation("RecordedByUser")
   inventoryMovements InventoryMovement[] @relation("InventoryMovements")
   itemReservations  ItemReservation[] @relation("ReservedByUser")
+  inventoryStatusChanges InventoryStatusHistory[] @relation("InventoryStatusChanges")
   
   @@index([roleId])
   @@index([deletedAt])
@@ -134,10 +135,18 @@ model Item {
   id             String    @id @default(uuid())
   serialNumber   String    @unique // Mandatory, from box or custom format
   condition      String    @default("New") // "New", "Used"
-  
-  // Status tracking
-  status         String    // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover"
-  statusHistory  Json[]    // Array of {status, date, userId, notes}
+
+  // Enhanced inventory status tracking
+  inventoryStatus String   @default("Available") // "Available", "Reserved", "Sold", "Delivered"
+  status          String   // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover" (physical location)
+  statusHistory   Json[]   // Array of {status, date, userId, notes}
+
+  // Reservation tracking
+  reservedAt      DateTime?
+  reservedBy      String?
+  reservedForType String?   // "Invoice", "Manual"
+  reservedForId   String?   // Invoice ID or other reference
+  reservationExpiry DateTime? // For temporary reservations
   
   // Specifications (hybrid approach - JSON for flexibility)
   specifications Json?     // {voltage: "48V", cells: 16, bms: "Supported", ...}
@@ -180,8 +189,9 @@ model Item {
   // Invoice relationship
   invoiceItems   InvoiceItem[]
 
-  // Inventory movements
+  // Inventory movements and status tracking
   movements      InventoryMovement[]
+  statusTracking InventoryStatusHistory[]
 
   // Reservations
   reservations   ItemReservation[] @relation("ItemReservations")
@@ -196,12 +206,40 @@ model Item {
   deletedAt      DateTime?
   
   @@index([status])
+  @@index([inventoryStatus])
   @@index([categoryId])
   @@index([modelId])
   @@index([vendorId])
   @@index([warehouseId])
   @@index([customerId])
+  @@index([reservedForId])
+  @@index([reservationExpiry])
   @@index([deletedAt])
+}
+
+// Track all inventory status changes for audit trail
+model InventoryStatusHistory {
+  id              String    @id @default(uuid())
+  itemId          String
+  item            Item      @relation(fields: [itemId], references: [id])
+
+  fromStatus      String?
+  toStatus        String
+  changeReason    String    // "INVOICE_CREATED", "INVOICE_CANCELLED", "INVOICE_PAID", "MANUAL", etc.
+  referenceType   String?   // "Invoice", "Manual", etc.
+  referenceId     String?   // Invoice ID, etc.
+
+  changedBy       String
+  changedByUser   User      @relation("InventoryStatusChanges", fields: [changedBy], references: [id])
+  changeDate      DateTime  @default(now())
+  notes           String?
+
+  createdAt       DateTime  @default(now())
+
+  @@index([itemId])
+  @@index([referenceType, referenceId])
+  @@index([changeDate])
+  @@index([toStatus])
 }
 
 model Warehouse {

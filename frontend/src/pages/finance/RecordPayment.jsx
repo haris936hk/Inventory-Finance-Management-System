@@ -34,8 +34,8 @@ const RecordPayment = () => {
     ['customer-invoices', selectedCustomer],
     async () => {
       if (!selectedCustomer) return [];
-      const response = await axios.get(`/finance/invoices?customerId=${selectedCustomer}&status=Unpaid,Partial`);
-      return response.data.data.invoices || [];
+      const response = await axios.get(`/finance/invoices?customerId=${selectedCustomer}&status=Sent,Partial,Overdue`);
+      return response.data.data;
     },
     { enabled: !!selectedCustomer }
   );
@@ -70,8 +70,13 @@ const RecordPayment = () => {
   const handleSubmit = (values) => {
     const paymentData = {
       ...values,
-      paymentDate: values.paymentDate.format('YYYY-MM-DD')
+      paymentDate: values.paymentDate.format('YYYY-MM-DD'),
+      method: values.paymentMethod, // Map paymentMethod to method
+      reference: values.referenceNumber, // Map referenceNumber to reference
     };
+    // Remove the original fields to avoid duplication
+    delete paymentData.paymentMethod;
+    delete paymentData.referenceNumber;
     paymentMutation.mutate(paymentData);
   };
 

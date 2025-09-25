@@ -79,7 +79,7 @@ const CreateInvoice = () => {
 
   const handleItemsChange = (newItems) => {
     setSelectedItems(newItems);
-    setSubtotal(newItems.reduce((sum, item) => sum + (item.unitPrice || 0), 0));
+    // Don't calculate subtotal here - let GroupedItemSelector handle it via onTotalChange
   };
 
   const handleSubtotalChange = (newSubtotal) => {
