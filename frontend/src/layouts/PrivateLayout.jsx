@@ -25,7 +25,8 @@ import {
   CreditCardOutlined,
   BarChartOutlined,
   ImportOutlined,
-  ExportOutlined
+  ExportOutlined,
+  ReconciliationOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 import ImportModal from '../components/ImportModal';
@@ -125,6 +126,21 @@ const PrivateLayout = () => {
             key: '/app/finance/payments',
             icon: <CreditCardOutlined />,
             label: 'Payments',
+          },
+          {
+            key: '/app/finance/purchase-orders',
+            icon: <ReconciliationOutlined />,
+            label: 'Purchase Orders',
+          },
+          {
+            key: '/app/finance/vendor-bills',
+            icon: <FileTextOutlined />,
+            label: 'Vendor Bills',
+          },
+          {
+            key: '/app/finance/vendor-payments',
+            icon: <DollarOutlined />,
+            label: 'Vendor Payments',
           },
         ],
       });

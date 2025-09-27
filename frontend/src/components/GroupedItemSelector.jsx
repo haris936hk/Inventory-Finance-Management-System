@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation } from 'react-query';
 import axios from 'axios';
+import { formatPKR } from '../config/constants';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -243,7 +244,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
         const quantity = record.items.length;
         const total = unitPrice * quantity;
         return (
-          <Text strong>PKR {total.toLocaleString()}</Text>
+          <Text strong>{formatPKR(total)}</Text>
         );
       }
     },
@@ -452,7 +453,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
                       </div>
                     )}
                     <div style={{ marginTop: 4 }}>
-                      <Text strong>PKR {group.samplePrice.toLocaleString()}</Text>
+                      <Text strong>{formatPKR(group.samplePrice)}</Text>
                     </div>
                   </div>
                 }
@@ -530,7 +531,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
               >
                 <List.Item.Meta
                   title={<Text code>{item.serialNumber}</Text>}
-                  description={`PKR ${item.unitPrice?.toLocaleString()}`}
+                  description={formatPKR(item.unitPrice)}
                 />
               </List.Item>
             )}

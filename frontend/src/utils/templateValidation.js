@@ -2,20 +2,6 @@
 
 // Supported field types and their configurations
 export const FIELD_TYPES = {
-  text: {
-    label: 'Text',
-    icon: '📝',
-    description: 'Single line text input',
-    supportedValidations: ['required', 'minLength', 'maxLength', 'pattern'],
-    defaultConfig: {
-      type: 'text',
-      required: false,
-      validation: {
-        minLength: 1,
-        maxLength: 255
-      }
-    }
-  },
   number: {
     label: 'Number',
     icon: '🔢',
@@ -50,16 +36,6 @@ export const FIELD_TYPES = {
       type: 'boolean',
       required: false,
       defaultValue: false
-    }
-  },
-  date: {
-    label: 'Date',
-    icon: '📅',
-    description: 'Date picker input',
-    supportedValidations: ['required'],
-    defaultConfig: {
-      type: 'date',
-      required: false
     }
   }
 };
@@ -177,24 +153,6 @@ export const validateNumberValidation = (validation) => {
   return errors;
 };
 
-export const validateTextValidation = (validation) => {
-  const errors = [];
-  const { minLength, maxLength, pattern } = validation || {};
-
-  if (minLength !== undefined && maxLength !== undefined && minLength >= maxLength) {
-    errors.push('Minimum length must be less than maximum length');
-  }
-
-  if (pattern) {
-    try {
-      new RegExp(pattern);
-    } catch (e) {
-      errors.push('Invalid regular expression pattern');
-    }
-  }
-
-  return errors;
-};
 
 export const validateField = (field, existingFields = []) => {
   const errors = [];
@@ -217,11 +175,6 @@ export const validateField = (field, existingFields = []) => {
     case 'number':
       const numberErrors = validateNumberValidation(field.validation);
       errors.push(...numberErrors);
-      break;
-
-    case 'text':
-      const textErrors = validateTextValidation(field.validation);
-      errors.push(...textErrors);
       break;
   }
 
@@ -280,10 +233,10 @@ export const generateFieldName = (label) => {
 };
 
 export const getFieldTypeInfo = (type) => {
-  return FIELD_TYPES[type] || FIELD_TYPES.text;
+  return FIELD_TYPES[type] || FIELD_TYPES.select;
 };
 
-export const createEmptyField = (type = 'text') => {
+export const createEmptyField = (type = 'number') => {
   const typeInfo = getFieldTypeInfo(type);
   return {
     ...typeInfo.defaultConfig,
@@ -325,12 +278,6 @@ export const sanitizeTemplate = (template) => {
       }
     }
 
-    if (field.type === 'text' && field.validation) {
-      sanitized[fieldName].validation = {};
-      if (field.validation.minLength !== undefined) sanitized[fieldName].validation.minLength = Number(field.validation.minLength);
-      if (field.validation.maxLength !== undefined) sanitized[fieldName].validation.maxLength = Number(field.validation.maxLength);
-      if (field.validation.pattern) sanitized[fieldName].validation.pattern = field.validation.pattern;
-    }
 
     if (field.defaultValue !== undefined) {
       sanitized[fieldName].defaultValue = field.defaultValue;

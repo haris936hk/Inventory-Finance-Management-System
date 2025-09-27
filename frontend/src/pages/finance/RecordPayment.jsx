@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { formatPKR } from '../../config/constants';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -96,20 +97,20 @@ const RecordPayment = () => {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      render: (amount) => `PKR ${amount?.toLocaleString()}`
+      render: (amount) => formatPKR(amount)
     },
     {
       title: 'Paid',
       dataIndex: 'paidAmount',
       key: 'paidAmount',
-      render: (amount) => `PKR ${amount?.toLocaleString() || '0'}`
+      render: (amount) => formatPKR(amount || 0)
     },
     {
       title: 'Balance',
       key: 'balance',
       render: (_, record) => (
         <Text strong style={{ color: '#f5222d' }}>
-          PKR {((record.total || 0) - (record.paidAmount || 0)).toLocaleString()}
+          formatPKR((record.total || 0) - (record.paidAmount || 0))
         </Text>
       )
     },
@@ -189,8 +190,8 @@ const RecordPayment = () => {
                   >
                     {customerInvoices?.map(invoice => (
                       <Select.Option key={invoice.id} value={invoice.id}>
-                        {invoice.invoiceNumber} - PKR {invoice.total?.toLocaleString()}
-                        (Balance: PKR {((invoice.total || 0) - (invoice.paidAmount || 0)).toLocaleString()})
+                        {invoice.invoiceNumber} - {formatPKR(invoice.total)}
+                        (Balance: {formatPKR((invoice.total || 0) - (invoice.paidAmount || 0))})
                       </Select.Option>
                     ))}
                   </Select>

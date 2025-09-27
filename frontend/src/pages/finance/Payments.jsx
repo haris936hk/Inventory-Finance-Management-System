@@ -12,6 +12,7 @@ import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { formatPKR } from '../../config/constants';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
@@ -94,7 +95,7 @@ const Payments = () => {
       key: 'amount',
       render: (amount) => (
         <Text strong style={{ color: '#52c41a' }}>
-          PKR {amount?.toLocaleString()}
+          formatPKR(amount)
         </Text>
       ),
       sorter: (a, b) => a.amount - b.amount

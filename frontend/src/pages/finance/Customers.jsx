@@ -10,6 +10,9 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import LedgerView from '../../components/LedgerView';
+import CustomerStatement from '../../components/CustomerStatement';
+import { formatPKR } from '../../config/constants';
 
 const { Search } = Input;
 const { TextArea } = Input;
@@ -121,7 +124,7 @@ const Customers = () => {
         const amount = parseFloat(balance);
         return (
           <Tag color={amount > 0 ? 'red' : 'green'}>
-            PKR {amount.toLocaleString()}
+            {formatPKR(amount)}
           </Tag>
         );
       }
@@ -130,7 +133,7 @@ const Customers = () => {
       title: 'Credit Limit',
       dataIndex: 'creditLimit',
       key: 'creditLimit',
-      render: (limit) => limit > 0 ? `PKR ${parseFloat(limit).toLocaleString()}` : 'No Limit'
+      render: (limit) => limit > 0 ? formatPKR(parseFloat(limit)) : 'No Limit'
     },
     {
       title: 'Invoices',
@@ -291,8 +294,8 @@ const Customers = () => {
                 <Descriptions.Item label="NIC">{selectedCustomer.nic || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Address">{selectedCustomer.address || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Credit Limit">
-                  {selectedCustomer.creditLimit > 0 
-                    ? `PKR ${parseFloat(selectedCustomer.creditLimit).toLocaleString()}`
+                  {selectedCustomer.creditLimit > 0
+                    ? formatPKR(parseFloat(selectedCustomer.creditLimit))
                     : 'No Limit'}
                 </Descriptions.Item>
               </Descriptions>
@@ -342,11 +345,11 @@ const Customers = () => {
                     key: 'invoiceDate',
                     render: (date) => new Date(date).toLocaleDateString()
                   },
-                  { 
-                    title: 'Total', 
-                    dataIndex: 'total', 
+                  {
+                    title: 'Total',
+                    dataIndex: 'total',
                     key: 'total',
-                    render: (amount) => `PKR ${parseFloat(amount).toLocaleString()}`
+                    render: (amount) => formatPKR(parseFloat(amount))
                   },
                   {
                     title: 'Status',
@@ -372,22 +375,34 @@ const Customers = () => {
                 dataSource={selectedCustomer.payments}
                 columns={[
                   { title: 'Payment #', dataIndex: 'paymentNumber', key: 'paymentNumber' },
-                  { 
-                    title: 'Date', 
-                    dataIndex: 'paymentDate', 
+                  {
+                    title: 'Date',
+                    dataIndex: 'paymentDate',
                     key: 'paymentDate',
                     render: (date) => new Date(date).toLocaleDateString()
                   },
-                  { 
-                    title: 'Amount', 
-                    dataIndex: 'amount', 
+                  {
+                    title: 'Amount',
+                    dataIndex: 'amount',
                     key: 'amount',
-                    render: (amount) => `PKR ${parseFloat(amount).toLocaleString()}`
+                    render: (amount) => formatPKR(parseFloat(amount))
                   },
                   { title: 'Method', dataIndex: 'method', key: 'method' }
                 ]}
                 pagination={false}
               />
+            </Tabs.TabPane>
+
+            <Tabs.TabPane tab="Ledger" key="4">
+              <LedgerView
+                entityId={selectedCustomer.id}
+                entityType="customer"
+                title="Customer Ledger"
+              />
+            </Tabs.TabPane>
+
+            <Tabs.TabPane tab="Statement" key="5">
+              <CustomerStatement customerId={selectedCustomer.id} />
             </Tabs.TabPane>
           </Tabs>
         )}

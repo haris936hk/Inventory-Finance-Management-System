@@ -934,6 +934,108 @@ class FinanceService {
 
     return ledgerEntries;
   }
+
+  async getVendorLedger(vendorId) {
+    const vendor = await db.prisma.vendor.findUnique({
+      where: { id: vendorId }
+    });
+
+    if (!vendor) {
+      const error = new Error('Vendor not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Get all financial transactions for this vendor
+    const ledgerEntries = [];
+
+    // Get purchase orders
+    const purchaseOrders = await db.prisma.purchaseOrder.findMany({
+      where: {
+        vendorId,
+        deletedAt: null
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    for (const po of purchaseOrders) {
+      ledgerEntries.push({
+        date: po.createdAt,
+        type: 'Purchase Order',
+        reference: po.poNumber,
+        description: `Purchase Order ${po.poNumber}`,
+        amount: po.total,
+        balance: 0 // Will be calculated below
+      });
+    }
+
+    // Get vendor bills
+    const bills = await db.prisma.bill.findMany({
+      where: {
+        vendorId,
+        deletedAt: null
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    for (const bill of bills) {
+      ledgerEntries.push({
+        date: bill.createdAt,
+        type: 'Bill',
+        reference: bill.billNumber,
+        description: `Bill ${bill.billNumber}`,
+        amount: bill.total,
+        balance: 0 // Will be calculated below
+      });
+    }
+
+    // Get vendor payments
+    const payments = await db.prisma.vendorPayment.findMany({
+      where: {
+        vendorId,
+        deletedAt: null
+      },
+      orderBy: { paymentDate: 'asc' }
+    });
+
+    for (const payment of payments) {
+      ledgerEntries.push({
+        date: payment.paymentDate,
+        type: 'Payment',
+        reference: payment.paymentNumber,
+        description: `Payment ${payment.method}`,
+        amount: -payment.amount, // Negative for payments (reduces what we owe)
+        balance: 0 // Will be calculated below
+      });
+    }
+
+    // Sort by date and calculate running balance
+    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let runningBalance = vendor.openingBalance || 0;
+
+    // Add opening balance entry if it exists
+    if (vendor.openingBalance && vendor.openingBalance !== 0) {
+      ledgerEntries.unshift({
+        date: vendor.createdAt,
+        type: 'Opening Balance',
+        reference: 'OB',
+        description: 'Opening Balance',
+        amount: vendor.openingBalance,
+        balance: vendor.openingBalance
+      });
+    }
+
+    // Calculate running balance for each entry
+    for (const entry of ledgerEntries) {
+      if (entry.type !== 'Opening Balance') {
+        runningBalance += entry.amount;
+      }
+      entry.balance = runningBalance;
+    }
+
+    return ledgerEntries;
+  }
 }
 
 module.exports = new FinanceService();

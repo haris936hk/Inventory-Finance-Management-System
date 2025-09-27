@@ -31,6 +31,12 @@ import CreateInvoice from './pages/finance/CreateInvoice';
 import InvoiceDetails from './pages/finance/InvoiceDetails';
 import Payments from './pages/finance/Payments';
 import RecordPayment from './pages/finance/RecordPayment';
+import PurchaseOrders from './pages/finance/PurchaseOrders';
+import PurchaseOrderDetails from './pages/finance/PurchaseOrderDetails';
+import VendorBills from './pages/finance/VendorBills';
+import VendorBillDetails from './pages/finance/VendorBillDetails';
+import VendorPayments from './pages/finance/VendorPayments';
+import RecordVendorPayment from './pages/finance/RecordVendorPayment';
 
 // Reports
 import Reports from './pages/reports/Reports';
@@ -144,6 +150,12 @@ function App() {
                 <Route path="invoices/:id" element={<InvoiceDetails />} />
                 <Route path="payments" element={<Payments />} />
                 <Route path="payments/record" element={<RecordPayment />} />
+                <Route path="purchase-orders" element={<PurchaseOrders />} />
+                <Route path="purchase-orders/:id" element={<PurchaseOrderDetails />} />
+                <Route path="vendor-bills" element={<VendorBills />} />
+                <Route path="vendor-bills/:id" element={<VendorBillDetails />} />
+                <Route path="vendor-payments" element={<VendorPayments />} />
+                <Route path="vendor-payments/record" element={<RecordVendorPayment />} />
               </Route>
 
               {/* Reports */}

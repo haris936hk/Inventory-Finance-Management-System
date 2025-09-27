@@ -32,7 +32,27 @@ const SYSTEM_INFO = {
   TIMEZONE: SYSTEM_CONFIG.TIMEZONE.NAME
 };
 
+// Currency formatting helper
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
+    style: 'currency',
+    currency: SYSTEM_CONFIG.CURRENCY.CODE,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount || 0);
+};
+
+// Number formatting helper
+const formatNumber = (number) => {
+  return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(number || 0);
+};
+
 module.exports = {
   SYSTEM_CONFIG,
-  SYSTEM_INFO
+  SYSTEM_INFO,
+  formatCurrency,
+  formatNumber
 };

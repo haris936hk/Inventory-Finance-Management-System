@@ -27,7 +27,7 @@ const FieldConfigurationModal = ({
   mode = 'create' // 'create' or 'edit'
 }) => {
   const [form] = Form.useForm();
-  const [fieldType, setFieldType] = useState('text');
+  const [fieldType, setFieldType] = useState('number');
   const [options, setOptions] = useState(['']);
   const [newOption, setNewOption] = useState('');
   const [validationErrors, setValidationErrors] = useState([]);
@@ -139,13 +139,10 @@ const FieldConfigurationModal = ({
         ...values,
         type: fieldType,
         options: fieldType === 'select' ? options.filter(opt => opt.trim()) : undefined,
-        validation: fieldType === 'number' || fieldType === 'text' ? {
+        validation: fieldType === 'number' ? {
           ...(values.min !== undefined && { min: values.min }),
           ...(values.max !== undefined && { max: values.max }),
-          ...(values.decimals !== undefined && { decimals: values.decimals }),
-          ...(values.minLength !== undefined && { minLength: values.minLength }),
-          ...(values.maxLength !== undefined && { maxLength: values.maxLength }),
-          ...(values.pattern && { pattern: values.pattern })
+          ...(values.decimals !== undefined && { decimals: values.decimals })
         } : undefined
       };
 
@@ -159,15 +156,6 @@ const FieldConfigurationModal = ({
     const typeInfo = getFieldTypeInfo(fieldType);
 
     switch (fieldType) {
-      case 'text':
-        return (
-          <Input
-            placeholder={currentFieldData.placeholder || `Enter ${currentFieldData.label || 'value'}`}
-            value={previewValue}
-            onChange={(e) => setPreviewValue(e.target.value)}
-          />
-        );
-
       case 'number':
         return (
           <InputNumber
@@ -204,15 +192,6 @@ const FieldConfigurationModal = ({
             onChange={setPreviewValue}
             checkedChildren="Yes"
             unCheckedChildren="No"
-          />
-        );
-
-      case 'date':
-        return (
-          <Input
-            type="date"
-            value={previewValue}
-            onChange={(e) => setPreviewValue(e.target.value)}
           />
         );
 
@@ -421,26 +400,6 @@ const FieldConfigurationModal = ({
               </Card>
             )}
 
-            {fieldType === 'text' && (
-              <Card size="small" title="Text Validation" style={{ marginBottom: 16 }}>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item label="Min Length" name="minLength">
-                      <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item label="Max Length" name="maxLength">
-                      <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                </Row>
-
-                <Form.Item label="Pattern (RegEx)" name="pattern">
-                  <Input placeholder="^[A-Z0-9]+$ (optional)" />
-                </Form.Item>
-              </Card>
-            )}
           </Form>
         </Col>
 

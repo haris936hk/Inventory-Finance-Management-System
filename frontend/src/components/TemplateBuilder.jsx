@@ -74,10 +74,10 @@ const TEMPLATE_PRESETS = {
         order: 1
       },
       gauge: {
-        type: 'text',
+        type: 'select',
         label: 'Wire Gauge',
         required: true,
-        placeholder: 'e.g., 12 AWG',
+        options: ['12 AWG', '14 AWG', '16 AWG', '18 AWG', '20 AWG'],
         order: 2
       },
       connectorType: {
@@ -101,17 +101,17 @@ const TEMPLATE_PRESETS = {
     description: 'Common specifications for electronic modules',
     template: {
       inputVoltage: {
-        type: 'text',
+        type: 'select',
         label: 'Input Voltage Range',
         required: true,
-        placeholder: 'e.g., 36-72V DC',
+        options: ['12V DC', '24V DC', '36-72V DC', '48V DC', '110-240V AC'],
         order: 1
       },
       outputVoltage: {
-        type: 'text',
+        type: 'select',
         label: 'Output Voltage',
         required: true,
-        placeholder: 'e.g., 48V DC',
+        options: ['12V DC', '24V DC', '48V DC', '54.4V DC'],
         order: 2
       },
       powerRating: {
@@ -674,18 +674,6 @@ const TemplatePreview = ({ template }) => {
     const value = previewData[field.fieldName];
 
     switch (field.type) {
-      case 'text':
-        return (
-          <Input
-            placeholder={field.placeholder || `Enter ${field.label}`}
-            value={value || ''}
-            onChange={(e) => setPreviewData(prev => ({
-              ...prev,
-              [field.fieldName]: e.target.value
-            }))}
-          />
-        );
-
       case 'number':
         return (
           <InputNumber
@@ -730,18 +718,6 @@ const TemplatePreview = ({ template }) => {
             }))}
             checkedChildren="Yes"
             unCheckedChildren="No"
-          />
-        );
-
-      case 'date':
-        return (
-          <Input
-            type="date"
-            value={value || ''}
-            onChange={(e) => setPreviewData(prev => ({
-              ...prev,
-              [field.fieldName]: e.target.value
-            }))}
           />
         );
 

@@ -9,6 +9,7 @@ import {
 import { useQuery } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { formatCurrency } from '../../config/constants';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -48,13 +49,6 @@ const ProfitLossStatement = () => {
     }
   };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-PK', {
-      style: 'currency',
-      currency: 'PKR',
-      minimumFractionDigits: 0
-    }).format(amount || 0);
-  };
 
   const renderSummaryCards = () => {
     if (!plData || !plData.summary) return null;

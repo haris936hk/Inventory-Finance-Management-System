@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
+import { formatPKR } from '../../config/constants';
 import UpdateStatusModal from '../../components/UpdateStatusModal';
 
 const { Title, Text } = Typography;
@@ -243,10 +244,10 @@ const ItemDetails = () => {
                   </Descriptions.Item>
 
                   <Descriptions.Item label="Purchase Price">
-                    PKR {item.purchasePrice?.toLocaleString() || 'N/A'}
+                    {item.purchasePrice ? formatPKR(item.purchasePrice) : 'N/A'}
                   </Descriptions.Item>
                   <Descriptions.Item label="Sale Price">
-                    PKR {item.salePrice?.toLocaleString() || 'N/A'}
+                    {item.salePrice ? formatPKR(item.salePrice) : 'N/A'}
                   </Descriptions.Item>
 
                   <Descriptions.Item label="Purchase Date">
@@ -362,7 +363,7 @@ const ItemDetails = () => {
               <div style={{ marginTop: 16 }}>
                 <Text strong>Profit Margin: </Text>
                 <Text style={{ color: '#52c41a' }}>
-                  PKR {(item.salePrice - item.purchasePrice).toLocaleString()}
+                  {formatPKR(item.salePrice - item.purchasePrice)}
                   ({(((item.salePrice - item.purchasePrice) / item.purchasePrice) * 100).toFixed(1)}%)
                 </Text>
               </div>

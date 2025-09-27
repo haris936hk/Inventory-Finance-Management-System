@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
+import { formatPKR } from '../../config/constants';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -160,7 +161,7 @@ const InvoiceDetails = () => {
       key: 'unitPrice',
       width: 120,
       align: 'right',
-      render: (amount) => `PKR ${amount?.toLocaleString()}`
+      render: (amount) => formatPKR(amount)
     },
     {
       title: 'Amount',
@@ -169,7 +170,7 @@ const InvoiceDetails = () => {
       width: 120,
       align: 'right',
       render: (amount) => (
-        <Text strong>PKR {amount?.toLocaleString()}</Text>
+        <Text strong>{formatPKR(amount)}</Text>
       )
     }
   ];
@@ -185,7 +186,7 @@ const InvoiceDetails = () => {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount) => `PKR ${amount?.toLocaleString()}`
+      render: (amount) => formatPKR(amount)
     },
     {
       title: 'Method',
@@ -377,19 +378,19 @@ const InvoiceDetails = () => {
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ marginBottom: 8 }}>
                         <Text>Subtotal: </Text>
-                        <Text strong>PKR {invoice.subtotal?.toLocaleString()}</Text>
+                        <Text strong>{formatPKR(invoice.subtotal)}</Text>
                       </div>
                       {invoice.taxAmount > 0 && (
                         <div style={{ marginBottom: 8 }}>
                           <Text>Tax ({invoice.taxRate}%): </Text>
-                          <Text strong>PKR {invoice.taxAmount?.toLocaleString()}</Text>
+                          <Text strong>{formatPKR(invoice.taxAmount)}</Text>
                         </div>
                       )}
                       {invoice.discountAmount > 0 && (
                         <div style={{ marginBottom: 8 }}>
                           <Text>Discount: </Text>
                           <Text strong style={{ color: '#52c41a' }}>
-                            -PKR {invoice.discountAmount?.toLocaleString()}
+                            -{formatPKR(invoice.discountAmount)}
                           </Text>
                         </div>
                       )}
@@ -397,7 +398,7 @@ const InvoiceDetails = () => {
                       <div>
                         <Text style={{ fontSize: '16px' }}>Total: </Text>
                         <Text strong style={{ fontSize: '18px' }}>
-                          PKR {invoice.total?.toLocaleString()}
+                          {formatPKR(invoice.total)}
                         </Text>
                       </div>
                     </div>

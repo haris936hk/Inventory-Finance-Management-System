@@ -13,6 +13,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
+import { formatPKR } from '../../config/constants';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -137,7 +138,7 @@ const Invoices = () => {
       dataIndex: 'total',
       key: 'total',
       width: 120,
-      render: (amount) => `PKR ${parseFloat(amount).toLocaleString()}`,
+      render: (amount) => formatPKR(parseFloat(amount)),
       sorter: (a, b) => a.total - b.total
     },
     {
@@ -145,7 +146,7 @@ const Invoices = () => {
       dataIndex: 'paidAmount',
       key: 'paidAmount',
       width: 120,
-      render: (amount) => `PKR ${parseFloat(amount).toLocaleString()}`
+      render: (amount) => formatPKR(parseFloat(amount))
     },
     {
       title: 'Balance',
@@ -155,7 +156,7 @@ const Invoices = () => {
         const balance = parseFloat(record.total) - parseFloat(record.paidAmount);
         return (
           <span style={{ color: balance > 0 ? '#ff4d4f' : '#52c41a' }}>
-            PKR {balance.toLocaleString()}
+            formatPKR(balance)
           </span>
         );
       }

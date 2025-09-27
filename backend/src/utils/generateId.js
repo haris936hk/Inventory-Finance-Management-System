@@ -82,6 +82,33 @@ const generatePONumber = async (prismaInstance = null) => {
   return `PO-${year}-${nextNumber.toString().padStart(5, '0')}`;
 };
 
+const generateBillNumber = async (prismaInstance = null) => {
+  const db = require('../config/database');
+  const prisma = prismaInstance || db.prisma;
+  const year = new Date().getFullYear();
+  const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
+
+  const lastBill = await prisma.bill.findFirst({
+    where: {
+      billNumber: {
+        startsWith: `BILL-${year}${month}-`
+      }
+    },
+    orderBy: {
+      billNumber: 'desc'
+    }
+  });
+
+  let nextNumber = 1;
+
+  if (lastBill) {
+    const lastNumber = parseInt(lastBill.billNumber.split('-').pop());
+    nextNumber = lastNumber + 1;
+  }
+
+  return `BILL-${year}${month}-${nextNumber.toString().padStart(4, '0')}`;
+};
+
 const generatePaymentNumber = async (type = 'PAY', prismaInstance = null) => {
   const db = require('../config/database');
   const prisma = prismaInstance || db.prisma;
@@ -115,5 +142,6 @@ module.exports = {
   generateSerialNumber,
   generateInvoiceNumber,
   generatePONumber,
+  generateBillNumber,
   generatePaymentNumber
 };
