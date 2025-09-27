@@ -68,7 +68,17 @@ const InventoryList = () => {
     }
   );
 
-  const getStatusColor = (status) => {
+  const getInventoryStatusColor = (status) => {
+    const colors = {
+      'Available': 'success',
+      'Reserved': 'warning',
+      'Sold': 'processing',
+      'Delivered': 'success'
+    };
+    return colors[status] || 'default';
+  };
+
+  const getPhysicalStatusColor = (status) => {
     const colors = {
       'In Store': 'green',
       'In Hand': 'blue',
@@ -117,10 +127,28 @@ const InventoryList = () => {
       width: 150,
     },
     {
-      title: 'Status',
+      title: 'Inventory Status',
+      dataIndex: 'inventoryStatus',
+      key: 'inventoryStatus',
+      width: 130,
+      filters: [
+        { text: 'Available', value: 'Available' },
+        { text: 'Reserved', value: 'Reserved' },
+        { text: 'Sold', value: 'Sold' },
+        { text: 'Delivered', value: 'Delivered' },
+      ],
+      onFilter: (value, record) => (record.inventoryStatus || 'Available') === value,
+      render: (status) => (
+        <Tag color={getInventoryStatusColor(status || 'Available')}>
+          {status || 'Available'}
+        </Tag>
+      )
+    },
+    {
+      title: 'Physical Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 120,
       filters: [
         { text: 'In Store', value: 'In Store' },
         { text: 'In Hand', value: 'In Hand' },
@@ -131,7 +159,7 @@ const InventoryList = () => {
       ],
       onFilter: (value, record) => record.status === value,
       render: (status) => (
-        <Tag color={getStatusColor(status)}>{status}</Tag>
+        <Tag color={getPhysicalStatusColor(status)}>{status}</Tag>
       )
     },
     {
@@ -157,7 +185,17 @@ const InventoryList = () => {
       key: 'customer',
       width: 150,
       render: (customer, record) => {
-        if (!customer) return '-';
+        if (!customer) {
+          // Show reservation info if available
+          if (record.reservedBy || record.reservedForType) {
+            return (
+              <Tooltip title={`Reserved ${record.reservedForType ? 'for ' + record.reservedForType : ''}`}>
+                <Tag color="orange" size="small">Reserved</Tag>
+              </Tooltip>
+            );
+          }
+          return '-';
+        }
         return (
           <Tooltip title={`${customer.phone || ''} ${customer.company || ''}`}>
             {customer.name}
@@ -206,6 +244,9 @@ const InventoryList = () => {
       fixed: 'right',
       width: 120,
       render: (_, record) => {
+        const isAvailable = (record.inventoryStatus || 'Available') === 'Available';
+        const isSold = (record.inventoryStatus === 'Sold' || record.inventoryStatus === 'Delivered');
+
         const menuItems = [
           {
             key: 'view',
@@ -241,14 +282,33 @@ const InventoryList = () => {
             icon: <DeleteOutlined />,
             danger: true,
             onClick: () => handleDelete(record),
-            disabled: !hasPermission('inventory.delete')
+            disabled: !hasPermission('inventory.delete') || isSold
           }
         ];
 
         return (
-          <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button type="text" icon={<MoreOutlined />} />
-          </Dropdown>
+          <Space size="small">
+            <Button
+              type="link"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/app/inventory/items/${record.serialNumber}`)}
+            />
+            {hasPermission('inventory.edit') && (
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => {
+                  setSelectedItem(record);
+                  setStatusModalVisible(true);
+                }}
+              />
+            )}
+            <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+              <Button type="text" size="small" icon={<MoreOutlined />} />
+            </Dropdown>
+          </Space>
         );
       }
     }
@@ -426,8 +486,13 @@ const InventoryList = () => {
               <Descriptions.Item label="Model">
                 {selectedItem.model?.name}
               </Descriptions.Item>
-              <Descriptions.Item label="Status">
-                <Tag color={getStatusColor(selectedItem.status)}>
+              <Descriptions.Item label="Inventory Status">
+                <Tag color={getInventoryStatusColor(selectedItem.inventoryStatus || 'Available')}>
+                  {selectedItem.inventoryStatus || 'Available'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Physical Status">
+                <Tag color={getPhysicalStatusColor(selectedItem.status)}>
                   {selectedItem.status}
                 </Tag>
               </Descriptions.Item>

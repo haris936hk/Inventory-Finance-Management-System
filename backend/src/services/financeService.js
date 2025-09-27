@@ -547,7 +547,7 @@ class FinanceService {
       const payment = await prisma.payment.create({
         data: {
           paymentNumber,
-          paymentDate: paymentData.paymentDate || new Date(),
+          paymentDate: paymentData.paymentDate ? new Date(paymentData.paymentDate) : new Date(),
           amount: paymentData.amount,
           method: paymentData.method,
           reference: paymentData.reference,
@@ -565,7 +565,7 @@ class FinanceService {
           where: { id: paymentData.invoiceId }
         });
 
-        const newPaidAmount = parseFloat(invoice.paidAmount) + paymentData.amount;
+        const newPaidAmount = parseFloat(invoice.paidAmount) + parseFloat(paymentData.amount);
         const oldStatus = invoice.status;
         let newStatus = oldStatus;
 

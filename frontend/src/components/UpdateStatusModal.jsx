@@ -1,14 +1,17 @@
 // ========== src/components/UpdateStatusModal.jsx ==========
-import React from 'react';
-import { Modal, Form, Select, Input, DatePicker, message } from 'antd';
+import React, { useState } from 'react';
+import { Modal, Form, Select, Input, message, Row, Col, Card, Alert, Button, Typography } from 'antd';
 import { useMutation } from 'react-query';
 import axios from 'axios';
-import dayjs from 'dayjs';
+import { InfoCircleOutlined, TruckOutlined } from '@ant-design/icons';
+import DeliveryProcessModal from './DeliveryProcessModal';
 
 const { TextArea } = Input;
+const { Text, Title } = Typography;
 
 const UpdateStatusModal = ({ visible, item, onClose, onSuccess }) => {
   const [form] = Form.useForm();
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
 
   const updateMutation = useMutation(
     (data) => axios.put(`/inventory/items/${item?.serialNumber}/status`, data),
@@ -24,21 +27,41 @@ const UpdateStatusModal = ({ visible, item, onClose, onSuccess }) => {
     }
   );
 
-  const handleStatusChange = (status) => {
-    // Show/hide fields based on status
-    form.resetFields(['clientName', 'clientPhone', 'clientCompany', 'clientNIC',
-                      'clientEmail', 'clientAddress', 'handoverTo', 'handoverDetails', 'customerId']);
+  const getInventoryStatusInfo = () => {
+    const status = item?.inventoryStatus || 'Available';
+    const info = {
+      'Available': { color: 'green', description: 'Item is available for sale', automated: false },
+      'Reserved': { color: 'orange', description: 'Reserved via invoice creation', automated: true },
+      'Sold': { color: 'blue', description: 'Sold via invoice processing', automated: true },
+      'Delivered': { color: 'cyan', description: 'Delivered to customer', automated: true }
+    };
+    return info[status] || info['Available'];
+  };
+
+  const canChangeInventoryStatus = () => {
+    // Only allow manual override in specific cases
+    const currentStatus = item?.inventoryStatus || 'Available';
+    return currentStatus === 'Available'; // Only Available items can be manually reserved
   };
 
   const onFinish = (values) => {
-    if (values.outboundDate) {
-      values.outboundDate = values.outboundDate.toISOString();
-    }
-    if (values.handoverDate) {
-      values.handoverDate = values.handoverDate.toISOString();
+    // Only send fields that should be updated
+    const updateData = {
+      status: values.status, // Physical status
+      notes: values.notes
+    };
+
+    // Only include inventory status if it can be changed
+    if (canChangeInventoryStatus() && values.inventoryStatus) {
+      updateData.inventoryStatus = values.inventoryStatus;
     }
 
-    updateMutation.mutate(values);
+    updateMutation.mutate(updateData);
+  };
+
+  const handleDeliveryProcess = () => {
+    setShowDeliveryModal(true);
+    onClose(); // Close the status modal
   };
 
   const isHandoverStatus = (status) => {
@@ -47,139 +70,132 @@ const UpdateStatusModal = ({ visible, item, onClose, onSuccess }) => {
 
   return (
     <Modal
-      title={`Update Status - ${item?.serialNumber}`}
+      title={`Update Item Status - ${item?.serialNumber}`}
       open={visible}
       onCancel={onClose}
       onOk={() => form.submit()}
       confirmLoading={updateMutation.isLoading}
-      width={600}
+      width={800}
     >
       <Form
         form={form}
         layout="vertical"
         onFinish={onFinish}
         initialValues={{
-          status: item?.status
+          status: item?.status,
+          inventoryStatus: item?.inventoryStatus || 'Available'
         }}
       >
-        <Form.Item
-          label="New Status"
-          name="status"
-          rules={[{ required: true, message: 'Status is required' }]}
-        >
-          <Select onChange={handleStatusChange}>
-            <Select.Option value="In Store">In Store</Select.Option>
-            <Select.Option value="In Hand">In Hand</Select.Option>
-            <Select.Option value="In Lab">In Lab</Select.Option>
-            <Select.Option value="Sold">Sold</Select.Option>
-            <Select.Option value="Delivered">Delivered</Select.Option>
-            <Select.Option value="Handover">Handover</Select.Option>
-          </Select>
-        </Form.Item>
-
-        <Form.Item
-          noStyle
-          shouldUpdate={(prevValues, currentValues) => 
-            prevValues.status !== currentValues.status
+        {/* Business Status Information */}
+        <Alert
+          message="Inventory Status (Automated)"
+          description={
+            <div>
+              <Text>Current Status: </Text>
+              <Text strong style={{ color: getInventoryStatusInfo().color }}>
+                {item?.inventoryStatus || 'Available'}
+              </Text>
+              <br />
+              <Text type="secondary">{getInventoryStatusInfo().description}</Text>
+              {getInventoryStatusInfo().automated && (
+                <div style={{ marginTop: 8 }}>
+                  <InfoCircleOutlined style={{ marginRight: 4 }} />
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    This status is automatically managed by invoice lifecycle
+                  </Text>
+                </div>
+              )}
+            </div>
           }
-        >
-          {({ getFieldValue }) => {
-            const status = getFieldValue('status');
-            
-            if (!isHandoverStatus(status)) {
-              return (
-                <Form.Item label="Notes" name="notes">
-                  <TextArea rows={3} placeholder="Additional notes" />
-                </Form.Item>
-              );
-            }
+          type="info"
+          style={{ marginBottom: 16 }}
+        />
 
-            return (
-              <>
-                {/* Client Information - Note: Backend will create Customer record from these fields */}
-                <Form.Item
-                  label="Client Name"
-                  name="clientName"
-                  rules={[{ required: true, message: 'Client name is required' }]}
-                >
-                  <Input placeholder="Enter client name" />
-                </Form.Item>
-
-                <Form.Item
-                  label="Client Phone"
-                  name="clientPhone"
-                  rules={[
-                    { required: true, message: 'Client phone is required' },
-                    { pattern: /^\d{11}$/, message: 'Phone must be 11 digits' }
-                  ]}
-                >
-                  <Input placeholder="03001234567" />
-                </Form.Item>
-
-                <Form.Item label="Client Company" name="clientCompany">
-                  <Input placeholder="Company name (optional)" />
-                </Form.Item>
-
-                <Form.Item label="Client NIC" name="clientNIC">
-                  <Input placeholder="National ID Card" />
-                </Form.Item>
-
-                <Form.Item label="Client Email" name="clientEmail">
-                  <Input type="email" placeholder="email@example.com" />
-                </Form.Item>
-
-                <Form.Item label="Client Address" name="clientAddress">
-                  <TextArea rows={2} placeholder="Full address" />
-                </Form.Item>
-
-                {status === 'Sold' && (
-                  <Form.Item label="Selling Price" name="sellingPrice">
-                    <Input type="number" prefix="PKR" placeholder="Enter selling price" />
-                  </Form.Item>
+        {/* Customer Information (if item is sold/reserved) */}
+        {item?.customer && (
+          <Card title="Customer Information" size="small" style={{ marginBottom: 16 }}>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Text strong>Name: </Text><Text>{item.customer.name}</Text><br />
+                <Text strong>Phone: </Text><Text>{item.customer.phone}</Text>
+              </Col>
+              <Col span={12}>
+                {item.customer.company && (
+                  <><Text strong>Company: </Text><Text>{item.customer.company}</Text><br /></>
                 )}
-
-                {(status === 'Handover' || status === 'Delivered') && (
-                  <>
-                    <Form.Item
-                      label="Handover To"
-                      name="handoverTo"
-                      rules={[{ required: true, message: 'Required' }]}
-                    >
-                      <Input placeholder="Transportation company or person" />
-                    </Form.Item>
-
-                    <Form.Item label="Handover Details" name="handoverDetails">
-                      <TextArea 
-                        rows={2} 
-                        placeholder="Bus number, contact details, etc." 
-                      />
-                    </Form.Item>
-
-                    <Form.Item
-                      label="Handover Date"
-                      name="handoverDate"
-                      initialValue={dayjs()}
-                    >
-                      <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
-                  </>
+                {item.customer.email && (
+                  <><Text strong>Email: </Text><Text>{item.customer.email}</Text></>
                 )}
+              </Col>
+            </Row>
+          </Card>
+        )}
 
-                <Form.Item
-                  label="Outbound Date"
-                  name="outboundDate"
-                  initialValue={dayjs()}
-                >
-                  <DatePicker style={{ width: '100%' }} />
-                </Form.Item>
+        {/* Manual Inventory Status (only if allowed) */}
+        {canChangeInventoryStatus() && (
+          <Form.Item
+            label="Override Inventory Status"
+            name="inventoryStatus"
+            tooltip="Only available items can be manually reserved"
+          >
+            <Select placeholder="Keep current status">
+              <Select.Option value="Available">Available</Select.Option>
+              <Select.Option value="Reserved">Reserved (Manual Hold)</Select.Option>
+            </Select>
+          </Form.Item>
+        )}
 
-                <Form.Item label="Notes" name="notes">
-                  <TextArea rows={2} placeholder="Additional notes" />
-                </Form.Item>
-              </>
-            );
-          }}
-        </Form.Item>
+        {/* Physical Status - Main Update */}
+        <Card title="Physical Location Status" style={{ marginBottom: 16 }}>
+          <Form.Item
+            label="Current Location/Handling Status"
+            name="status"
+            rules={[{ required: true, message: 'Physical status is required' }]}
+            tooltip="Track where the item physically is and who is handling it"
+          >
+            <Select placeholder="Select physical status">
+              <Select.Option value="In Store">In Store</Select.Option>
+              <Select.Option value="In Hand">In Hand</Select.Option>
+              <Select.Option value="In Lab">In Lab</Select.Option>
+              <Select.Option value="Handover">Handover/Transit</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item label="Notes" name="notes">
+            <TextArea rows={3} placeholder="Location details, handling notes, etc." />
+          </Form.Item>
+        </Card>
+
+        {/* Delivery Process Button */}
+        {(item?.inventoryStatus === 'Sold') && (
+          <Card title="Delivery Process" style={{ marginBottom: 16 }}>
+            <Alert
+              message="Ready for Delivery"
+              description="This item has been sold and is ready for delivery to the customer."
+              type="success"
+              style={{ marginBottom: 12 }}
+            />
+            <Button
+              type="primary"
+              icon={<TruckOutlined />}
+              onClick={handleDeliveryProcess}
+              block
+            >
+              Start Delivery Process
+            </Button>
+          </Card>
+        )}
+
+      {/* Separate Delivery Process Modal */}
+      <DeliveryProcessModal
+        visible={showDeliveryModal}
+        item={item}
+        onClose={() => setShowDeliveryModal(false)}
+        onSuccess={() => {
+          setShowDeliveryModal(false);
+          onSuccess();
+        }}
+      />
       </Form>
     </Modal>
   );

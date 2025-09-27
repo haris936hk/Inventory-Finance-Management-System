@@ -41,12 +41,18 @@ const Payments = () => {
     }
   );
 
-  const payments = paymentsData?.payments || [];
-  const stats = paymentsData?.stats || {
-    totalAmount: 0,
-    totalCount: 0,
-    todayAmount: 0,
-    monthAmount: 0
+  const payments = paymentsData || [];
+
+  // Calculate stats from the payments data
+  const stats = {
+    totalAmount: payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
+    totalCount: payments.length,
+    todayAmount: payments
+      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'day'))
+      .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
+    monthAmount: payments
+      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'month'))
+      .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0)
   };
 
   const paymentMethodColors = {
@@ -95,15 +101,15 @@ const Payments = () => {
       key: 'amount',
       render: (amount) => (
         <Text strong style={{ color: '#52c41a' }}>
-          formatPKR(amount)
+          {formatPKR(amount)}
         </Text>
       ),
       sorter: (a, b) => a.amount - b.amount
     },
     {
       title: 'Method',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
+      dataIndex: 'method',
+      key: 'method',
       render: (method) => (
         <Tag color={paymentMethodColors[method] || 'default'}>
           {method}
@@ -112,19 +118,15 @@ const Payments = () => {
     },
     {
       title: 'Reference',
-      dataIndex: 'referenceNumber',
-      key: 'referenceNumber',
+      dataIndex: 'reference',
+      key: 'reference',
       render: (ref) => ref || '-'
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => (
-        <Tag color={status === 'Cleared' ? 'green' : status === 'Pending' ? 'orange' : 'red'}>
-          {status}
-        </Tag>
-      )
+      title: 'Recorded By',
+      dataIndex: 'recordedBy',
+      key: 'recordedBy',
+      render: (recordedBy) => recordedBy?.fullName || 'Unknown'
     }
   ];
 

@@ -156,7 +156,7 @@ const Invoices = () => {
         const balance = parseFloat(record.total) - parseFloat(record.paidAmount);
         return (
           <span style={{ color: balance > 0 ? '#ff4d4f' : '#52c41a' }}>
-            formatPKR(balance)
+            {formatPKR(balance)}
           </span>
         );
       }

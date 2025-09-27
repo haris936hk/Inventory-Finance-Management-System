@@ -110,7 +110,7 @@ const RecordPayment = () => {
       key: 'balance',
       render: (_, record) => (
         <Text strong style={{ color: '#f5222d' }}>
-          formatPKR((record.total || 0) - (record.paidAmount || 0))
+          {formatPKR((record.total || 0) - (record.paidAmount || 0))}
         </Text>
       )
     },
@@ -213,7 +213,15 @@ const RecordPayment = () => {
                       name="amount"
                       rules={[
                         { required: true, message: 'Please enter amount' },
-                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' }
+                        {
+                          validator: (_, value) => {
+                            const numValue = parseFloat(value);
+                            if (isNaN(numValue) || numValue <= 0) {
+                              return Promise.reject(new Error('Amount must be greater than 0'));
+                            }
+                            return Promise.resolve();
+                          }
+                        }
                       ]}
                     >
                       <Input
@@ -221,6 +229,7 @@ const RecordPayment = () => {
                         prefix="PKR"
                         placeholder="0.00"
                         step="0.01"
+                        min="0.01"
                       />
                     </Form.Item>
                   </Col>

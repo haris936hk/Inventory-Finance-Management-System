@@ -28,7 +28,8 @@
       "Bash(npm install:*)",
       "Bash(tasklist:*)",
       "Bash(Stop-Process -Force -Id 14276)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(npx check-deps:*)"
     ],
     "deny": [],
     "ask": []
