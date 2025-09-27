@@ -547,15 +547,23 @@ const createVendorBill = asyncHandler(async (req, res) => {
     }
   });
 
-  // Create vendor ledger entry
+  // Get vendor's current balance for ledger calculation
+  const vendor = await db.prisma.vendor.findUnique({
+    where: { id: req.body.vendorId }
+  });
+
+  const billAmount = parseFloat(req.body.total);
+  const newBalance = parseFloat(vendor.currentBalance) + billAmount;
+
+  // Create vendor ledger entry with calculated balance
   await db.prisma.vendorLedger.create({
     data: {
       vendorId: req.body.vendorId,
       entryDate: new Date(req.body.billDate),
       description: `Bill ${billNumber}`,
-      debit: parseFloat(req.body.total),
+      debit: billAmount,
       credit: 0,
-      balance: 0, // This should be calculated properly in a real scenario
+      balance: newBalance,
       billId: bill.id
     }
   });
@@ -564,9 +572,7 @@ const createVendorBill = asyncHandler(async (req, res) => {
   await db.prisma.vendor.update({
     where: { id: req.body.vendorId },
     data: {
-      currentBalance: {
-        increment: parseFloat(req.body.total)
-      }
+      currentBalance: newBalance
     }
   });
 

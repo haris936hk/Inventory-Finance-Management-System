@@ -27,7 +27,8 @@
       "Bash(wmic process where:*)",
       "Bash(npm install:*)",
       "Bash(tasklist:*)",
-      "Bash(Stop-Process -Force -Id 14276)"
+      "Bash(Stop-Process -Force -Id 14276)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []

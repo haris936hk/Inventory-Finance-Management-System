@@ -145,26 +145,32 @@ class AutomationService {
         }
       });
 
+      // Get vendor's current balance for ledger calculation
+      const vendor = await prisma.vendor.findUnique({
+        where: { id: purchaseOrder.vendorId }
+      });
+
+      const billAmount = parseFloat(purchaseOrder.total);
+      const newBalance = parseFloat(vendor.currentBalance) + billAmount;
+
       // Update vendor balance
       await prisma.vendor.update({
         where: { id: purchaseOrder.vendorId },
         data: {
-          currentBalance: {
-            increment: purchaseOrder.total
-          }
+          currentBalance: newBalance
         }
       });
 
-      // Create vendor ledger entry
+      // Create vendor ledger entry with calculated balance
       await prisma.vendorLedger.create({
         data: {
           vendorId: purchaseOrder.vendorId,
           billId: bill.id,
           entryDate: new Date(),
           description: `Bill ${bill.billNumber} - ${purchaseOrder.poNumber}`,
-          debit: purchaseOrder.total,
+          debit: billAmount,
           credit: 0,
-          balance: 0 // Calculate actual balance
+          balance: newBalance
         }
       });
 
