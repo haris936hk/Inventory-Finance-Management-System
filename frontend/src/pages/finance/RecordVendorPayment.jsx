@@ -25,6 +25,24 @@ const RecordVendorPayment = () => {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
 
+  // Watch form values for real-time validation
+  const watchedValues = Form.useWatch([], form);
+
+  // Calculate remaining bill balance
+  const remainingBalance = React.useMemo(() => {
+    if (!selectedBill) return 0;
+    const total = parseFloat(selectedBill.total) || 0;
+    const paid = parseFloat(selectedBill.paidAmount) || 0;
+    return total - paid;
+  }, [selectedBill]);
+
+  // Check if payment amount exceeds remaining balance
+  const exceedsBalance = React.useMemo(() => {
+    if (!selectedBill || !watchedValues?.amount) return false;
+    const paymentAmount = parseFloat(watchedValues.amount) || 0;
+    return paymentAmount > remainingBalance;
+  }, [selectedBill, watchedValues, remainingBalance]);
+
   const billId = searchParams.get('billId');
 
   // Fetch vendors
@@ -101,10 +119,32 @@ const RecordVendorPayment = () => {
   };
 
   const handleSubmit = (values) => {
+    const paymentAmount = parseFloat(values.amount);
+
+    // Always validate if a bill ID is provided
+    if (values.billId) {
+      // Try to get bill data from selectedBill or specificBill
+      const bill = selectedBill || specificBill;
+
+      if (!bill) {
+        message.error('Bill data not available. Please refresh the page and try again.');
+        return;
+      }
+
+      const billTotal = parseFloat(bill.total) || 0;
+      const paidAmount = parseFloat(bill.paidAmount) || 0;
+      const remainingBalance = billTotal - paidAmount;
+
+      if (paymentAmount > remainingBalance) {
+        message.error(`Payment amount (${formatPKR(paymentAmount)}) cannot exceed remaining bill balance (${formatPKR(remainingBalance)})`);
+        return;
+      }
+    }
+
     const paymentData = {
       ...values,
       paymentDate: values.paymentDate.format('YYYY-MM-DD'),
-      amount: parseFloat(values.amount)
+      amount: paymentAmount
     };
     paymentMutation.mutate(paymentData);
   };
@@ -249,7 +289,23 @@ const RecordVendorPayment = () => {
                       name="amount"
                       rules={[
                         { required: true, message: 'Please enter amount' },
-                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' }
+                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+                        {
+                          validator: (_, value) => {
+                            console.log('Field validator called:', { value, selectedBill, remainingBalance });
+
+                            if (!selectedBill || !value) {
+                              return Promise.resolve();
+                            }
+                            const paymentAmount = parseFloat(value) || 0;
+
+                            if (paymentAmount > remainingBalance) {
+                              console.log('Field validation failed:', { paymentAmount, remainingBalance });
+                              return Promise.reject(new Error(`Amount cannot exceed remaining balance (${formatPKR(remainingBalance)})`));
+                            }
+                            return Promise.resolve();
+                          }
+                        }
                       ]}
                     >
                       <InputNumber
@@ -300,6 +356,17 @@ const RecordVendorPayment = () => {
                 <Form.Item label="Notes" name="notes">
                   <TextArea rows={3} placeholder="Additional notes about this payment" />
                 </Form.Item>
+
+                {/* Payment Validation Alert */}
+                {selectedBill && exceedsBalance && (
+                  <Alert
+                    message="Payment Amount Exceeds Bill Balance"
+                    description={`Payment amount cannot exceed remaining bill balance of ${formatPKR(remainingBalance)}. Please adjust the amount.`}
+                    type="error"
+                    style={{ marginTop: 16 }}
+                    showIcon
+                  />
+                )}
               </Card>
             </Col>
 
@@ -325,47 +392,73 @@ const RecordVendorPayment = () => {
               )}
 
               {selectedBill && (
-                <Card title="Selected Bill Details" size="small" style={{ marginTop: 16 }}>
-                  <Row gutter={[16, 8]}>
-                    <Col span={12}>
-                      <Text strong>Bill #:</Text>
-                      <br />
-                      {selectedBill.billNumber}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Bill Date:</Text>
-                      <br />
-                      {dayjs(selectedBill.billDate).format('DD/MM/YYYY')}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Due Date:</Text>
-                      <br />
-                      {selectedBill.dueDate ? dayjs(selectedBill.dueDate).format('DD/MM/YYYY') : 'Not set'}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Status:</Text>
-                      <br />
-                      <span style={{
-                        color: selectedBill.status === 'Paid' ? '#52c41a' :
-                              selectedBill.status === 'Partial' ? '#faad14' : '#f5222d'
-                      }}>
-                        {selectedBill.status}
-                      </span>
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Total Amount:</Text>
-                      <br />
-                      {formatPKR(Number(selectedBill.total))}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Outstanding:</Text>
-                      <br />
-                      <Text style={{ color: '#f5222d' }}>
-                        {formatPKR(Number(selectedBill.total) - Number(selectedBill.paidAmount || 0))}
-                      </Text>
-                    </Col>
-                  </Row>
-                </Card>
+                <>
+                  {/* Payment Summary */}
+                  <Card title="Payment Summary" size="small" style={{ marginTop: 16, backgroundColor: '#f9f9f9' }}>
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Bill Total</Text>
+                          <br />
+                          <Text strong style={{ fontSize: 16, color: '#1890ff' }}>
+                            {formatPKR(Number(selectedBill.total))}
+                          </Text>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Already Paid</Text>
+                          <br />
+                          <Text strong style={{ fontSize: 16, color: '#52c41a' }}>
+                            {formatPKR(Number(selectedBill.paidAmount || 0))}
+                          </Text>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Remaining Balance</Text>
+                          <br />
+                          <Text strong style={{
+                            fontSize: 16,
+                            color: exceedsBalance ? '#ff4d4f' : '#f5222d'
+                          }}>
+                            {formatPKR(remainingBalance)}
+                          </Text>
+                        </div>
+                      </Col>
+                    </Row>
+                  </Card>
+
+                  <Card title="Selected Bill Details" size="small" style={{ marginTop: 16 }}>
+                    <Row gutter={[16, 8]}>
+                      <Col span={12}>
+                        <Text strong>Bill #:</Text>
+                        <br />
+                        {selectedBill.billNumber}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Bill Date:</Text>
+                        <br />
+                        {dayjs(selectedBill.billDate).format('DD/MM/YYYY')}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Due Date:</Text>
+                        <br />
+                        {selectedBill.dueDate ? dayjs(selectedBill.dueDate).format('DD/MM/YYYY') : 'Not set'}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Status:</Text>
+                        <br />
+                        <span style={{
+                          color: selectedBill.status === 'Paid' ? '#52c41a' :
+                                selectedBill.status === 'Partial' ? '#faad14' : '#f5222d'
+                        }}>
+                          {selectedBill.status}
+                        </span>
+                      </Col>
+                    </Row>
+                  </Card>
+                </>
               )}
             </Col>
           </Row>
@@ -381,6 +474,7 @@ const RecordVendorPayment = () => {
                 type="primary"
                 htmlType="submit"
                 loading={paymentMutation.isLoading}
+                disabled={exceedsBalance}
                 icon={<DollarCircleOutlined />}
               >
                 Record Payment

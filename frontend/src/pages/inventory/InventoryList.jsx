@@ -185,22 +185,36 @@ const InventoryList = () => {
       key: 'customer',
       width: 150,
       render: (customer, record) => {
-        if (!customer) {
-          // Show reservation info if available
-          if (record.reservedBy || record.reservedForType) {
-            return (
-              <Tooltip title={`Reserved ${record.reservedForType ? 'for ' + record.reservedForType : ''}`}>
-                <Tag color="orange" size="small">Reserved</Tag>
-              </Tooltip>
-            );
-          }
-          return '-';
+        // If there's a direct customer relationship (sold/delivered)
+        if (customer) {
+          return (
+            <Tooltip title={`${customer.phone || ''} ${customer.company || ''}`}>
+              {customer.name}
+            </Tooltip>
+          );
         }
-        return (
-          <Tooltip title={`${customer.phone || ''} ${customer.company || ''}`}>
-            {customer.name}
-          </Tooltip>
-        );
+
+        // If item is reserved for a customer (via invoice)
+        if (record.reservedCustomer) {
+          return (
+            <Tooltip title={`Reserved for Invoice - ${record.reservedCustomer.phone || ''} ${record.reservedCustomer.company || ''}`}>
+              <Tag color="orange" size="small">
+                {record.reservedCustomer.name}
+              </Tag>
+            </Tooltip>
+          );
+        }
+
+        // If item is reserved but no customer info available
+        if (record.reservedBy || record.reservedForType) {
+          return (
+            <Tooltip title={`Reserved ${record.reservedForType ? 'for ' + record.reservedForType : ''}`}>
+              <Tag color="orange" size="small">Reserved</Tag>
+            </Tooltip>
+          );
+        }
+
+        return '-';
       }
     },
     {

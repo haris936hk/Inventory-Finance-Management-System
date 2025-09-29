@@ -38,7 +38,8 @@ router.route('/invoices')
   .post(hasPermission(['finance.create']), financeController.createInvoice);
 
 router.route('/invoices/:id')
-  .get(hasPermission(['finance.view']), financeController.getInvoice);
+  .get(hasPermission(['finance.view']), financeController.getInvoice)
+  .put(hasPermission(['finance.edit']), financeController.updateInvoice);
 
 router.put('/invoices/:id/status',
   hasPermission(['finance.edit']),
@@ -78,9 +79,10 @@ router.route('/vendor-bills/:id')
   .get(hasPermission(['finance.view']), financeController.getVendorBill)
   .put(hasPermission(['finance.edit']), financeController.updateVendorBill);
 
-router.put('/vendor-bills/:id/status',
+// Vendor Bills utility routes
+router.put('/vendor-bills/fix-paid-amounts',
   hasPermission(['finance.edit']),
-  financeController.updateVendorBillStatus
+  financeController.fixVendorBillPaidAmounts
 );
 
 // Vendor Payments routes
@@ -92,6 +94,11 @@ router.route('/vendor-payments')
 router.post('/installment-plans',
   hasPermission(['finance.create']),
   financeController.createInstallmentPlan
+);
+
+// Debug routes
+router.get('/debug/purchase-order/:poNumber',
+  financeController.debugPurchaseOrderPayments
 );
 
 // Report routes

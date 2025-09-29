@@ -39,7 +39,7 @@ const InvoiceDetails = () => {
     ['invoice-payments', id],
     async () => {
       const response = await axios.get(`/finance/payments?invoiceId=${id}`);
-      return response.data.data?.payments || [];
+      return response.data.data || [];
     },
     { enabled: !!id }
   );
@@ -190,28 +190,24 @@ const InvoiceDetails = () => {
     },
     {
       title: 'Method',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod'
+      dataIndex: 'method',
+      key: 'method'
     },
     {
       title: 'Reference',
-      dataIndex: 'referenceNumber',
-      key: 'referenceNumber',
+      dataIndex: 'reference',
+      key: 'reference',
       render: (ref) => ref || '-'
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => (
-        <Tag color={status === 'Cleared' ? 'green' : 'orange'}>
-          {status}
-        </Tag>
-      )
+      title: 'Notes',
+      dataIndex: 'notes',
+      key: 'notes',
+      render: (notes) => notes || '-'
     }
   ];
 
-  const paidAmount = payments?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
+  const paidAmount = payments?.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0) || 0;
   const outstandingAmount = (invoice.total || 0) - paidAmount;
 
   return (
@@ -277,6 +273,14 @@ const InvoiceDetails = () => {
                 icon={<DeleteOutlined />}
                 onClick={handleDelete}
                 loading={deleteMutation.isLoading}
+                disabled={invoice.status === 'Partial' || invoice.status === 'Paid'}
+                title={
+                  invoice.status === 'Partial'
+                    ? 'Cannot delete invoice with partial payments'
+                    : invoice.status === 'Paid'
+                    ? 'Cannot delete paid invoice'
+                    : undefined
+                }
               >
                 Delete
               </Button>
@@ -518,7 +522,12 @@ const InvoiceDetails = () => {
                   block
                   icon={<EditOutlined />}
                   onClick={() => navigate(`/app/finance/invoices/${id}/edit`)}
-                  disabled={invoice.status === 'Paid'}
+                  disabled={invoice.status !== 'Draft'}
+                  title={
+                    invoice.status !== 'Draft'
+                      ? 'Only draft invoices can be edited'
+                      : undefined
+                  }
                 >
                   Edit Invoice
                 </Button>

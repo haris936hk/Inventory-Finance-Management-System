@@ -181,6 +181,7 @@ const AddItem = () => {
         return [
           'serialNumber',
           'categoryId',
+          'companyId',
           'modelId',
           'condition',
           'status',
@@ -192,6 +193,7 @@ const AddItem = () => {
           'inboundDate', // This is required
           'vendorId',
           'purchasePrice',
+          'sellingPrice',
           'purchaseDate',
           'notes'
         ];
@@ -216,6 +218,11 @@ const AddItem = () => {
       console.error('Model validation failed - no modelId provided');
       console.log('Models available:', models);
       message.error('Please select a model');
+      return;
+    }
+
+    if (!values.companyId) {
+      message.error('Please select a company');
       return;
     }
 
@@ -288,12 +295,12 @@ const AddItem = () => {
               <Form.Item
                 label="Company/Make"
                 name="companyId"
+                rules={[{ required: true, message: 'Company is required' }]}
               >
                 <Select
                   placeholder="Select company"
                   showSearch
                   optionFilterProp="children"
-                  allowClear
                   onChange={onCompanyChange}
                 >
                   {companies?.map(company => (
@@ -410,6 +417,19 @@ const AddItem = () => {
                 min={0}
                 style={{ width: '100%' }}
                 placeholder="Enter purchase price"
+              />
+            </Form.Item>
+          </Col>
+
+          <Col xs={24} sm={12}>
+            <Form.Item
+              label="Selling Price (PKR)"
+              name="sellingPrice"
+            >
+              <InputNumber
+                min={0}
+                style={{ width: '100%' }}
+                placeholder="Enter selling price"
               />
             </Form.Item>
           </Col>

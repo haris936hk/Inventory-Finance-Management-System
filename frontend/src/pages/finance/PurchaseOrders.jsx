@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
   Row, Col, Statistic, Badge, Dropdown, message, Modal, Form,
-  Divider, InputNumber
+  Divider, InputNumber, Progress, Tooltip
 } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
@@ -38,13 +38,24 @@ const PurchaseOrders = () => {
   const [total, setTotal] = useState(0);
 
   // Fetch purchase orders
-  const { data: purchaseOrdersData, isLoading } = useQuery(
+  const { data: allPurchaseOrdersData, isLoading } = useQuery(
     ['purchase-orders', filters],
     async () => {
       const response = await axios.get('/finance/purchase-orders', { params: filters });
       return response.data.data;
     }
   );
+
+  // Filter by payment status on client side
+  const purchaseOrdersData = React.useMemo(() => {
+    if (!allPurchaseOrdersData) return [];
+
+    if (!filters.paymentStatus) return allPurchaseOrdersData;
+
+    return allPurchaseOrdersData.filter(po =>
+      po.paymentSummary?.paymentStatus === filters.paymentStatus
+    );
+  }, [allPurchaseOrdersData, filters.paymentStatus]);
 
   // Fetch vendors for filter and form
   const { data: vendors } = useQuery('vendors', async () => {
@@ -54,9 +65,9 @@ const PurchaseOrders = () => {
 
   // Calculate statistics
   const statistics = React.useMemo(() => {
-    if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, completed: 0, cancelled: 0 };
+    if (!allPurchaseOrdersData) return { total: 0, draft: 0, sent: 0, completed: 0, cancelled: 0 };
 
-    return purchaseOrdersData.reduce((acc, po) => {
+    return allPurchaseOrdersData.reduce((acc, po) => {
       acc.total += parseFloat(po.total);
       switch (po.status) {
         case 'Draft':
@@ -151,6 +162,16 @@ const PurchaseOrders = () => {
     return colors[status] || 'default';
   };
 
+  const getPaymentStatusColor = (status) => {
+    const colors = {
+      'Unbilled': 'default',
+      'Unpaid': 'red',
+      'Partially Paid': 'orange',
+      'Fully Paid': 'green'
+    };
+    return colors[status] || 'default';
+  };
+
   const handleStatusChange = (record, newStatus) => {
     Modal.confirm({
       title: `Change Status to ${newStatus}`,
@@ -181,7 +202,7 @@ const PurchaseOrders = () => {
         break;
     }
 
-    if (['Draft', 'Sent'].includes(record.status)) {
+    if (record.status === 'Draft') {
       items.push({
         key: 'cancel',
         icon: <StopOutlined />,
@@ -275,6 +296,63 @@ const PurchaseOrders = () => {
       ),
     },
     {
+      title: 'Payment Status',
+      key: 'paymentStatus',
+      width: 120,
+      align: 'center',
+      render: (_, record) => {
+        const paymentSummary = record.paymentSummary;
+        if (!paymentSummary) return <Tag color="default">Unknown</Tag>;
+
+        return (
+          <Tooltip
+            title={
+              <div>
+                <div>Billed: {formatPKR(paymentSummary.totalBilled)}</div>
+                <div>Paid: {formatPKR(paymentSummary.totalPaid)}</div>
+                <div>Outstanding: {formatPKR(paymentSummary.outstanding)}</div>
+              </div>
+            }
+          >
+            <Tag color={getPaymentStatusColor(paymentSummary.paymentStatus)}>
+              {paymentSummary.paymentStatus}
+            </Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Payment Progress',
+      key: 'paymentProgress',
+      width: 120,
+      align: 'center',
+      render: (_, record) => {
+        const paymentSummary = record.paymentSummary;
+        if (!paymentSummary || paymentSummary.totalBilled === 0) {
+          return <span style={{ color: '#999' }}>No Bills</span>;
+        }
+
+        return (
+          <Tooltip title={`${formatPKR(paymentSummary.totalPaid)} of ${formatPKR(paymentSummary.totalBilled)} paid`}>
+            <Progress
+              percent={Math.round(paymentSummary.paymentProgress)}
+              size="small"
+              status={paymentSummary.paymentStatus === 'Fully Paid' ? 'success' : 'active'}
+            />
+          </Tooltip>
+        );
+      },
+    },
+    {
+      title: 'Bills',
+      key: 'billsCount',
+      width: 60,
+      align: 'center',
+      render: (_, record) => (
+        <Badge count={record._count?.bills || 0} showZero style={{ backgroundColor: '#722ed1' }} />
+      ),
+    },
+    {
       title: 'Line Items',
       key: 'lineItemsCount',
       width: 80,
@@ -301,8 +379,12 @@ const PurchaseOrders = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Edit',
-            disabled: record.status === 'Completed',
+            disabled: record.status !== 'Draft',
             onClick: () => {
+              if (record.status !== 'Draft') {
+                message.warning('Purchase Orders can only be edited when in Draft status');
+                return;
+              }
               setEditingPO(record);
               form.setFieldsValue({
                 ...record,
@@ -487,12 +569,29 @@ const PurchaseOrders = () => {
           </Col>
         </Row>
 
+        {/* Additional Filters Row */}
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col xs={24} sm={8} md={6}>
+            <Select
+              placeholder="Payment Status"
+              allowClear
+              style={{ width: '100%' }}
+              onChange={(value) => setFilters({...filters, paymentStatus: value})}
+            >
+              <Select.Option value="Unbilled">Unbilled</Select.Option>
+              <Select.Option value="Unpaid">Unpaid</Select.Option>
+              <Select.Option value="Partially Paid">Partially Paid</Select.Option>
+              <Select.Option value="Fully Paid">Fully Paid</Select.Option>
+            </Select>
+          </Col>
+        </Row>
+
         <Table
           rowKey="id"
           columns={columns}
           dataSource={purchaseOrdersData}
           loading={isLoading}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1600 }}
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,

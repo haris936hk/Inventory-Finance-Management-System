@@ -137,6 +137,18 @@ const createInvoice = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Update invoice
+// @route   PUT /api/finance/invoices/:id
+// @access  Private
+const updateInvoice = asyncHandler(async (req, res) => {
+  const invoice = await financeService.updateInvoice(req.params.id, req.body, req.user.id);
+
+  res.json({
+    success: true,
+    data: invoice
+  });
+});
+
 // @desc    Update invoice status
 // @route   PUT /api/finance/invoices/:id/status
 // @access  Private
@@ -298,34 +310,96 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 // @access  Private
 const getPurchaseOrders = asyncHandler(async (req, res) => {
   const db = require('../config/database');
-  
+
   const where = { deletedAt: null };
-  
+
   if (req.query.vendorId) {
     where.vendorId = req.query.vendorId;
   }
-  
+
   if (req.query.status) {
-    where.status = req.query.status;
+    // Handle multiple status values separated by comma
+    const statuses = Array.isArray(req.query.status)
+      ? req.query.status
+      : req.query.status.split(',').map(s => s.trim());
+
+    if (statuses.length === 1) {
+      where.status = statuses[0];
+    } else {
+      where.status = { in: statuses };
+    }
   }
-  
+
+  // Fetch purchase orders with related data
   const purchaseOrders = await db.prisma.purchaseOrder.findMany({
     where,
     include: {
       vendor: true,
+      lineItems: true,
+      bills: {
+        include: {
+          payments: true
+        }
+      },
       _count: {
         select: {
-          lineItems: true
+          lineItems: true,
+          bills: true
         }
       }
     },
     orderBy: { orderDate: 'desc' }
   });
-  
+
+  // Calculate payment status for each purchase order
+  const purchaseOrdersWithPaymentStatus = purchaseOrders.map(po => {
+    const totalBilled = po.bills.reduce((sum, bill) => sum + parseFloat(bill.total), 0);
+    const totalPaid = po.bills.reduce((sum, bill) => {
+      const billPaidAmount = bill.payments.reduce((paymentSum, payment) =>
+        paymentSum + parseFloat(payment.amount), 0
+      );
+      return sum + billPaidAmount;
+    }, 0);
+    const poTotal = parseFloat(po.total);
+
+    let paymentStatus = 'Unbilled';
+    if (totalBilled > 0) {
+      if (totalPaid === 0) {
+        paymentStatus = 'Unpaid';
+      } else if (totalPaid >= totalBilled) {
+        paymentStatus = 'Fully Paid';
+      } else {
+        paymentStatus = 'Partially Paid';
+      }
+    }
+
+    return {
+      ...po,
+      paymentSummary: {
+        totalBilled: totalBilled,
+        totalPaid: totalPaid,
+        outstanding: totalBilled - totalPaid,
+        paymentStatus: paymentStatus,
+        billingProgress: poTotal > 0 ? (totalBilled / poTotal) * 100 : 0,
+        paymentProgress: totalBilled > 0 ? (totalPaid / totalBilled) * 100 : 0
+      }
+    };
+  });
+
+  // Filter out fully billed POs if requested
+  let filteredPurchaseOrders = purchaseOrdersWithPaymentStatus;
+  if (req.query.excludeFullyBilled === 'true') {
+    filteredPurchaseOrders = purchaseOrdersWithPaymentStatus.filter(po => {
+      const totalBilled = po.paymentSummary.totalBilled;
+      const poTotal = parseFloat(po.total);
+      return totalBilled < poTotal; // Only show POs that are not fully billed
+    });
+  }
+
   res.json({
     success: true,
-    count: purchaseOrders.length,
-    data: purchaseOrders
+    count: filteredPurchaseOrders.length,
+    data: filteredPurchaseOrders
   });
 });
 
@@ -351,6 +425,17 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
             }
           }
         }
+      },
+      bills: {
+        include: {
+          payments: true
+        }
+      },
+      _count: {
+        select: {
+          lineItems: true,
+          bills: true
+        }
       }
     }
   });
@@ -360,9 +445,67 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
     throw new Error('Purchase Order not found');
   }
 
+  // Calculate payment summary for the single purchase order
+  const totalBilled = purchaseOrder.bills.reduce((sum, bill) => sum + parseFloat(bill.total), 0);
+
+  console.log(`\n=== DEBUGGING PURCHASE ORDER ${purchaseOrder.poNumber} ===`);
+  console.log(`PO Total: ${purchaseOrder.total}`);
+  console.log(`Number of Bills: ${purchaseOrder.bills.length}`);
+
+  let totalPaidFromPaidAmountField = 0;
+
+  const totalPaid = purchaseOrder.bills.reduce((sum, bill) => {
+    console.log(`\n--- Bill: ${bill.billNumber} ---`);
+    console.log(`Bill Total: ${bill.total}`);
+    console.log(`Bill paidAmount field: ${bill.paidAmount}`);
+    console.log(`Number of payments: ${bill.payments.length}`);
+
+    totalPaidFromPaidAmountField += parseFloat(bill.paidAmount || 0);
+
+    const billPaidAmount = bill.payments.reduce((paymentSum, payment) => {
+      console.log(`  Payment: ${payment.amount} (${payment.paymentDate}) - ${payment.paymentNumber}`);
+      return paymentSum + parseFloat(payment.amount);
+    }, 0);
+
+    console.log(`Bill paid from payments sum: ${billPaidAmount}`);
+    console.log(`Bill paidAmount field: ${bill.paidAmount}`);
+
+    return sum + billPaidAmount;
+  }, 0);
+
+  console.log(`\n=== TOTALS ===`);
+  console.log(`Total Billed: ${totalBilled}`);
+  console.log(`Total Paid (from payments): ${totalPaid}`);
+  console.log(`Total Paid (from paidAmount fields): ${totalPaidFromPaidAmountField}`);
+  console.log(`==================\n`);
+  const poTotal = parseFloat(purchaseOrder.total);
+
+  let paymentStatus = 'Unbilled';
+  if (totalBilled > 0) {
+    if (totalPaid === 0) {
+      paymentStatus = 'Unpaid';
+    } else if (totalPaid >= totalBilled) {
+      paymentStatus = 'Fully Paid';
+    } else {
+      paymentStatus = 'Partially Paid';
+    }
+  }
+
+  const purchaseOrderWithPaymentStatus = {
+    ...purchaseOrder,
+    paymentSummary: {
+      totalBilled: totalBilled,
+      totalPaid: totalPaid,
+      outstanding: totalBilled - totalPaid,
+      paymentStatus: paymentStatus,
+      billingProgress: poTotal > 0 ? (totalBilled / poTotal) * 100 : 0,
+      paymentProgress: totalBilled > 0 ? (totalPaid / totalBilled) * 100 : 0
+    }
+  };
+
   res.json({
     success: true,
-    data: purchaseOrder
+    data: purchaseOrderWithPaymentStatus
   });
 });
 
@@ -371,6 +514,23 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
 // @access  Private
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
   const db = require('../config/database');
+
+  // First, get the current purchase order to check its status
+  const currentPO = await db.prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { status: true }
+  });
+
+  if (!currentPO) {
+    res.status(404);
+    throw new Error('Purchase Order not found');
+  }
+
+  // Only allow editing if the current status is "Draft"
+  if (currentPO.status !== 'Draft') {
+    res.status(400);
+    throw new Error('Purchase Orders can only be edited when in Draft status');
+  }
 
   const purchaseOrder = await db.prisma.purchaseOrder.update({
     where: { id: req.params.id },
@@ -410,6 +570,23 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   if (!validStatuses.includes(status)) {
     res.status(400);
     throw new Error('Invalid status');
+  }
+
+  // Get current purchase order to check its status
+  const currentPO = await db.prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { status: true }
+  });
+
+  if (!currentPO) {
+    res.status(404);
+    throw new Error('Purchase Order not found');
+  }
+
+  // Special validation for cancellation - only allow cancelling Draft purchase orders
+  if (status === 'Cancelled' && currentPO.status !== 'Draft') {
+    res.status(400);
+    throw new Error('Purchase Orders can only be cancelled when in Draft status');
   }
 
   const purchaseOrder = await db.prisma.purchaseOrder.update({
@@ -457,19 +634,39 @@ const getVendorBills = asyncHandler(async (req, res) => {
     include: {
       vendor: true,
       purchaseOrder: true,
-      _count: {
+      payments: {
         select: {
-          payments: true
+          amount: true
         }
       }
     },
     orderBy: { billDate: 'desc' }
   });
 
+  // Calculate paid amounts for consistent data
+  const billsWithPaidAmounts = bills.map(bill => {
+    const calculatedPaidAmount = bill.payments.reduce((sum, payment) =>
+      sum + parseFloat(payment.amount), 0
+    );
+
+    // Update status based on calculated paid amount
+    let calculatedStatus = 'Unpaid';
+    if (calculatedPaidAmount > 0) {
+      calculatedStatus = calculatedPaidAmount >= parseFloat(bill.total) ? 'Paid' : 'Partial';
+    }
+
+    return {
+      ...bill,
+      paidAmount: calculatedPaidAmount,
+      status: calculatedStatus,
+      payments: undefined // Remove payments array from response for list view
+    };
+  });
+
   res.json({
     success: true,
-    count: bills.length,
-    data: bills
+    count: billsWithPaidAmounts.length,
+    data: billsWithPaidAmounts
   });
 });
 
@@ -514,9 +711,27 @@ const getVendorBill = asyncHandler(async (req, res) => {
     throw new Error('Vendor Bill not found');
   }
 
+  // Calculate paid amount from payments
+  const calculatedPaidAmount = bill.payments.reduce((sum, payment) =>
+    sum + parseFloat(payment.amount), 0
+  );
+
+  // Update status based on calculated paid amount
+  let calculatedStatus = 'Unpaid';
+  if (calculatedPaidAmount > 0) {
+    calculatedStatus = calculatedPaidAmount >= parseFloat(bill.total) ? 'Paid' : 'Partial';
+  }
+
+  // Return bill with calculated values
+  const billWithCalculatedValues = {
+    ...bill,
+    paidAmount: calculatedPaidAmount,
+    status: calculatedStatus
+  };
+
   res.json({
     success: true,
-    data: bill
+    data: billWithCalculatedValues
   });
 });
 
@@ -526,6 +741,49 @@ const getVendorBill = asyncHandler(async (req, res) => {
 const createVendorBill = asyncHandler(async (req, res) => {
   const db = require('../config/database');
   const { generateBillNumber } = require('../utils/generateId');
+
+  // Validate purchase order total if purchase order is selected
+  if (req.body.purchaseOrderId) {
+    const purchaseOrder = await db.prisma.purchaseOrder.findUnique({
+      where: { id: req.body.purchaseOrderId },
+      include: {
+        bills: {
+          where: { deletedAt: null }
+        }
+      }
+    });
+
+    if (!purchaseOrder) {
+      res.status(400);
+      throw new Error('Purchase order not found');
+    }
+
+    const billTotal = parseFloat(req.body.total);
+    const poTotal = parseFloat(purchaseOrder.total);
+
+    // Check if new bill total exceeds PO total
+    if (billTotal > poTotal) {
+      res.status(400);
+      throw new Error(`Bill total (${billTotal.toFixed(2)}) cannot exceed purchase order total (${poTotal.toFixed(2)})`);
+    }
+
+    // Check if cumulative bills would exceed PO total
+    const totalAlreadyBilled = purchaseOrder.bills.reduce((sum, bill) =>
+      sum + parseFloat(bill.total), 0
+    );
+    const newCumulativeTotal = totalAlreadyBilled + billTotal;
+
+    if (newCumulativeTotal > poTotal) {
+      res.status(400);
+      throw new Error(`Cannot create bill. Total billed amount (${newCumulativeTotal.toFixed(2)}) would exceed purchase order total (${poTotal.toFixed(2)}). Already billed: ${totalAlreadyBilled.toFixed(2)}`);
+    }
+
+    // Check if PO is already fully billed
+    if (totalAlreadyBilled >= poTotal) {
+      res.status(400);
+      throw new Error(`Cannot create bill. Purchase order is already fully billed (${totalAlreadyBilled.toFixed(2)} of ${poTotal.toFixed(2)})`);
+    }
+  }
 
   const billNumber = await generateBillNumber();
 
@@ -538,6 +796,7 @@ const createVendorBill = asyncHandler(async (req, res) => {
       subtotal: parseFloat(req.body.subtotal),
       taxAmount: parseFloat(req.body.taxAmount) || 0,
       total: parseFloat(req.body.total),
+      paidAmount: 0,
       vendorId: req.body.vendorId,
       purchaseOrderId: req.body.purchaseOrderId || null
     },
@@ -588,6 +847,66 @@ const createVendorBill = asyncHandler(async (req, res) => {
 const updateVendorBill = asyncHandler(async (req, res) => {
   const db = require('../config/database');
 
+  // Get current bill to check if purchase order is being used
+  const currentBill = await db.prisma.bill.findUnique({
+    where: { id: req.params.id },
+    include: { purchaseOrder: true }
+  });
+
+  if (!currentBill) {
+    res.status(404);
+    throw new Error('Bill not found');
+  }
+
+  // Only allow editing of unpaid bills
+  if (currentBill.status !== 'Unpaid') {
+    res.status(400);
+    throw new Error('Only unpaid bills can be edited. Bills with payments cannot be modified.');
+  }
+
+  // Use purchase order from current bill or new one if being updated
+  const purchaseOrderId = req.body.purchaseOrderId !== undefined ? req.body.purchaseOrderId : currentBill.purchaseOrderId;
+
+  // Validate purchase order total if purchase order is selected
+  if (purchaseOrderId) {
+    const purchaseOrder = await db.prisma.purchaseOrder.findUnique({
+      where: { id: purchaseOrderId },
+      include: {
+        bills: {
+          where: {
+            deletedAt: null,
+            id: { not: req.params.id } // Exclude current bill from calculation
+          }
+        }
+      }
+    });
+
+    if (!purchaseOrder) {
+      res.status(400);
+      throw new Error('Purchase order not found');
+    }
+
+    const billTotal = req.body.total ? parseFloat(req.body.total) : parseFloat(currentBill.total);
+    const poTotal = parseFloat(purchaseOrder.total);
+
+    // Check if new bill total exceeds PO total
+    if (billTotal > poTotal) {
+      res.status(400);
+      throw new Error(`Bill total (${billTotal.toFixed(2)}) cannot exceed purchase order total (${poTotal.toFixed(2)})`);
+    }
+
+    // Check if cumulative bills would exceed PO total (excluding current bill)
+    const totalAlreadyBilled = purchaseOrder.bills.reduce((sum, bill) =>
+      sum + parseFloat(bill.total), 0
+    );
+    const newCumulativeTotal = totalAlreadyBilled + billTotal;
+
+    if (newCumulativeTotal > poTotal) {
+      res.status(400);
+      throw new Error(`Cannot update bill. Total billed amount (${newCumulativeTotal.toFixed(2)}) would exceed purchase order total (${poTotal.toFixed(2)}). Already billed by other bills: ${totalAlreadyBilled.toFixed(2)}`);
+    }
+  }
+
   const bill = await db.prisma.bill.update({
     where: { id: req.params.id },
     data: {
@@ -611,38 +930,6 @@ const updateVendorBill = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update vendor bill status
-// @route   PUT /api/finance/vendor-bills/:id/status
-// @access  Private
-const updateVendorBillStatus = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-  const { status } = req.body;
-
-  if (!status) {
-    res.status(400);
-    throw new Error('Status required');
-  }
-
-  const validStatuses = ['Unpaid', 'Partial', 'Paid'];
-  if (!validStatuses.includes(status)) {
-    res.status(400);
-    throw new Error('Invalid status');
-  }
-
-  const bill = await db.prisma.bill.update({
-    where: { id: req.params.id },
-    data: { status },
-    include: {
-      vendor: true
-    }
-  });
-
-  res.json({
-    success: true,
-    data: bill,
-    message: `Bill status updated to ${status}`
-  });
-});
 
 // ============= VENDOR PAYMENTS =============
 
@@ -685,6 +972,28 @@ const recordVendorPayment = asyncHandler(async (req, res) => {
   const db = require('../config/database');
   const { generatePaymentNumber } = require('../utils/generateId');
 
+  // Validate payment amount against bill balance if billId is provided
+  if (req.body.billId) {
+    const bill = await db.prisma.bill.findUnique({
+      where: { id: req.body.billId }
+    });
+
+    if (!bill) {
+      res.status(400);
+      throw new Error('Bill not found');
+    }
+
+    const paymentAmount = parseFloat(req.body.amount);
+    const billTotal = parseFloat(bill.total);
+    const paidAmount = parseFloat(bill.paidAmount) || 0;
+    const remainingBalance = billTotal - paidAmount;
+
+    if (paymentAmount > remainingBalance) {
+      res.status(400);
+      throw new Error(`Payment amount (${paymentAmount.toFixed(2)}) cannot exceed remaining bill balance (${remainingBalance.toFixed(2)})`);
+    }
+  }
+
   const paymentNumber = await generatePaymentNumber('VPAY');
 
   const payment = await db.prisma.vendorPayment.create({
@@ -707,16 +1016,24 @@ const recordVendorPayment = asyncHandler(async (req, res) => {
   // Update bill paid amount if payment is against a specific bill
   if (req.body.billId) {
     const bill = await db.prisma.bill.findUnique({
-      where: { id: req.body.billId }
+      where: { id: req.body.billId },
+      include: {
+        payments: true
+      }
     });
 
-    const newPaidAmount = parseFloat(bill.paidAmount) + parseFloat(req.body.amount);
-    const newStatus = newPaidAmount >= parseFloat(bill.total) ? 'Paid' : 'Partial';
+    // Calculate total paid amount from all payments (new payment already included)
+    const totalPaidAmount = bill.payments.reduce((sum, payment) =>
+      sum + parseFloat(payment.amount), 0
+    );
+
+    const newStatus = totalPaidAmount >= parseFloat(bill.total) ? 'Paid' :
+      totalPaidAmount > 0 ? 'Partial' : 'Unpaid';
 
     await db.prisma.bill.update({
       where: { id: req.body.billId },
       data: {
-        paidAmount: newPaidAmount,
+        paidAmount: totalPaidAmount,
         status: newStatus
       }
     });
@@ -735,6 +1052,139 @@ const recordVendorPayment = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data: payment
+  });
+});
+
+// @desc    Fix vendor bill paid amounts (cleanup utility)
+// @route   PUT /api/finance/vendor-bills/fix-paid-amounts
+// @access  Private
+const fixVendorBillPaidAmounts = asyncHandler(async (req, res) => {
+  const db = require('../config/database');
+
+  // Get all bills with their payments
+  const bills = await db.prisma.bill.findMany({
+    where: { deletedAt: null },
+    include: {
+      payments: true
+    }
+  });
+
+  let fixedCount = 0;
+
+  for (const bill of bills) {
+    // Calculate correct paid amount from payments
+    const calculatedPaidAmount = bill.payments.reduce((sum, payment) =>
+      sum + parseFloat(payment.amount), 0
+    );
+
+    // Calculate correct status
+    const calculatedStatus = calculatedPaidAmount >= parseFloat(bill.total) ? 'Paid' :
+      calculatedPaidAmount > 0 ? 'Partial' : 'Unpaid';
+
+    // Update if values don't match
+    if (parseFloat(bill.paidAmount || 0) !== calculatedPaidAmount || bill.status !== calculatedStatus) {
+      await db.prisma.bill.update({
+        where: { id: bill.id },
+        data: {
+          paidAmount: calculatedPaidAmount,
+          status: calculatedStatus
+        }
+      });
+      fixedCount++;
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Fixed paid amounts for ${fixedCount} vendor bills`,
+    fixedCount
+  });
+});
+
+// @desc    Debug purchase order payment data
+// @route   GET /api/finance/debug/purchase-order/:poNumber
+// @access  Private
+const debugPurchaseOrderPayments = asyncHandler(async (req, res) => {
+  const db = require('../config/database');
+
+  console.log(`\n=== DEBUG: Purchase Order ${req.params.poNumber} ===`);
+
+  const purchaseOrder = await db.prisma.purchaseOrder.findFirst({
+    where: {
+      poNumber: req.params.poNumber,
+      deletedAt: null
+    },
+    include: {
+      vendor: true,
+      bills: {
+        include: {
+          payments: true
+        }
+      }
+    }
+  });
+
+  if (!purchaseOrder) {
+    return res.status(404).json({ error: 'Purchase order not found' });
+  }
+
+  console.log(`PO Total: ${purchaseOrder.total}`);
+  console.log(`Number of Bills: ${purchaseOrder.bills.length}`);
+
+  let totalBilled = 0;
+  let totalPaidFromPayments = 0;
+  let totalPaidFromPaidAmountField = 0;
+
+  purchaseOrder.bills.forEach((bill, index) => {
+    console.log(`\n--- Bill ${index + 1}: ${bill.billNumber} ---`);
+    console.log(`Bill Total: ${bill.total}`);
+    console.log(`Bill paidAmount field: ${bill.paidAmount}`);
+    console.log(`Number of payments: ${bill.payments.length}`);
+
+    totalBilled += parseFloat(bill.total);
+    totalPaidFromPaidAmountField += parseFloat(bill.paidAmount || 0);
+
+    let billPaidFromPayments = 0;
+    bill.payments.forEach((payment, pIndex) => {
+      console.log(`  Payment ${pIndex + 1}: ${payment.amount} (${payment.paymentDate})`);
+      billPaidFromPayments += parseFloat(payment.amount);
+    });
+
+    totalPaidFromPayments += billPaidFromPayments;
+    console.log(`Bill paid from payments sum: ${billPaidFromPayments}`);
+    console.log(`Bill paidAmount field: ${bill.paidAmount}`);
+  });
+
+  console.log(`\n=== TOTALS ===`);
+  console.log(`Total Billed: ${totalBilled}`);
+  console.log(`Total Paid (from payments): ${totalPaidFromPayments}`);
+  console.log(`Total Paid (from paidAmount fields): ${totalPaidFromPaidAmountField}`);
+  console.log(`==================\n`);
+
+  const debugData = {
+    poNumber: purchaseOrder.poNumber,
+    poTotal: purchaseOrder.total,
+    bills: purchaseOrder.bills.map(bill => ({
+      billNumber: bill.billNumber,
+      billTotal: bill.total,
+      paidAmountField: bill.paidAmount,
+      payments: bill.payments.map(p => ({
+        amount: p.amount,
+        date: p.paymentDate,
+        paymentNumber: p.paymentNumber
+      })),
+      paymentsSum: bill.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0)
+    })),
+    totals: {
+      totalBilled,
+      totalPaidFromPayments,
+      totalPaidFromPaidAmountField
+    }
+  };
+
+  res.json({
+    success: true,
+    data: debugData
   });
 });
 
@@ -868,6 +1318,7 @@ module.exports = {
   getInvoices,
   getInvoice,
   createInvoice,
+  updateInvoice,
   updateInvoiceStatus,
   // Payments
   recordPayment,
@@ -886,7 +1337,9 @@ module.exports = {
   getVendorBill,
   createVendorBill,
   updateVendorBill,
-  updateVendorBillStatus,
+  fixVendorBillPaidAmounts,
+  // Debug
+  debugPurchaseOrderPayments,
   // Vendor Payments
   getVendorPayments,
   recordVendorPayment,

@@ -517,6 +517,271 @@ class FinanceService {
     });
   }
 
+  async updateInvoice(id, invoiceData, userId) {
+    // Validate required fields
+    if (!invoiceData.customerId || !invoiceData.items || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {
+      const error = new Error('Customer ID and items array are required');
+      error.status = 400;
+      throw error;
+    }
+
+    return await db.transaction(async (prisma) => {
+      // Get current invoice with items
+      const currentInvoice = await prisma.invoice.findUnique({
+        where: { id },
+        include: {
+          items: true,
+          customer: true
+        }
+      });
+
+      if (!currentInvoice) {
+        const error = new Error('Invoice not found');
+        error.status = 404;
+        throw error;
+      }
+
+      // Only allow updates for Draft invoices
+      if (currentInvoice.status !== 'Draft') {
+        const error = new Error('Only draft invoices can be updated');
+        error.status = 400;
+        throw error;
+      }
+
+      // Validate customer exists
+      const customer = await prisma.customer.findUnique({
+        where: { id: invoiceData.customerId }
+      });
+
+      if (!customer) {
+        const error = new Error('Customer not found');
+        error.status = 400;
+        throw error;
+      }
+
+      // Get current and new item IDs
+      const currentItemIds = currentInvoice.items.map(item => item.itemId);
+      const newItemIds = invoiceData.items.map(item => item.itemId);
+
+      // Determine items to add and remove
+      const itemsToAdd = newItemIds.filter(id => !currentItemIds.includes(id));
+      const itemsToRemove = currentItemIds.filter(id => !newItemIds.includes(id));
+      const itemsToKeep = currentItemIds.filter(id => newItemIds.includes(id));
+
+      // Validate new items exist and are available
+      if (itemsToAdd.length > 0) {
+        const newItems = await prisma.item.findMany({
+          where: {
+            id: { in: itemsToAdd },
+            deletedAt: null
+          },
+          orderBy: { id: 'asc' }
+        });
+
+        if (newItems.length !== itemsToAdd.length) {
+          const foundIds = newItems.map(item => item.id);
+          const missingIds = itemsToAdd.filter(id => !foundIds.includes(id));
+          const error = new Error(`Items not found: ${missingIds.join(', ')}`);
+          error.status = 400;
+          throw error;
+        }
+
+        const unavailableItems = newItems.filter(item => item.inventoryStatus !== 'Available');
+        if (unavailableItems.length > 0) {
+          const unavailableInfo = unavailableItems.map(item => ({
+            serialNumber: item.serialNumber,
+            currentStatus: item.inventoryStatus,
+            reservedFor: item.reservedForId
+          }));
+          const error = new Error(`Items not available for reservation: ${JSON.stringify(unavailableInfo)}`);
+          error.status = 400;
+          throw error;
+        }
+
+        // Reserve new items
+        await Promise.all(newItems.map(item =>
+          prisma.item.update({
+            where: { id: item.id },
+            data: {
+              inventoryStatus: 'Reserved',
+              reservedAt: new Date(),
+              reservedBy: userId,
+              reservedForType: 'Invoice',
+              reservedForId: id,
+              sellingPrice: invoiceData.items.find(invItem => invItem.itemId === item.id).unitPrice
+            }
+          })
+        ));
+
+        // Create inventory status history for new items
+        await Promise.all(newItems.map(item =>
+          prisma.inventoryStatusHistory.create({
+            data: {
+              itemId: item.id,
+              fromStatus: 'Available',
+              toStatus: 'Reserved',
+              changeReason: 'INVOICE_UPDATED',
+              referenceType: 'Invoice',
+              referenceId: id,
+              changedBy: userId,
+              notes: `Reserved for Invoice ${currentInvoice.invoiceNumber} (Updated)`
+            }
+          })
+        ));
+      }
+
+      // Release removed items
+      if (itemsToRemove.length > 0) {
+        await Promise.all(itemsToRemove.map(itemId =>
+          prisma.item.update({
+            where: { id: itemId },
+            data: {
+              inventoryStatus: 'Available',
+              reservedAt: null,
+              reservedBy: null,
+              reservedForType: null,
+              reservedForId: null,
+              sellingPrice: null
+            }
+          })
+        ));
+
+        // Create inventory status history for removed items
+        await Promise.all(itemsToRemove.map(itemId =>
+          prisma.inventoryStatusHistory.create({
+            data: {
+              itemId: itemId,
+              fromStatus: 'Reserved',
+              toStatus: 'Available',
+              changeReason: 'INVOICE_UPDATED',
+              referenceType: 'Invoice',
+              referenceId: id,
+              changedBy: userId,
+              notes: `Released from Invoice ${currentInvoice.invoiceNumber} (Updated)`
+            }
+          })
+        ));
+      }
+
+      // Update selling prices for kept items (in case prices changed)
+      if (itemsToKeep.length > 0) {
+        await Promise.all(itemsToKeep.map(itemId => {
+          const newPrice = invoiceData.items.find(item => item.itemId === itemId).unitPrice;
+          return prisma.item.update({
+            where: { id: itemId },
+            data: { sellingPrice: newPrice }
+          });
+        }));
+      }
+
+      // Calculate new totals
+      let subtotal = 0;
+      for (const invoiceItem of invoiceData.items) {
+        if (invoiceItem.quantity && invoiceItem.quantity !== 1) {
+          const error = new Error(`Invalid quantity ${invoiceItem.quantity} for item ${invoiceItem.itemId}. Each item must have quantity = 1`);
+          error.status = 400;
+          throw error;
+        }
+        subtotal += invoiceItem.unitPrice;
+      }
+
+      // Calculate discount
+      let discountAmount = 0;
+      if (invoiceData.discountType === 'Percentage') {
+        discountAmount = (subtotal * invoiceData.discountValue) / 100;
+      } else if (invoiceData.discountType === 'Fixed') {
+        discountAmount = invoiceData.discountValue;
+      }
+
+      // Calculate tax
+      const taxableAmount = subtotal - discountAmount;
+      const taxAmount = (taxableAmount * invoiceData.taxRate) / 100;
+      const newTotal = taxableAmount + taxAmount;
+
+      // Check customer credit limit
+      const balanceChange = newTotal - currentInvoice.total;
+      if (customer.creditLimit > 0) {
+        const newBalance = parseFloat(customer.currentBalance) + balanceChange;
+        if (newBalance > customer.creditLimit) {
+          throw new Error(`Invoice update exceeds customer credit limit (Limit: ${customer.creditLimit}, Current: ${customer.currentBalance})`);
+        }
+      }
+
+      // Delete existing invoice items
+      await prisma.invoiceItem.deleteMany({
+        where: { invoiceId: id }
+      });
+
+      // Update invoice
+      const updatedInvoice = await prisma.invoice.update({
+        where: { id },
+        data: {
+          invoiceDate: invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : undefined,
+          dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate) : undefined,
+          subtotal,
+          discountType: invoiceData.discountType,
+          discountValue: invoiceData.discountValue || 0,
+          taxRate: invoiceData.taxRate || 0,
+          taxAmount,
+          total: newTotal,
+          terms: invoiceData.terms,
+          notes: invoiceData.notes,
+          customerId: invoiceData.customerId,
+          items: {
+            create: invoiceData.items.map(item => ({
+              quantity: 1,
+              unitPrice: item.unitPrice,
+              total: item.unitPrice,
+              description: item.description,
+              itemId: item.itemId
+            }))
+          }
+        },
+        include: {
+          customer: true,
+          items: {
+            include: {
+              item: {
+                include: {
+                  model: {
+                    include: {
+                      company: true
+                    }
+                  },
+                  category: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // Update customer balance if total changed
+      if (balanceChange !== 0) {
+        await prisma.customer.update({
+          where: { id: customer.id },
+          data: {
+            currentBalance: {
+              increment: balanceChange
+            }
+          }
+        });
+
+        // Update customer ledger entry
+        await prisma.customerLedger.updateMany({
+          where: { invoiceId: id },
+          data: {
+            debit: newTotal,
+            balance: parseFloat(customer.currentBalance) + balanceChange
+          }
+        });
+      }
+
+      logger.info(`Invoice updated: ${currentInvoice.invoiceNumber}, items: +${itemsToAdd.length}, -${itemsToRemove.length}`);
+      return updatedInvoice;
+    });
+  }
+
   /**
    * Payment Management
    */
@@ -562,10 +827,16 @@ class FinanceService {
       // Update invoice if specified
       if (paymentData.invoiceId) {
         const invoice = await prisma.invoice.findUnique({
-          where: { id: paymentData.invoiceId }
+          where: { id: paymentData.invoiceId },
+          include: {
+            payments: true
+          }
         });
 
-        const newPaidAmount = parseFloat(invoice.paidAmount) + parseFloat(paymentData.amount);
+        // Calculate total paid amount from all payments (including the one just created)
+        const newPaidAmount = invoice.payments.reduce((sum, payment) =>
+          sum + parseFloat(payment.amount), 0
+        );
         const oldStatus = invoice.status;
         let newStatus = oldStatus;
 
@@ -882,7 +1153,7 @@ class FinanceService {
         type: 'Invoice',
         reference: invoice.invoiceNumber,
         description: `Invoice ${invoice.invoiceNumber}`,
-        amount: invoice.totalAmount,
+        amount: parseFloat(invoice.total || 0), // Use 'total' field and ensure numeric
         balance: 0 // Will be calculated below
       });
     }
@@ -901,8 +1172,8 @@ class FinanceService {
         date: payment.paymentDate,
         type: 'Payment',
         reference: payment.paymentNumber,
-        description: `Payment ${payment.paymentMethod}`,
-        amount: -payment.amount, // Negative for payments
+        description: `Payment ${payment.method || 'Cash'}`, // Use 'method' field with fallback
+        amount: -parseFloat(payment.amount || 0), // Negative for payments, ensure numeric
         balance: 0 // Will be calculated below
       });
     }
@@ -910,26 +1181,28 @@ class FinanceService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = customer.openingBalance || 0;
+    let runningBalance = parseFloat(customer.openingBalance || 0);
 
     // Add opening balance entry if it exists
     if (customer.openingBalance && customer.openingBalance !== 0) {
+      const openingBalance = parseFloat(customer.openingBalance || 0);
       ledgerEntries.unshift({
         date: customer.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: customer.openingBalance,
-        balance: customer.openingBalance
+        amount: openingBalance,
+        balance: openingBalance
       });
     }
 
     // Calculate running balance for each entry
     for (const entry of ledgerEntries) {
       if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
+        const entryAmount = parseFloat(entry.amount || 0);
+        runningBalance += entryAmount;
       }
-      entry.balance = runningBalance;
+      entry.balance = parseFloat(runningBalance.toFixed(2)); // Ensure proper decimal handling
     }
 
     return ledgerEntries;
@@ -1012,26 +1285,28 @@ class FinanceService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = vendor.openingBalance || 0;
+    let runningBalance = parseFloat(vendor.openingBalance || 0);
 
     // Add opening balance entry if it exists
     if (vendor.openingBalance && vendor.openingBalance !== 0) {
+      const openingBalance = parseFloat(vendor.openingBalance || 0);
       ledgerEntries.unshift({
         date: vendor.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: vendor.openingBalance,
-        balance: vendor.openingBalance
+        amount: openingBalance,
+        balance: openingBalance
       });
     }
 
     // Calculate running balance for each entry
     for (const entry of ledgerEntries) {
       if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
+        const entryAmount = parseFloat(entry.amount || 0);
+        runningBalance += entryAmount;
       }
-      entry.balance = runningBalance;
+      entry.balance = parseFloat(runningBalance.toFixed(2)); // Ensure proper decimal handling
     }
 
     return ledgerEntries;

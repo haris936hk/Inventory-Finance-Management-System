@@ -30,6 +30,7 @@ class ReservationService {
         where: {
           id: { in: itemIds },
           status: 'In Store',
+          inventoryStatus: 'Available', // Only allow reserving Available items
           deletedAt: null
         },
         include: {
@@ -80,6 +81,7 @@ class ReservationService {
   async getGroupedAvailableItems(filters = {}) {
     const where = {
       status: 'In Store',
+      inventoryStatus: 'Available', // Only show Available items for invoice creation
       deletedAt: null
     };
 

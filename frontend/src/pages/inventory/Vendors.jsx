@@ -74,9 +74,13 @@ const Vendors = () => {
     // Fetch detailed vendor data including related records
     try {
       const response = await axios.get(`/inventory/vendors/${record.id}`);
+      console.log('Vendor details response:', response.data.data);
+      console.log('Bills:', response.data.data.bills);
+      console.log('Payments:', response.data.data.payments);
       setSelectedVendor(response.data.data);
       setDrawerVisible(true);
     } catch (error) {
+      console.error('Error fetching vendor details:', error);
       message.error('Failed to load vendor details');
     }
   };
@@ -391,6 +395,10 @@ const Vendors = () => {
             </Tabs.TabPane>
 
             <Tabs.TabPane tab="Bills" key="3">
+              {console.log('Rendering Bills tab with data:', selectedVendor.bills)}
+              <div style={{ marginBottom: 16 }}>
+                <strong>Bills count: {selectedVendor.bills?.length || 0}</strong>
+              </div>
               <Table
                 dataSource={selectedVendor.bills}
                 columns={[
@@ -423,10 +431,17 @@ const Vendors = () => {
                   }
                 ]}
                 pagination={false}
+                locale={{
+                  emptyText: 'No bills found for this vendor'
+                }}
               />
             </Tabs.TabPane>
 
             <Tabs.TabPane tab="Payments" key="4">
+              {console.log('Rendering Payments tab with data:', selectedVendor.payments)}
+              <div style={{ marginBottom: 16 }}>
+                <strong>Payments count: {selectedVendor.payments?.length || 0}</strong>
+              </div>
               <Table
                 dataSource={selectedVendor.payments}
                 columns={[
@@ -446,6 +461,9 @@ const Vendors = () => {
                   { title: 'Method', dataIndex: 'method', key: 'method' }
                 ]}
                 pagination={false}
+                locale={{
+                  emptyText: 'No payments found for this vendor'
+                }}
               />
             </Tabs.TabPane>
 

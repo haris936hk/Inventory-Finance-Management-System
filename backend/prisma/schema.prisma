@@ -450,7 +450,7 @@ model Bill {
   taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
   total         Decimal   @db.Decimal(18, 2)
   paidAmount    Decimal   @default(0) @db.Decimal(10, 2)
-  
+
   // Relationships
   vendorId      String
   vendor        Vendor    @relation(fields: [vendorId], references: [id])
@@ -458,11 +458,11 @@ model Bill {
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   payments      VendorPayment[]
   ledgerEntries VendorLedger[]
-  
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([vendorId])
   @@index([status])
   @@index([billDate])
@@ -593,17 +593,17 @@ model VendorPayment {
   method        String    // "Cash", "Bank Transfer", "Cheque"
   reference     String?
   notes         String?
-  
+
   // Relationships
   vendorId      String
   vendor        Vendor    @relation(fields: [vendorId], references: [id])
   billId        String?
   bill          Bill?     @relation(fields: [billId], references: [id])
-  
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([vendorId])
   @@index([billId])
   @@index([paymentDate])

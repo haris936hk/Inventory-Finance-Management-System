@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Descriptions, Table, Button, Space, Tag, Row, Col,
-  Statistic, Divider, Typography, message, Spin, Alert
+  Statistic, Divider, Typography, message, Spin, Alert, Progress, Tooltip
 } from 'antd';
 import {
   ArrowLeftOutlined, EditOutlined, PrinterOutlined, ShopOutlined,
@@ -85,6 +85,16 @@ const PurchaseOrderDetails = () => {
     return colors[status] || 'default';
   };
 
+  const getPaymentStatusColor = (status) => {
+    const colors = {
+      'Unbilled': 'default',
+      'Unpaid': 'red',
+      'Partially Paid': 'orange',
+      'Fully Paid': 'green'
+    };
+    return colors[status] || 'default';
+  };
+
   const lineItemColumns = [
     {
       title: 'Product Description',
@@ -149,7 +159,7 @@ const PurchaseOrderDetails = () => {
       key: 'unitPrice',
       width: 120,
       align: 'right',
-      render: (price) => formatPKR(Number(price))
+      render: (price) => formatPKR(parseFloat(price || 0))
     },
     {
       title: 'Total Price',
@@ -159,7 +169,7 @@ const PurchaseOrderDetails = () => {
       align: 'right',
       render: (total) => (
         <Text strong style={{ color: '#1890ff' }}>
-          formatPKR(Number(total))
+          {formatPKR(parseFloat(total || 0))}
         </Text>
       )
     }
@@ -191,7 +201,7 @@ const PurchaseOrderDetails = () => {
             </Space>
           </div>
           <Space>
-            {hasPermission('finance.edit') && purchaseOrder.status !== 'Completed' && (
+            {hasPermission('finance.edit') && purchaseOrder.status === 'Draft' && (
               <Button icon={<EditOutlined />}>
                 Edit
               </Button>
@@ -239,7 +249,7 @@ const PurchaseOrderDetails = () => {
           <Card>
             <Statistic
               title="Line Items"
-              value={purchaseOrder._count?.lineItems || 0}
+              value={purchaseOrder._count?.lineItems || purchaseOrder.lineItems?.length || 0}
               valueStyle={{ color: '#722ed1' }}
             />
           </Card>
@@ -333,14 +343,14 @@ const PurchaseOrderDetails = () => {
           <Col xs={24} md={12}>
             <Descriptions column={1} size="small">
               <Descriptions.Item label="Subtotal">
-                {formatPKR(Number(purchaseOrder.subtotal))}
+                {formatPKR(parseFloat(purchaseOrder.subtotal || 0))}
               </Descriptions.Item>
               <Descriptions.Item label="Tax Amount">
-                {formatPKR(Number(purchaseOrder.taxAmount))}
+                {formatPKR(parseFloat(purchaseOrder.taxAmount || 0))}
               </Descriptions.Item>
               <Descriptions.Item label="Total Amount">
                 <Text strong style={{ fontSize: '16px', color: '#52c41a' }}>
-                  {formatPKR(Number(purchaseOrder.total))}
+                  {formatPKR(parseFloat(purchaseOrder.total || 0))}
                 </Text>
               </Descriptions.Item>
             </Descriptions>
@@ -365,6 +375,136 @@ const PurchaseOrderDetails = () => {
           </Col>
         </Row>
       </Card>
+
+      {/* Payment Summary */}
+      <Card title={
+        <Space>
+          <DollarOutlined />
+          Payment Summary
+        </Space>
+      } style={{ marginBottom: 16 }}>
+        {purchaseOrder.paymentSummary ? (
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="Total Billed">
+                  {formatPKR(purchaseOrder.paymentSummary.totalBilled)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Total Paid">
+                  <Text style={{ color: '#52c41a' }}>
+                    {formatPKR(purchaseOrder.paymentSummary.totalPaid)}
+                  </Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="Outstanding Amount">
+                  <Text style={{ color: purchaseOrder.paymentSummary.outstanding > 0 ? '#ff4d4f' : '#52c41a' }}>
+                    {formatPKR(purchaseOrder.paymentSummary.outstanding)}
+                  </Text>
+                </Descriptions.Item>
+                <Descriptions.Item label="Payment Status">
+                  <Tag color={getPaymentStatusColor(purchaseOrder.paymentSummary.paymentStatus)}>
+                    {purchaseOrder.paymentSummary.paymentStatus}
+                  </Tag>
+                </Descriptions.Item>
+              </Descriptions>
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ padding: '16px' }}>
+                <Space direction="vertical" size="large" style={{ width: '100%' }}>
+                  <div>
+                    <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                      Billing Progress ({Math.round(purchaseOrder.paymentSummary.billingProgress)}%)
+                    </Text>
+                    <Progress
+                      percent={Math.round(purchaseOrder.paymentSummary.billingProgress)}
+                      strokeColor="#1890ff"
+                    />
+                  </div>
+                  {purchaseOrder.paymentSummary.totalBilled > 0 && (
+                    <div>
+                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+                        Payment Progress ({Math.round(purchaseOrder.paymentSummary.paymentProgress)}%)
+                      </Text>
+                      <Progress
+                        percent={Math.round(purchaseOrder.paymentSummary.paymentProgress)}
+                        status={purchaseOrder.paymentSummary.paymentStatus === 'Fully Paid' ? 'success' : 'active'}
+                      />
+                    </div>
+                  )}
+                </Space>
+              </div>
+            </Col>
+          </Row>
+        ) : (
+          <Alert
+            message="Payment Information Loading"
+            description="Payment summary is being calculated..."
+            type="info"
+            showIcon
+          />
+        )}
+      </Card>
+
+      {/* Bills Summary */}
+      {purchaseOrder.bills && purchaseOrder.bills.length > 0 && (
+        <Card title="Related Bills" style={{ marginBottom: 16 }}>
+          <Table
+            dataSource={purchaseOrder.bills}
+            rowKey="id"
+            pagination={false}
+            size="small"
+            columns={[
+              {
+                title: 'Bill Number',
+                dataIndex: 'billNumber',
+                key: 'billNumber',
+                render: (billNumber, record) => (
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => navigate(`/app/finance/vendor-bills/${record.id}`)}
+                  >
+                    {billNumber}
+                  </Button>
+                )
+              },
+              {
+                title: 'Bill Date',
+                dataIndex: 'billDate',
+                key: 'billDate',
+                render: (date) => new Date(date).toLocaleDateString('en-GB')
+              },
+              {
+                title: 'Status',
+                dataIndex: 'status',
+                key: 'status',
+                render: (status) => (
+                  <Tag color={status === 'Paid' ? 'green' : status === 'Partial' ? 'orange' : 'red'}>
+                    {status}
+                  </Tag>
+                )
+              },
+              {
+                title: 'Total',
+                dataIndex: 'total',
+                key: 'total',
+                align: 'right',
+                render: (amount) => formatPKR(amount)
+              },
+              {
+                title: 'Paid',
+                dataIndex: 'paidAmount',
+                key: 'paidAmount',
+                align: 'right',
+                render: (amount) => (
+                  <Text style={{ color: '#52c41a' }}>
+                    {formatPKR(amount || 0)}
+                  </Text>
+                )
+              }
+            ]}
+          />
+        </Card>
+      )}
 
       {/* Line Items Table */}
       <Card title="Purchase Order Line Items">

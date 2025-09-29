@@ -1,15 +1,15 @@
 // ========== src/pages/finance/RecordPayment.jsx ==========
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Form, Input, Select, DatePicker, Button, Row, Col,
-  Typography, Divider, Alert, Space, Table, message
+  Typography, Divider, Alert, Space, Table, message, InputNumber
 } from 'antd';
 import {
   CreditCardOutlined, UserOutlined, CalendarOutlined,
   DollarOutlined, FileTextOutlined, ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
@@ -21,14 +21,47 @@ const RecordPayment = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
+  const [searchParams] = useSearchParams();
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+
+  // Watch form values for real-time validation
+  const watchedValues = Form.useWatch([], form);
+
+  // Calculate remaining invoice balance
+  const remainingBalance = React.useMemo(() => {
+    if (!selectedInvoice) return 0;
+    const total = parseFloat(selectedInvoice.total) || 0;
+    const paid = parseFloat(selectedInvoice.paidAmount) || 0;
+    return total - paid;
+  }, [selectedInvoice]);
+
+  // Check if payment amount exceeds remaining balance
+  const exceedsBalance = React.useMemo(() => {
+    if (!selectedInvoice || !watchedValues?.amount) return false;
+    const paymentAmount = parseFloat(watchedValues.amount) || 0;
+    return paymentAmount > remainingBalance;
+  }, [selectedInvoice, watchedValues, remainingBalance]);
+
+  // Get URL parameters
+  const invoiceIdFromUrl = searchParams.get('invoiceId');
 
   // Fetch customers
   const { data: customers } = useQuery('customers', async () => {
     const response = await axios.get('/finance/customers');
     return response.data.data;
   });
+
+  // Fetch invoice details if invoiceId is provided in URL
+  const { data: invoiceFromUrl } = useQuery(
+    ['invoice-for-payment', invoiceIdFromUrl],
+    async () => {
+      if (!invoiceIdFromUrl) return null;
+      const response = await axios.get(`/finance/invoices/${invoiceIdFromUrl}`);
+      return response.data.data;
+    },
+    { enabled: !!invoiceIdFromUrl }
+  );
 
   // Fetch customer invoices when customer is selected
   const { data: customerInvoices, isLoading: invoicesLoading } = useQuery(
@@ -40,6 +73,23 @@ const RecordPayment = () => {
     },
     { enabled: !!selectedCustomer }
   );
+
+  // Auto-populate form when invoice is loaded from URL
+  useEffect(() => {
+    if (invoiceFromUrl && customers) {
+      const customer = customers.find(c => c.id === invoiceFromUrl.customerId);
+      if (customer) {
+        setSelectedCustomer(customer.id);
+        setSelectedInvoice(invoiceFromUrl);
+
+        // Update form fields
+        form.setFieldsValue({
+          customerId: customer.id,
+          invoiceId: invoiceFromUrl.id
+        });
+      }
+    }
+  }, [invoiceFromUrl, customers, form]);
 
   // Record payment mutation
   const paymentMutation = useMutation(
@@ -69,11 +119,34 @@ const RecordPayment = () => {
   };
 
   const handleSubmit = (values) => {
+    const paymentAmount = parseFloat(values.amount);
+
+    // Always validate if an invoice ID is provided
+    if (values.invoiceId) {
+      // Try to get invoice data from selectedInvoice or invoiceFromUrl
+      const invoice = selectedInvoice || invoiceFromUrl;
+
+      if (!invoice) {
+        message.error('Invoice data not available. Please refresh the page and try again.');
+        return;
+      }
+
+      const invoiceTotal = parseFloat(invoice.total) || 0;
+      const paidAmount = parseFloat(invoice.paidAmount) || 0;
+      const remainingBalance = invoiceTotal - paidAmount;
+
+      if (paymentAmount > remainingBalance) {
+        message.error(`Payment amount (${formatPKR(paymentAmount)}) cannot exceed remaining invoice balance (${formatPKR(remainingBalance)})`);
+        return;
+      }
+    }
+
     const paymentData = {
       ...values,
       paymentDate: values.paymentDate.format('YYYY-MM-DD'),
       method: values.paymentMethod, // Map paymentMethod to method
       reference: values.referenceNumber, // Map referenceNumber to reference
+      amount: paymentAmount
     };
     // Remove the original fields to avoid duplication
     delete paymentData.paymentMethod;
@@ -110,7 +183,7 @@ const RecordPayment = () => {
       key: 'balance',
       render: (_, record) => (
         <Text strong style={{ color: '#f5222d' }}>
-          {formatPKR((record.total || 0) - (record.paidAmount || 0))}
+          {formatPKR(parseFloat(record.total || 0) - parseFloat(record.paidAmount || 0))}
         </Text>
       )
     },
@@ -149,7 +222,9 @@ const RecordPayment = () => {
           onFinish={handleSubmit}
           initialValues={{
             paymentDate: dayjs(),
-            paymentMethod: 'Cash'
+            paymentMethod: 'Cash',
+            customerId: invoiceFromUrl?.customerId,
+            invoiceId: invoiceIdFromUrl
           }}
         >
           <Row gutter={[24, 0]}>
@@ -191,7 +266,7 @@ const RecordPayment = () => {
                     {customerInvoices?.map(invoice => (
                       <Select.Option key={invoice.id} value={invoice.id}>
                         {invoice.invoiceNumber} - {formatPKR(invoice.total)}
-                        (Balance: {formatPKR((invoice.total || 0) - (invoice.paidAmount || 0))})
+                        (Balance: {formatPKR(parseFloat(invoice.total || 0) - parseFloat(invoice.paidAmount || 0))})
                       </Select.Option>
                     ))}
                   </Select>
@@ -209,27 +284,34 @@ const RecordPayment = () => {
                   </Col>
                   <Col span={12}>
                     <Form.Item
-                      label="Amount"
+                      label="Amount (PKR)"
                       name="amount"
                       rules={[
                         { required: true, message: 'Please enter amount' },
+                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
                         {
                           validator: (_, value) => {
-                            const numValue = parseFloat(value);
-                            if (isNaN(numValue) || numValue <= 0) {
-                              return Promise.reject(new Error('Amount must be greater than 0'));
+                            console.log('Field validator called:', { value, selectedInvoice, remainingBalance });
+
+                            if (!selectedInvoice || !value) {
+                              return Promise.resolve();
+                            }
+                            const paymentAmount = parseFloat(value) || 0;
+
+                            if (paymentAmount > remainingBalance) {
+                              console.log('Field validation failed:', { paymentAmount, remainingBalance });
+                              return Promise.reject(new Error(`Amount cannot exceed remaining balance (${formatPKR(remainingBalance)})`));
                             }
                             return Promise.resolve();
                           }
                         }
                       ]}
                     >
-                      <Input
-                        type="number"
-                        prefix="PKR"
+                      <InputNumber
+                        style={{ width: '100%' }}
+                        precision={2}
+                        min={0.01}
                         placeholder="0.00"
-                        step="0.01"
-                        min="0.01"
                       />
                     </Form.Item>
                   </Col>
@@ -260,6 +342,17 @@ const RecordPayment = () => {
                 <Form.Item label="Notes" name="notes">
                   <TextArea rows={3} placeholder="Additional notes about this payment" />
                 </Form.Item>
+
+                {/* Payment Validation Alert */}
+                {selectedInvoice && exceedsBalance && (
+                  <Alert
+                    message="Payment Amount Exceeds Invoice Balance"
+                    description={`Payment amount cannot exceed remaining invoice balance of ${formatPKR(remainingBalance)}. Please adjust the amount.`}
+                    type="error"
+                    style={{ marginTop: 16 }}
+                    showIcon
+                  />
+                )}
               </Card>
             </Col>
 
@@ -285,32 +378,73 @@ const RecordPayment = () => {
               )}
 
               {selectedInvoice && (
-                <Card title="Selected Invoice Details" size="small" style={{ marginTop: 16 }}>
-                  <Row gutter={[16, 8]}>
-                    <Col span={12}>
-                      <Text strong>Invoice #:</Text>
-                      <br />
-                      {selectedInvoice.invoiceNumber}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Date:</Text>
-                      <br />
-                      {dayjs(selectedInvoice.invoiceDate).format('DD/MM/YYYY')}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Total Amount:</Text>
-                      <br />
-                      PKR {selectedInvoice.total?.toLocaleString()}
-                    </Col>
-                    <Col span={12}>
-                      <Text strong>Outstanding:</Text>
-                      <br />
-                      <Text style={{ color: '#f5222d' }}>
-                        PKR {((selectedInvoice.total || 0) - (selectedInvoice.paidAmount || 0)).toLocaleString()}
-                      </Text>
-                    </Col>
-                  </Row>
-                </Card>
+                <>
+                  {/* Payment Summary */}
+                  <Card title="Payment Summary" size="small" style={{ marginTop: 16, backgroundColor: '#f9f9f9' }}>
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Invoice Total</Text>
+                          <br />
+                          <Text strong style={{ fontSize: 16, color: '#1890ff' }}>
+                            {formatPKR(Number(selectedInvoice.total))}
+                          </Text>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Already Paid</Text>
+                          <br />
+                          <Text strong style={{ fontSize: 16, color: '#52c41a' }}>
+                            {formatPKR(Number(selectedInvoice.paidAmount || 0))}
+                          </Text>
+                        </div>
+                      </Col>
+                      <Col span={8}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text type="secondary">Remaining Balance</Text>
+                          <br />
+                          <Text strong style={{
+                            fontSize: 16,
+                            color: exceedsBalance ? '#ff4d4f' : '#f5222d'
+                          }}>
+                            {formatPKR(remainingBalance)}
+                          </Text>
+                        </div>
+                      </Col>
+                    </Row>
+                  </Card>
+
+                  <Card title="Selected Invoice Details" size="small" style={{ marginTop: 16 }}>
+                    <Row gutter={[16, 8]}>
+                      <Col span={12}>
+                        <Text strong>Invoice #:</Text>
+                        <br />
+                        {selectedInvoice.invoiceNumber}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Date:</Text>
+                        <br />
+                        {dayjs(selectedInvoice.invoiceDate).format('DD/MM/YYYY')}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Due Date:</Text>
+                        <br />
+                        {selectedInvoice.dueDate ? dayjs(selectedInvoice.dueDate).format('DD/MM/YYYY') : 'Not set'}
+                      </Col>
+                      <Col span={12}>
+                        <Text strong>Status:</Text>
+                        <br />
+                        <span style={{
+                          color: selectedInvoice.status === 'Paid' ? '#52c41a' :
+                                selectedInvoice.status === 'Partial' ? '#faad14' : '#f5222d'
+                        }}>
+                          {selectedInvoice.status}
+                        </span>
+                      </Col>
+                    </Row>
+                  </Card>
+                </>
               )}
             </Col>
           </Row>
@@ -326,6 +460,7 @@ const RecordPayment = () => {
                 type="primary"
                 htmlType="submit"
                 loading={paymentMutation.isLoading}
+                disabled={exceedsBalance}
                 icon={<CreditCardOutlined />}
               >
                 Record Payment

@@ -49,9 +49,9 @@ const Invoices = () => {
       if (invoice.status === 'Paid') {
         acc.paid += parseFloat(invoice.total);
       } else if (invoice.status === 'Overdue') {
-        acc.overdue += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        acc.overdue += parseFloat(invoice.total) - parseFloat(invoice.paidAmount || 0);
       } else {
-        acc.pending += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        acc.pending += parseFloat(invoice.total) - parseFloat(invoice.paidAmount || 0);
       }
       return acc;
     }, { total: 0, paid: 0, pending: 0, overdue: 0 });
@@ -146,14 +146,14 @@ const Invoices = () => {
       dataIndex: 'paidAmount',
       key: 'paidAmount',
       width: 120,
-      render: (amount) => formatPKR(parseFloat(amount))
+      render: (amount) => formatPKR(parseFloat(amount || 0))
     },
     {
       title: 'Balance',
       key: 'balance',
       width: 120,
       render: (_, record) => {
-        const balance = parseFloat(record.total) - parseFloat(record.paidAmount);
+        const balance = parseFloat(record.total) - parseFloat(record.paidAmount || 0);
         return (
           <span style={{ color: balance > 0 ? '#ff4d4f' : '#52c41a' }}>
             {formatPKR(balance)}
@@ -188,6 +188,13 @@ const Invoices = () => {
             label: 'View',
             icon: <EyeOutlined />,
             onClick: () => navigate(`/app/finance/invoices/${record.id}`)
+          },
+          {
+            key: 'edit',
+            label: 'Edit',
+            icon: <EditOutlined />,
+            onClick: () => navigate(`/app/finance/invoices/${record.id}/edit`),
+            disabled: record.status !== 'Draft'
           },
           {
             key: 'payment',
@@ -227,7 +234,7 @@ const Invoices = () => {
                 onOk: () => updateStatusMutation.mutate({ id: record.id, status: 'Cancelled' })
               });
             },
-            disabled: ['Paid', 'Cancelled'].includes(record.status)
+            disabled: ['Paid', 'Partial', 'Cancelled'].includes(record.status)
           }
         ];
 

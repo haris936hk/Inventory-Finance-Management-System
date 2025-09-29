@@ -93,7 +93,7 @@ class ReportService {
       }
     });
 
-    // Get top selling products
+    // Get top selling products (exclude items with null modelId)
     const topProducts = await db.prisma.item.groupBy({
       by: ['modelId'],
       where: {

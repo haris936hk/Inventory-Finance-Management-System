@@ -24,25 +24,34 @@ export const SYSTEM_CONFIG = {
 
 // Currency formatting helper - Pakistani style (no decimals, comma separators)
 export const formatCurrency = (amount) => {
+  const safeAmount = parseFloat(amount || 0);
+  const numericAmount = isNaN(safeAmount) ? 0 : safeAmount;
+
   return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
     style: 'currency',
     currency: SYSTEM_CONFIG.CURRENCY.CODE,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
-  }).format(amount || 0);
+  }).format(numericAmount);
 };
 
 // Number formatting helper - Pakistani style (no decimals, comma separators)
 export const formatNumber = (number) => {
+  const safeNumber = parseFloat(number || 0);
+  const numericNumber = isNaN(safeNumber) ? 0 : safeNumber;
+
   return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
-  }).format(number || 0);
+  }).format(numericNumber);
 };
 
 // Simple PKR formatting helper (just PKR prefix + comma-separated numbers)
 export const formatPKR = (amount) => {
-  return `PKR ${formatNumber(amount)}`;
+  const safeAmount = parseFloat(amount || 0);
+  const numericAmount = isNaN(safeAmount) ? 0 : safeAmount;
+
+  return `PKR ${formatNumber(numericAmount)}`;
 };
 
 // System information

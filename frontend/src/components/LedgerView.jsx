@@ -107,29 +107,36 @@ const LedgerView = ({
       // Skip opening balance entries in calculations
       if (entry.type === 'Opening Balance') return;
 
+      const entryAmount = parseFloat(entry.amount || 0);
+
       if (entityType === 'customer') {
         // Customer: Invoices = Debits (they owe us), Payments = Credits (they pay us)
-        if (entry.amount > 0) {
-          totalDebits += parseFloat(entry.amount);
+        if (entryAmount > 0) {
+          totalDebits += entryAmount;
         } else {
-          totalCredits += Math.abs(parseFloat(entry.amount));
+          totalCredits += Math.abs(entryAmount);
         }
       } else {
         // Vendor: Bills/POs = Credits (we owe them), Payments = Debits (we pay them)
-        if (entry.amount > 0) {
-          totalCredits += parseFloat(entry.amount);
+        if (entryAmount > 0) {
+          totalCredits += entryAmount;
         } else {
-          totalDebits += Math.abs(parseFloat(entry.amount));
+          totalDebits += Math.abs(entryAmount);
         }
       }
     });
 
     // Current balance is the last entry's balance
     if (filteredData.length > 0) {
-      currentBalance = parseFloat(filteredData[filteredData.length - 1].balance);
+      const lastBalance = parseFloat(filteredData[filteredData.length - 1].balance || 0);
+      currentBalance = isNaN(lastBalance) ? 0 : lastBalance;
     }
 
-    return { totalDebits, totalCredits, currentBalance };
+    return {
+      totalDebits: isNaN(totalDebits) ? 0 : totalDebits,
+      totalCredits: isNaN(totalCredits) ? 0 : totalCredits,
+      currentBalance: isNaN(currentBalance) ? 0 : currentBalance
+    };
   }, [filteredData, entityType]);
 
   // Get transaction type options based on entity type
@@ -214,10 +221,11 @@ const LedgerView = ({
       key: 'debit',
       align: 'right',
       render: (amount) => {
-        const shouldShowAsDebit = entityType === 'customer' ? amount > 0 : amount < 0;
+        const numericAmount = parseFloat(amount || 0);
+        const shouldShowAsDebit = entityType === 'customer' ? numericAmount > 0 : numericAmount < 0;
         return shouldShowAsDebit ? (
           <span style={{ color: '#f5222d', fontWeight: 'bold' }}>
-            {formatPKR(Math.abs(amount))}
+            {formatPKR(Math.abs(numericAmount))}
           </span>
         ) : '-';
       },
@@ -229,10 +237,11 @@ const LedgerView = ({
       key: 'credit',
       align: 'right',
       render: (amount) => {
-        const shouldShowAsCredit = entityType === 'customer' ? amount < 0 : amount > 0;
+        const numericAmount = parseFloat(amount || 0);
+        const shouldShowAsCredit = entityType === 'customer' ? numericAmount < 0 : numericAmount > 0;
         return shouldShowAsCredit ? (
           <span style={{ color: '#52c41a', fontWeight: 'bold' }}>
-            {formatPKR(Math.abs(amount))}
+            {formatPKR(Math.abs(numericAmount))}
           </span>
         ) : '-';
       },
@@ -243,14 +252,18 @@ const LedgerView = ({
       dataIndex: 'balance',
       key: 'balance',
       align: 'right',
-      render: (balance) => (
-        <span style={{
-          color: balance > 0 ? '#f5222d' : '#52c41a',
-          fontWeight: 'bold'
-        }}>
-          {formatPKR(balance)}
-        </span>
-      ),
+      render: (balance) => {
+        const numericBalance = parseFloat(balance || 0);
+        const safeBalance = isNaN(numericBalance) ? 0 : numericBalance;
+        return (
+          <span style={{
+            color: safeBalance > 0 ? '#f5222d' : '#52c41a',
+            fontWeight: 'bold'
+          }}>
+            {formatPKR(safeBalance)}
+          </span>
+        );
+      },
       width: 120
     }
   ];

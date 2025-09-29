@@ -29,7 +29,13 @@
       "Bash(tasklist:*)",
       "Bash(Stop-Process -Force -Id 14276)",
       "Bash(git restore:*)",
-      "Bash(npx check-deps:*)"
+      "Bash(npx check-deps:*)",
+      "Bash(timeout:*)",
+      "Bash(rs)",
+      "Bash(Stop-Process -Force -Id 3360)",
+      "Bash(cmd /c:*)",
+      "Bash(kill:*)",
+      "Bash(PORT=3002 node src/server.js)"
     ],
     "deny": [],
     "ask": []

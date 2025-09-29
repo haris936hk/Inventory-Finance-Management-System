@@ -9,9 +9,9 @@ import {
 import {
   PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined,
-  MailOutlined, FilePdfOutlined, MoreOutlined, CheckOutlined,
+  MailOutlined, FilePdfOutlined, MoreOutlined,
   SendOutlined, StopOutlined, DollarCircleOutlined, FileTextOutlined,
-  ExclamationCircleOutlined, ClockCircleOutlined, InfoCircleOutlined
+  ExclamationCircleOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
@@ -35,6 +35,23 @@ const VendorBills = () => {
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [form] = Form.useForm();
 
+  // Watch form values for real-time validation
+  const watchedValues = Form.useWatch([], form);
+
+  // Calculate current bill total
+  const currentBillTotal = React.useMemo(() => {
+    if (!watchedValues) return 0;
+    const subtotal = parseFloat(watchedValues.subtotal) || 0;
+    const taxAmount = parseFloat(watchedValues.taxAmount) || 0;
+    return subtotal + taxAmount;
+  }, [watchedValues]);
+
+  // Check if current total exceeds PO total
+  const exceedsPOTotal = React.useMemo(() => {
+    if (!selectedPurchaseOrder || currentBillTotal === 0) return false;
+    return currentBillTotal > parseFloat(selectedPurchaseOrder.total);
+  }, [selectedPurchaseOrder, currentBillTotal]);
+
   // Fetch vendor bills
   const { data: vendorBillsData, isLoading } = useQuery(
     ['vendor-bills', filters],
@@ -50,13 +67,10 @@ const VendorBills = () => {
     return response.data.data;
   });
 
-  // Fetch purchase orders for form (including line items)
+  // Fetch purchase orders for form (excluding fully billed ones)
   const { data: purchaseOrders } = useQuery('purchase-orders', async () => {
     const response = await axios.get('/finance/purchase-orders', {
-      params: {
-        status: 'Completed',
-        include: 'lineItems' // Request line items to be included
-      }
+      params: { excludeFullyBilled: 'true' }
     });
     return response.data.data;
   });
@@ -116,16 +130,6 @@ const VendorBills = () => {
     }
   );
 
-  // Update status mutation
-  const updateStatusMutation = useMutation(
-    ({ id, status }) => axios.put(`/finance/vendor-bills/${id}/status`, { status }),
-    {
-      onSuccess: () => {
-        message.success('Bill status updated');
-        queryClient.invalidateQueries('vendor-bills');
-      }
-    }
-  );
 
   const handleCloseModal = () => {
     setModalVisible(false);
@@ -189,44 +193,6 @@ const VendorBills = () => {
     return colors[status] || 'default';
   };
 
-  const handleStatusChange = (record, newStatus) => {
-    Modal.confirm({
-      title: `Change Status to ${newStatus}`,
-      content: `Are you sure you want to change this bill status to ${newStatus}?`,
-      onOk: () => updateStatusMutation.mutate({ id: record.id, status: newStatus })
-    });
-  };
-
-  const getStatusActions = (record) => {
-    const items = [];
-
-    switch (record.status) {
-      case 'Unpaid':
-        items.push({
-          key: 'partial',
-          icon: <ClockCircleOutlined />,
-          label: 'Mark Partial',
-          onClick: () => handleStatusChange(record, 'Partial')
-        });
-        items.push({
-          key: 'paid',
-          icon: <CheckOutlined />,
-          label: 'Mark Paid',
-          onClick: () => handleStatusChange(record, 'Paid')
-        });
-        break;
-      case 'Partial':
-        items.push({
-          key: 'paid',
-          icon: <CheckOutlined />,
-          label: 'Mark Paid',
-          onClick: () => handleStatusChange(record, 'Paid')
-        });
-        break;
-    }
-
-    return items;
-  };
 
   const isOverdue = (bill) => {
     if (!bill.dueDate || bill.status === 'Paid') return false;
@@ -377,7 +343,6 @@ const VendorBills = () => {
       fixed: 'right',
       width: 120,
       render: (_, record) => {
-        const statusActions = getStatusActions(record);
         const menuItems = [
           {
             key: 'view',
@@ -389,9 +354,19 @@ const VendorBills = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Edit',
-            disabled: record.status === 'Paid',
+            disabled: record.status === 'Paid' || record.status === 'Partial',
             onClick: () => {
               setEditingBill(record);
+              setSelectedVendorId(record.vendorId);
+
+              // Set selected PO if the bill has one
+              if (record.purchaseOrderId) {
+                const po = purchaseOrders?.find(p => p.id === record.purchaseOrderId);
+                setSelectedPurchaseOrder(po || null);
+              } else {
+                setSelectedPurchaseOrder(null);
+              }
+
               form.setFieldsValue({
                 ...record,
                 billDate: record.billDate ? dayjs(record.billDate) : null,
@@ -400,8 +375,6 @@ const VendorBills = () => {
               setModalVisible(true);
             }
           },
-          { type: 'divider' },
-          ...statusActions,
           { type: 'divider' },
           {
             key: 'payment',
@@ -434,13 +407,21 @@ const VendorBills = () => {
   ];
 
   const handleFormSubmit = (values) => {
+    const billTotal = (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0);
+
+    // Validate against purchase order total if PO is selected
+    if (selectedPurchaseOrder && billTotal > parseFloat(selectedPurchaseOrder.total)) {
+      message.error(`Bill total (${formatPKR(billTotal)}) cannot exceed purchase order total (${formatPKR(parseFloat(selectedPurchaseOrder.total))})`);
+      return;
+    }
+
     const processedValues = {
       ...values,
       billDate: values.billDate ? values.billDate.toISOString() : new Date().toISOString(),
       dueDate: values.dueDate ? values.dueDate.toISOString() : null,
       subtotal: parseFloat(values.subtotal) || 0,
       taxAmount: parseFloat(values.taxAmount) || 0,
-      total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
+      total: billTotal
     };
     billMutation.mutate(processedValues);
   };
@@ -646,11 +627,22 @@ const VendorBills = () => {
                       : "No purchase orders found for this vendor"
                   }
                 >
-                  {filteredPurchaseOrders.map(po => (
-                    <Select.Option key={po.id} value={po.id}>
-                      {po.poNumber} ({formatPKR(Number(po.total || 0))})
-                    </Select.Option>
-                  ))}
+                  {filteredPurchaseOrders.map(po => {
+                    const totalBilled = po.paymentSummary?.totalBilled || 0;
+                    const poTotal = parseFloat(po.total || 0);
+                    const remainingToBill = poTotal - totalBilled;
+
+                    return (
+                      <Select.Option key={po.id} value={po.id}>
+                        {po.poNumber} - Total: {formatPKR(poTotal)}
+                        {totalBilled > 0 && (
+                          <span style={{ color: '#666', fontSize: '12px' }}>
+                            {' '}(Remaining: {formatPKR(remainingToBill)})
+                          </span>
+                        )}
+                      </Select.Option>
+                    );
+                  })}
                 </Select>
               </Form.Item>
             </Col>
@@ -683,7 +675,63 @@ const VendorBills = () => {
             showIcon
           />
 
+          {/* Purchase Order Total Validation Alert */}
+          {selectedPurchaseOrder && exceedsPOTotal && (
+            <Alert
+              message="Bill Total Exceeds Purchase Order"
+              description={`Current bill total (${formatPKR(currentBillTotal)}) exceeds the purchase order total (${formatPKR(parseFloat(selectedPurchaseOrder.total))}). Please adjust the amounts.`}
+              type="error"
+              icon={<ExclamationCircleOutlined />}
+              style={{ marginBottom: 16 }}
+              showIcon
+            />
+          )}
+
           <Divider />
+
+          {/* Purchase Order Total Info */}
+          {selectedPurchaseOrder && (
+            <Card
+              size="small"
+              style={{ marginBottom: 16, backgroundColor: '#f9f9f9' }}
+            >
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Statistic
+                    title="PO Total"
+                    value={parseFloat(selectedPurchaseOrder.total)}
+                    prefix="PKR"
+                    precision={2}
+                    valueStyle={{ color: '#1890ff', fontSize: 16 }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="Current Bill Total"
+                    value={currentBillTotal}
+                    prefix="PKR"
+                    precision={2}
+                    valueStyle={{
+                      color: exceedsPOTotal ? '#ff4d4f' : '#52c41a',
+                      fontSize: 16
+                    }}
+                  />
+                </Col>
+                <Col span={8}>
+                  <Statistic
+                    title="Remaining"
+                    value={parseFloat(selectedPurchaseOrder.total) - currentBillTotal}
+                    prefix="PKR"
+                    precision={2}
+                    valueStyle={{
+                      color: exceedsPOTotal ? '#ff4d4f' : '#faad14',
+                      fontSize: 16
+                    }}
+                  />
+                </Col>
+              </Row>
+            </Card>
+          )}
 
           <Row gutter={16}>
             <Col xs={24} md={12}>
@@ -692,7 +740,23 @@ const VendorBills = () => {
                 name="subtotal"
                 rules={[
                   { required: true, message: 'Please enter subtotal' },
-                  { type: 'number', min: 0, message: 'Amount must be positive' }
+                  { type: 'number', min: 0, message: 'Amount must be positive' },
+                  {
+                    validator: (_, value) => {
+                      if (!selectedPurchaseOrder || !value) {
+                        return Promise.resolve();
+                      }
+                      const subtotal = parseFloat(value) || 0;
+                      const taxAmount = parseFloat(form.getFieldValue('taxAmount')) || 0;
+                      const total = subtotal + taxAmount;
+                      const poTotal = parseFloat(selectedPurchaseOrder.total);
+
+                      if (total > poTotal) {
+                        return Promise.reject(new Error(`Total would exceed PO limit (${formatPKR(poTotal)})`));
+                      }
+                      return Promise.resolve();
+                    }
+                  }
                 ]}
               >
                 <InputNumber
@@ -707,7 +771,25 @@ const VendorBills = () => {
               <Form.Item
                 label="Tax Amount (PKR)"
                 name="taxAmount"
-                rules={[{ type: 'number', min: 0, message: 'Amount must be positive' }]}
+                rules={[
+                  { type: 'number', min: 0, message: 'Amount must be positive' },
+                  {
+                    validator: (_, value) => {
+                      if (!selectedPurchaseOrder) {
+                        return Promise.resolve();
+                      }
+                      const taxAmount = parseFloat(value) || 0;
+                      const subtotal = parseFloat(form.getFieldValue('subtotal')) || 0;
+                      const total = subtotal + taxAmount;
+                      const poTotal = parseFloat(selectedPurchaseOrder.total);
+
+                      if (total > poTotal) {
+                        return Promise.reject(new Error(`Total would exceed PO limit (${formatPKR(poTotal)})`));
+                      }
+                      return Promise.resolve();
+                    }
+                  }
+                ]}
               >
                 <InputNumber
                   style={{ width: '100%' }}
@@ -789,7 +871,12 @@ const VendorBills = () => {
           <div style={{ textAlign: 'right' }}>
             <Space>
               <Button onClick={handleCloseModal}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={billMutation.isLoading}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={billMutation.isLoading}
+                disabled={exceedsPOTotal}
+              >
                 {editingBill ? 'Update' : 'Create'}
               </Button>
             </Space>

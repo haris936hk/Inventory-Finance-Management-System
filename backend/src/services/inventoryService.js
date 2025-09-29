@@ -385,6 +385,7 @@ class InventoryService {
           }],
           specifications: itemData.specifications,
           purchasePrice: itemData.purchasePrice,
+          sellingPrice: itemData.sellingPrice,
           purchaseDate: itemData.purchaseDate,
           inboundDate: itemData.inboundDate || new Date(),
           categoryId: model.category.id,
@@ -480,7 +481,7 @@ class InventoryService {
       }
     }
 
-    return await db.prisma.item.findMany({
+    const items = await db.prisma.item.findMany({
       where,
       include: {
         category: true,
@@ -496,12 +497,64 @@ class InventoryService {
           select: {
             fullName: true
           }
+        },
+        reservations: {
+          where: {
+            expiresAt: { gt: new Date() }
+          },
+          include: {
+            user: {
+              select: {
+                fullName: true
+              }
+            }
+          },
+          orderBy: {
+            reservedAt: 'desc'
+          },
+          take: 1
         }
       },
       orderBy: {
         createdAt: 'desc'
       }
     });
+
+    // For items that are reserved for invoices, fetch the customer information
+    const itemsWithReservationDetails = await Promise.all(
+      items.map(async (item) => {
+        if (item.reservedForType === 'Invoice' && item.reservedForId) {
+          try {
+            const invoice = await db.prisma.invoice.findUnique({
+              where: { id: item.reservedForId },
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    name: true,
+                    phone: true,
+                    company: true,
+                    email: true
+                  }
+                }
+              }
+            });
+
+            if (invoice && invoice.customer) {
+              return {
+                ...item,
+                reservedCustomer: invoice.customer
+              };
+            }
+          } catch (error) {
+            logger.error('Error fetching reserved customer info:', error);
+          }
+        }
+        return item;
+      })
+    );
+
+    return itemsWithReservationDetails;
   }
 
   async getItemBySerialNumber(serialNumber) {
@@ -720,11 +773,20 @@ class InventoryService {
           take: 10,
           orderBy: { orderDate: 'desc' }
         },
+        bills: {
+          take: 10,
+          orderBy: { billDate: 'desc' }
+        },
+        payments: {
+          take: 10,
+          orderBy: { paymentDate: 'desc' }
+        },
         _count: {
           select: {
             items: true,
             purchaseOrders: true,
-            bills: true
+            bills: true,
+            payments: true
           }
         }
       }
