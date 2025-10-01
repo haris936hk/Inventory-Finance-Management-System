@@ -298,8 +298,8 @@ const ItemDetails = () => {
                   <Descriptions.Item label="Purchase Price">
                     {item.purchasePrice ? formatPKR(item.purchasePrice) : 'N/A'}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Sale Price">
-                    {item.salePrice ? formatPKR(item.salePrice) : 'N/A'}
+                  <Descriptions.Item label="Selling Price">
+                    {item.sellingPrice ? formatPKR(item.sellingPrice) : 'N/A'}
                   </Descriptions.Item>
 
                   <Descriptions.Item label="Purchase Date">
@@ -503,19 +503,19 @@ const ItemDetails = () => {
               </Col>
               <Col span={12}>
                 <Statistic
-                  title="Sale Price"
-                  value={item.salePrice || 0}
+                  title="Selling Price"
+                  value={item.sellingPrice || 0}
                   prefix="PKR"
                   precision={0}
                 />
               </Col>
             </Row>
-            {item.purchasePrice && item.salePrice && (
+            {item.purchasePrice && item.sellingPrice && (
               <div style={{ marginTop: 16 }}>
                 <Text strong>Profit Margin: </Text>
                 <Text style={{ color: '#52c41a' }}>
-                  {formatPKR(item.salePrice - item.purchasePrice)}
-                  ({(((item.salePrice - item.purchasePrice) / item.purchasePrice) * 100).toFixed(1)}%)
+                  {formatPKR(item.sellingPrice - item.purchasePrice)}
+                  ({(((item.sellingPrice - item.purchasePrice) / item.purchasePrice) * 100).toFixed(1)}%)
                 </Text>
               </div>
             )}
