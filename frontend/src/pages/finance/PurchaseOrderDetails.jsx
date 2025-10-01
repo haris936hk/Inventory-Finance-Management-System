@@ -159,7 +159,7 @@ const PurchaseOrderDetails = () => {
       align: 'right',
       render: (total) => (
         <Text strong style={{ color: '#1890ff' }}>
-          formatPKR(Number(total))
+          {formatPKR(Number(total))}
         </Text>
       )
     }
