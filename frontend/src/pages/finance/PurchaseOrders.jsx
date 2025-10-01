@@ -378,6 +378,8 @@ const PurchaseOrders = () => {
 
     const processedValues = {
       ...values,
+      // Always set status to 'Draft' for new purchase orders, keep existing status when editing
+      status: editingPO ? editingPO.status : 'Draft',
       orderDate: values.orderDate ? values.orderDate.toISOString() : new Date().toISOString(),
       expectedDate: values.expectedDate ? values.expectedDate.toISOString() : null,
       subtotal: subtotal,
@@ -554,35 +556,19 @@ const PurchaseOrders = () => {
             taxRate: 0
           }}
         >
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Vendor"
-                name="vendorId"
-                rules={[{ required: true, message: 'Please select a vendor' }]}
-              >
-                <Select placeholder="Select vendor" showSearch optionFilterProp="children">
-                  {vendors?.map(vendor => (
-                    <Select.Option key={vendor.id} value={vendor.id}>
-                      {vendor.name} ({vendor.code})
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Status"
-                name="status"
-                rules={[{ required: true, message: 'Please select status' }]}
-              >
-                <Select>
-                  <Select.Option value="Draft">Draft</Select.Option>
-                  <Select.Option value="Sent">Sent</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            label="Vendor"
+            name="vendorId"
+            rules={[{ required: true, message: 'Please select a vendor' }]}
+          >
+            <Select placeholder="Select vendor" showSearch optionFilterProp="children">
+              {vendors?.map(vendor => (
+                <Select.Option key={vendor.id} value={vendor.id}>
+                  {vendor.name} ({vendor.code})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
 
           <Row gutter={16}>
             <Col xs={24} md={12}>
