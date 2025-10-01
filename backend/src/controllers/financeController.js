@@ -298,30 +298,47 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 // @access  Private
 const getPurchaseOrders = asyncHandler(async (req, res) => {
   const db = require('../config/database');
-  
+
   const where = { deletedAt: null };
-  
+
   if (req.query.vendorId) {
     where.vendorId = req.query.vendorId;
   }
-  
+
   if (req.query.status) {
     where.status = req.query.status;
   }
-  
-  const purchaseOrders = await db.prisma.purchaseOrder.findMany({
-    where,
-    include: {
-      vendor: true,
-      _count: {
-        select: {
-          lineItems: true
+
+  // Build include object based on query params
+  const include = {
+    vendor: true,
+    _count: {
+      select: {
+        lineItems: true
+      }
+    }
+  };
+
+  // Include line items if requested
+  if (req.query.include === 'lineItems') {
+    include.lineItems = {
+      include: {
+        productModel: {
+          include: {
+            category: true,
+            company: true
+          }
         }
       }
-    },
+    };
+  }
+
+  const purchaseOrders = await db.prisma.purchaseOrder.findMany({
+    where,
+    include,
     orderBy: { orderDate: 'desc' }
   });
-  
+
   res.json({
     success: true,
     count: purchaseOrders.length,
@@ -469,7 +486,9 @@ const getVendorBills = asyncHandler(async (req, res) => {
   }
 
   if (req.query.status) {
-    where.status = req.query.status;
+    // Handle comma-separated status values (e.g., "Unpaid,Partial")
+    const statuses = req.query.status.split(',').map(s => s.trim());
+    where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
   }
 
   if (req.query.dateFrom && req.query.dateTo) {
