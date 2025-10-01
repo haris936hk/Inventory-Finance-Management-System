@@ -26,11 +26,8 @@ const Users = () => {
   });
 
   const { data: roles } = useQuery('roles', async () => {
-    // Hardcoded roles as per system design
-    return [
-      { id: '1', name: 'Inventory Operator' },
-      { id: '2', name: 'Financial + Inventory Operator' }
-    ];
+    const response = await axios.get('/roles');
+    return response.data.data;
   });
 
   const userMutation = useMutation(

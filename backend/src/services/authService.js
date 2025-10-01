@@ -108,11 +108,15 @@ class AuthService {
     }
 
     // Verify role exists
+    logger.debug(`Checking role with ID: ${roleId} (type: ${typeof roleId})`);
     const role = await db.prisma.role.findUnique({
       where: { id: roleId }
     });
 
     if (!role) {
+      logger.error(`Role not found for ID: ${roleId}`);
+      const allRoles = await db.prisma.role.findMany({ select: { id: true, name: true } });
+      logger.error(`Available roles: ${JSON.stringify(allRoles)}`);
       throw new Error('Invalid role');
     }
 
