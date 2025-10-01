@@ -1,6 +1,10 @@
 // ========== src/controllers/financeController.js ==========
 const asyncHandler = require('express-async-handler');
 const financeService = require('../services/financeService');
+const purchaseOrderService = require('../services/purchaseOrderService');
+const billService = require('../services/billService');
+const paymentService = require('../services/paymentService');
+const { ValidationError } = require('../utils/transactionWrapper');
 
 // ============= CUSTOMERS =============
 
@@ -11,9 +15,9 @@ const getCustomers = asyncHandler(async (req, res) => {
   const filters = {
     search: req.query.search
   };
-  
+
   const customers = await financeService.getCustomers(filters);
-  
+
   res.json({
     success: true,
     count: customers.length,
@@ -26,12 +30,12 @@ const getCustomers = asyncHandler(async (req, res) => {
 // @access  Private
 const getCustomer = asyncHandler(async (req, res) => {
   const customer = await financeService.getCustomerById(req.params.id);
-  
+
   if (!customer) {
     res.status(404);
     throw new Error('Customer not found');
   }
-  
+
   res.json({
     success: true,
     data: customer
@@ -43,7 +47,7 @@ const getCustomer = asyncHandler(async (req, res) => {
 // @access  Private
 const createCustomer = asyncHandler(async (req, res) => {
   const customer = await financeService.createCustomer(req.body);
-  
+
   res.status(201).json({
     success: true,
     data: customer
@@ -55,7 +59,7 @@ const createCustomer = asyncHandler(async (req, res) => {
 // @access  Private
 const updateCustomer = asyncHandler(async (req, res) => {
   const customer = await financeService.updateCustomer(req.params.id, req.body);
-  
+
   res.json({
     success: true,
     data: customer
@@ -98,9 +102,9 @@ const getInvoices = asyncHandler(async (req, res) => {
     dateFrom: req.query.dateFrom,
     dateTo: req.query.dateTo
   };
-  
+
   const invoices = await financeService.getInvoices(filters);
-  
+
   res.json({
     success: true,
     count: invoices.length,
@@ -113,12 +117,12 @@ const getInvoices = asyncHandler(async (req, res) => {
 // @access  Private
 const getInvoice = asyncHandler(async (req, res) => {
   const invoice = await financeService.getInvoiceById(req.params.id);
-  
+
   if (!invoice) {
     res.status(404);
     throw new Error('Invoice not found');
   }
-  
+
   res.json({
     success: true,
     data: invoice
@@ -142,18 +146,18 @@ const createInvoice = asyncHandler(async (req, res) => {
 // @access  Private
 const updateInvoiceStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
-  
+
   if (!status) {
     res.status(400);
     throw new Error('Status required');
   }
-  
+
   const invoice = await financeService.updateInvoiceStatus(
     req.params.id,
     status,
     req.user.id
   );
-  
+
   res.json({
     success: true,
     data: invoice
@@ -167,7 +171,7 @@ const updateInvoiceStatus = asyncHandler(async (req, res) => {
 // @access  Private
 const recordPayment = asyncHandler(async (req, res) => {
   const payment = await financeService.recordPayment(req.body, req.user.id);
-  
+
   res.status(201).json({
     success: true,
     data: payment
@@ -179,17 +183,17 @@ const recordPayment = asyncHandler(async (req, res) => {
 // @access  Private
 const getPayments = asyncHandler(async (req, res) => {
   const db = require('../config/database');
-  
+
   const where = { deletedAt: null };
-  
+
   if (req.query.customerId) {
     where.customerId = req.query.customerId;
   }
-  
+
   if (req.query.invoiceId) {
     where.invoiceId = req.query.invoiceId;
   }
-  
+
   const payments = await db.prisma.payment.findMany({
     where,
     include: {
@@ -203,7 +207,7 @@ const getPayments = asyncHandler(async (req, res) => {
     },
     orderBy: { paymentDate: 'desc' }
   });
-  
+
   res.json({
     success: true,
     count: payments.length,
@@ -218,7 +222,7 @@ const getPayments = asyncHandler(async (req, res) => {
 // @access  Private
 const getAccounts = asyncHandler(async (req, res) => {
   const accounts = await financeService.getAccounts();
-  
+
   res.json({
     success: true,
     count: accounts.length,
@@ -231,7 +235,7 @@ const getAccounts = asyncHandler(async (req, res) => {
 // @access  Private
 const createAccount = asyncHandler(async (req, res) => {
   const account = await financeService.createAccount(req.body);
-  
+
   res.status(201).json({
     success: true,
     data: account
@@ -244,52 +248,12 @@ const createAccount = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/purchase-orders
 // @access  Private
 const createPurchaseOrder = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-  const { generatePONumber } = require('../utils/generateId');
-
-  const poNumber = await generatePONumber();
-  const { lineItems = [], ...purchaseOrderData } = req.body;
-
-  const purchaseOrder = await db.prisma.purchaseOrder.create({
-    data: {
-      poNumber,
-      orderDate: purchaseOrderData.orderDate || new Date(),
-      expectedDate: purchaseOrderData.expectedDate,
-      status: purchaseOrderData.status || 'Draft',
-      subtotal: purchaseOrderData.subtotal,
-      taxAmount: purchaseOrderData.taxAmount || 0,
-      total: purchaseOrderData.total,
-      vendorId: purchaseOrderData.vendorId,
-      lineItems: {
-        create: lineItems.map(item => ({
-          productModelId: item.productModelId,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          specifications: item.specifications || {},
-          notes: item.notes
-        }))
-      }
-    },
-    include: {
-      vendor: true,
-      lineItems: {
-        include: {
-          productModel: {
-            include: {
-              category: true,
-              company: true
-            }
-          }
-        }
-      }
-    }
-  });
+  const purchaseOrder = await purchaseOrderService.createPurchaseOrder(req.body, req.user.id);
 
   res.status(201).json({
     success: true,
-    data: purchaseOrder
+    data: purchaseOrder,
+    message: `Purchase Order ${purchaseOrder.poNumber} created successfully`
   });
 });
 
@@ -297,47 +261,13 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/purchase-orders
 // @access  Private
 const getPurchaseOrders = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-
-  const where = { deletedAt: null };
-
-  if (req.query.vendorId) {
-    where.vendorId = req.query.vendorId;
-  }
-
-  if (req.query.status) {
-    where.status = req.query.status;
-  }
-
-  // Build include object based on query params
-  const include = {
-    vendor: true,
-    _count: {
-      select: {
-        lineItems: true
-      }
-    }
+  const filters = {
+    vendorId: req.query.vendorId,
+    status: req.query.status,
+    include: req.query.include
   };
 
-  // Include line items if requested
-  if (req.query.include === 'lineItems') {
-    include.lineItems = {
-      include: {
-        productModel: {
-          include: {
-            category: true,
-            company: true
-          }
-        }
-      }
-    };
-  }
-
-  const purchaseOrders = await db.prisma.purchaseOrder.findMany({
-    where,
-    include,
-    orderBy: { orderDate: 'desc' }
-  });
+  const purchaseOrders = await purchaseOrderService.getPurchaseOrders(filters);
 
   res.json({
     success: true,
@@ -350,27 +280,7 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/purchase-orders/:id
 // @access  Private
 const getPurchaseOrder = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-
-  const purchaseOrder = await db.prisma.purchaseOrder.findUnique({
-    where: {
-      id: req.params.id,
-      deletedAt: null
-    },
-    include: {
-      vendor: true,
-      lineItems: {
-        include: {
-          productModel: {
-            include: {
-              category: true,
-              company: true
-            }
-          }
-        }
-      }
-    }
-  });
+  const purchaseOrder = await purchaseOrderService.getPurchaseOrderById(req.params.id);
 
   if (!purchaseOrder) {
     res.status(404);
@@ -387,54 +297,16 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
 // @route   PUT /api/finance/purchase-orders/:id
 // @access  Private
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-  const { lineItems = [], ...purchaseOrderData } = req.body;
-
-  // Delete existing line items and create new ones
-  await db.prisma.purchaseOrderItem.deleteMany({
-    where: { purchaseOrderId: req.params.id }
-  });
-
-  const purchaseOrder = await db.prisma.purchaseOrder.update({
-    where: { id: req.params.id },
-    data: {
-      orderDate: purchaseOrderData.orderDate,
-      expectedDate: purchaseOrderData.expectedDate,
-      status: purchaseOrderData.status,
-      subtotal: purchaseOrderData.subtotal,
-      taxAmount: purchaseOrderData.taxAmount || 0,
-      total: purchaseOrderData.total,
-      vendorId: purchaseOrderData.vendorId,
-      lineItems: {
-        create: lineItems.map(item => ({
-          productModelId: item.productModelId,
-          description: item.description,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
-          specifications: item.specifications || {},
-          notes: item.notes
-        }))
-      }
-    },
-    include: {
-      vendor: true,
-      lineItems: {
-        include: {
-          productModel: {
-            include: {
-              category: true,
-              company: true
-            }
-          }
-        }
-      }
-    }
-  });
+  const purchaseOrder = await purchaseOrderService.updatePurchaseOrder(
+    req.params.id,
+    req.body,
+    req.user.id
+  );
 
   res.json({
     success: true,
-    data: purchaseOrder
+    data: purchaseOrder,
+    message: 'Purchase Order updated successfully'
   });
 });
 
@@ -442,27 +314,17 @@ const updatePurchaseOrder = asyncHandler(async (req, res) => {
 // @route   PUT /api/finance/purchase-orders/:id/status
 // @access  Private
 const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
   const { status } = req.body;
 
   if (!status) {
-    res.status(400);
-    throw new Error('Status required');
+    throw new ValidationError('Status required');
   }
 
-  const validStatuses = ['Draft', 'Sent', 'Partial', 'Completed', 'Cancelled'];
-  if (!validStatuses.includes(status)) {
-    res.status(400);
-    throw new Error('Invalid status');
-  }
-
-  const purchaseOrder = await db.prisma.purchaseOrder.update({
-    where: { id: req.params.id },
-    data: { status },
-    include: {
-      vendor: true
-    }
-  });
+  const purchaseOrder = await purchaseOrderService.updatePurchaseOrderStatus(
+    req.params.id,
+    status,
+    req.user.id
+  );
 
   res.json({
     success: true,
@@ -477,40 +339,14 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/vendor-bills
 // @access  Private
 const getVendorBills = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
+  const filters = {
+    vendorId: req.query.vendorId,
+    status: req.query.status,
+    dateFrom: req.query.dateFrom,
+    dateTo: req.query.dateTo
+  };
 
-  const where = { deletedAt: null };
-
-  if (req.query.vendorId) {
-    where.vendorId = req.query.vendorId;
-  }
-
-  if (req.query.status) {
-    // Handle comma-separated status values (e.g., "Unpaid,Partial")
-    const statuses = req.query.status.split(',').map(s => s.trim());
-    where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
-  }
-
-  if (req.query.dateFrom && req.query.dateTo) {
-    where.billDate = {
-      gte: new Date(req.query.dateFrom),
-      lte: new Date(req.query.dateTo)
-    };
-  }
-
-  const bills = await db.prisma.bill.findMany({
-    where,
-    include: {
-      vendor: true,
-      purchaseOrder: true,
-      _count: {
-        select: {
-          payments: true
-        }
-      }
-    },
-    orderBy: { billDate: 'desc' }
-  });
+  const bills = await billService.getBills(filters);
 
   res.json({
     success: true,
@@ -523,37 +359,7 @@ const getVendorBills = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/vendor-bills/:id
 // @access  Private
 const getVendorBill = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-
-  const bill = await db.prisma.bill.findUnique({
-    where: {
-      id: req.params.id,
-      deletedAt: null
-    },
-    include: {
-      vendor: true,
-      purchaseOrder: {
-        include: {
-          items: {
-            include: {
-              model: {
-                include: {
-                  category: true,
-                  company: true
-                }
-              }
-            }
-          }
-        }
-      },
-      payments: {
-        orderBy: { paymentDate: 'desc' }
-      },
-      ledgerEntries: {
-        orderBy: { entryDate: 'desc' }
-      }
-    }
-  });
+  const bill = await billService.getBillById(req.params.id);
 
   if (!bill) {
     res.status(404);
@@ -570,61 +376,12 @@ const getVendorBill = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/vendor-bills
 // @access  Private
 const createVendorBill = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-  const { generateBillNumber } = require('../utils/generateId');
-
-  const billNumber = await generateBillNumber();
-
-  const bill = await db.prisma.bill.create({
-    data: {
-      billNumber,
-      billDate: new Date(req.body.billDate),
-      dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
-      status: req.body.status || 'Unpaid',
-      subtotal: parseFloat(req.body.subtotal),
-      taxAmount: parseFloat(req.body.taxAmount) || 0,
-      total: parseFloat(req.body.total),
-      vendorId: req.body.vendorId,
-      purchaseOrderId: req.body.purchaseOrderId || null
-    },
-    include: {
-      vendor: true,
-      purchaseOrder: true
-    }
-  });
-
-  // Get vendor's current balance for ledger calculation
-  const vendor = await db.prisma.vendor.findUnique({
-    where: { id: req.body.vendorId }
-  });
-
-  const billAmount = parseFloat(req.body.total);
-  const newBalance = parseFloat(vendor.currentBalance) + billAmount;
-
-  // Create vendor ledger entry with calculated balance
-  await db.prisma.vendorLedger.create({
-    data: {
-      vendorId: req.body.vendorId,
-      entryDate: new Date(req.body.billDate),
-      description: `Bill ${billNumber}`,
-      debit: billAmount,
-      credit: 0,
-      balance: newBalance,
-      billId: bill.id
-    }
-  });
-
-  // Update vendor balance
-  await db.prisma.vendor.update({
-    where: { id: req.body.vendorId },
-    data: {
-      currentBalance: newBalance
-    }
-  });
+  const bill = await billService.createBill(req.body, req.user.id);
 
   res.status(201).json({
     success: true,
-    data: bill
+    data: bill,
+    message: `Bill ${bill.billNumber} created successfully`
   });
 });
 
@@ -632,32 +389,35 @@ const createVendorBill = asyncHandler(async (req, res) => {
 // @route   PUT /api/finance/vendor-bills/:id
 // @access  Private
 const updateVendorBill = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-
-  const bill = await db.prisma.bill.update({
-    where: { id: req.params.id },
-    data: {
-      billDate: req.body.billDate ? new Date(req.body.billDate) : undefined,
-      dueDate: req.body.dueDate ? new Date(req.body.dueDate) : undefined,
-      status: req.body.status,
-      subtotal: req.body.subtotal ? parseFloat(req.body.subtotal) : undefined,
-      taxAmount: req.body.taxAmount ? parseFloat(req.body.taxAmount) : undefined,
-      total: req.body.total ? parseFloat(req.body.total) : undefined,
-      vendorId: req.body.vendorId
-    },
-    include: {
-      vendor: true,
-      purchaseOrder: true
-    }
-  });
+  const bill = await billService.updateBill(req.params.id, req.body, req.user.id);
 
   res.json({
     success: true,
-    data: bill
+    data: bill,
+    message: 'Bill updated successfully'
   });
 });
 
-// @desc    Update vendor bill status
+// @desc    Cancel vendor bill
+// @route   POST /api/finance/vendor-bills/:id/cancel
+// @access  Private
+const cancelVendorBill = asyncHandler(async (req, res) => {
+  const { reason } = req.body;
+
+  if (!reason) {
+    throw new ValidationError('Cancellation reason is required');
+  }
+
+  const bill = await billService.cancelBill(req.params.id, reason, req.user.id);
+
+  res.json({
+    success: true,
+    data: bill,
+    message: 'Bill cancelled successfully'
+  });
+});
+
+// @desc    Update vendor bill status (deprecated - status changes automatically)
 // @route   PUT /api/finance/vendor-bills/:id/status
 // @access  Private
 const updateVendorBillStatus = asyncHandler(async (req, res) => {
@@ -690,32 +450,31 @@ const updateVendorBillStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get bill payments
+// @route   GET /api/finance/vendor-bills/:billId/payments
+// @access  Private
+const getBillPayments = asyncHandler(async (req, res) => {
+  const payments = await paymentService.getBillPayments(req.params.billId);
+
+  res.json({
+    success: true,
+    count: payments.length,
+    data: payments
+  });
+});
+
 // ============= VENDOR PAYMENTS =============
 
 // @desc    Get all vendor payments
 // @route   GET /api/finance/vendor-payments
 // @access  Private
 const getVendorPayments = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
+  const filters = {
+    vendorId: req.query.vendorId,
+    billId: req.query.billId
+  };
 
-  const where = { deletedAt: null };
-
-  if (req.query.vendorId) {
-    where.vendorId = req.query.vendorId;
-  }
-
-  if (req.query.billId) {
-    where.billId = req.query.billId;
-  }
-
-  const payments = await db.prisma.vendorPayment.findMany({
-    where,
-    include: {
-      vendor: true,
-      bill: true
-    },
-    orderBy: { paymentDate: 'desc' }
-  });
+  const payments = await paymentService.getVendorPayments(filters);
 
   res.json({
     success: true,
@@ -728,59 +487,31 @@ const getVendorPayments = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/vendor-payments
 // @access  Private
 const recordVendorPayment = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-  const { generatePaymentNumber } = require('../utils/generateId');
-
-  const paymentNumber = await generatePaymentNumber('VPAY');
-
-  const payment = await db.prisma.vendorPayment.create({
-    data: {
-      paymentNumber,
-      paymentDate: new Date(req.body.paymentDate),
-      amount: parseFloat(req.body.amount),
-      method: req.body.method,
-      reference: req.body.reference || null,
-      notes: req.body.notes || null,
-      vendorId: req.body.vendorId,
-      billId: req.body.billId || null
-    },
-    include: {
-      vendor: true,
-      bill: true
-    }
-  });
-
-  // Update bill paid amount if payment is against a specific bill
-  if (req.body.billId) {
-    const bill = await db.prisma.bill.findUnique({
-      where: { id: req.body.billId }
-    });
-
-    const newPaidAmount = parseFloat(bill.paidAmount) + parseFloat(req.body.amount);
-    const newStatus = newPaidAmount >= parseFloat(bill.total) ? 'Paid' : 'Partial';
-
-    await db.prisma.bill.update({
-      where: { id: req.body.billId },
-      data: {
-        paidAmount: newPaidAmount,
-        status: newStatus
-      }
-    });
-  }
-
-  // Update vendor balance
-  await db.prisma.vendor.update({
-    where: { id: req.body.vendorId },
-    data: {
-      currentBalance: {
-        decrement: parseFloat(req.body.amount)
-      }
-    }
-  });
+  const payment = await paymentService.recordPayment(req.body, req.user.id);
 
   res.status(201).json({
     success: true,
-    data: payment
+    data: payment,
+    message: `Payment ${payment.paymentNumber} recorded successfully`
+  });
+});
+
+// @desc    Void vendor payment
+// @route   POST /api/finance/vendor-payments/:id/void
+// @access  Private
+const voidVendorPayment = asyncHandler(async (req, res) => {
+  const { reason } = req.body;
+
+  if (!reason) {
+    throw new ValidationError('Void reason is required');
+  }
+
+  const payment = await paymentService.voidPayment(req.params.id, reason, req.user.id);
+
+  res.json({
+    success: true,
+    data: payment,
+    message: 'Payment voided successfully'
   });
 });
 
@@ -791,35 +522,35 @@ const recordVendorPayment = asyncHandler(async (req, res) => {
 // @access  Private
 const createInstallmentPlan = asyncHandler(async (req, res) => {
   const db = require('../config/database');
-  
-  const { 
-    invoiceId, 
-    downPayment, 
-    numberOfInstallments, 
-    intervalType 
+
+  const {
+    invoiceId,
+    downPayment,
+    numberOfInstallments,
+    intervalType
   } = req.body;
-  
+
   // Get invoice
   const invoice = await db.prisma.invoice.findUnique({
     where: { id: invoiceId }
   });
-  
+
   if (!invoice) {
     res.status(404);
     throw new Error('Invoice not found');
   }
-  
+
   const totalAmount = parseFloat(invoice.total);
   const remainingAmount = totalAmount - (downPayment || 0);
   const installmentAmount = remainingAmount / numberOfInstallments;
-  
+
   // Calculate installment dates
   const installments = [];
   const startDate = new Date();
-  
+
   for (let i = 0; i < numberOfInstallments; i++) {
     const dueDate = new Date(startDate);
-    
+
     switch (intervalType) {
       case 'Monthly':
         dueDate.setMonth(dueDate.getMonth() + (i + 1));
@@ -831,7 +562,7 @@ const createInstallmentPlan = asyncHandler(async (req, res) => {
         dueDate.setMonth(dueDate.getMonth() + ((i + 1) * 3));
         break;
     }
-    
+
     installments.push({
       installmentNumber: i + 1,
       dueDate,
@@ -839,7 +570,7 @@ const createInstallmentPlan = asyncHandler(async (req, res) => {
       status: 'Pending'
     });
   }
-  
+
   const plan = await db.prisma.installmentPlan.create({
     data: {
       totalAmount,
@@ -858,13 +589,13 @@ const createInstallmentPlan = asyncHandler(async (req, res) => {
       }
     }
   });
-  
+
   // Update invoice
   await db.prisma.invoice.update({
     where: { id: invoiceId },
     data: { hasInstallment: true }
   });
-  
+
   res.status(201).json({
     success: true,
     data: plan
@@ -882,7 +613,7 @@ const getCustomerStatement = asyncHandler(async (req, res) => {
     req.query.dateFrom,
     req.query.dateTo
   );
-  
+
   res.json({
     success: true,
     data: statement
@@ -894,7 +625,7 @@ const getCustomerStatement = asyncHandler(async (req, res) => {
 // @access  Private
 const getAgingReport = asyncHandler(async (req, res) => {
   const report = await financeService.getAgingReport();
-  
+
   res.json({
     success: true,
     data: report
@@ -932,10 +663,13 @@ module.exports = {
   getVendorBill,
   createVendorBill,
   updateVendorBill,
+  cancelVendorBill,
   updateVendorBillStatus,
+  getBillPayments,
   // Vendor Payments
   getVendorPayments,
   recordVendorPayment,
+  voidVendorPayment,
   // Installments
   createInstallmentPlan,
   // Reports

@@ -321,10 +321,72 @@ async function getPurchaseOrder(poId) {
   return po;
 }
 
+/**
+ * Get all purchase orders with filters
+ *
+ * @param {Object} filters - Query filters
+ * @param {string} filters.vendorId - Filter by vendor
+ * @param {string} filters.status - Filter by status
+ * @param {string} filters.include - Include related data
+ * @returns {Promise<Array>} Purchase orders
+ */
+async function getPurchaseOrders(filters = {}) {
+  const where = { deletedAt: null };
+
+  if (filters.vendorId) {
+    where.vendorId = filters.vendorId;
+  }
+
+  if (filters.status) {
+    where.status = filters.status;
+  }
+
+  // Build include object
+  const include = {
+    vendor: true,
+    _count: {
+      select: {
+        lineItems: true,
+        bills: true
+      }
+    }
+  };
+
+  // Include line items if requested
+  if (filters.include === 'lineItems') {
+    include.lineItems = {
+      include: {
+        productModel: {
+          include: {
+            category: true,
+            company: true
+          }
+        }
+      }
+    };
+  }
+
+  const purchaseOrders = await db.prisma.purchaseOrder.findMany({
+    where,
+    include,
+    orderBy: { orderDate: 'desc' }
+  });
+
+  // Add computed fields
+  return purchaseOrders.map(po => ({
+    ...po,
+    remainingAmount: formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)),
+    canCreateBill: po.status !== 'Cancelled' &&
+                   po.status !== 'Completed' &&
+                   formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)) > 0
+  }));
+}
+
 module.exports = {
   createPurchaseOrder,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
   getPurchaseOrder,
+  getPurchaseOrders,
   STATUS_TRANSITIONS
 };

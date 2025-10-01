@@ -384,9 +384,124 @@ async function getBill(billId) {
   return bill;
 }
 
+/**
+ * Get all bills with filters
+ *
+ * @param {Object} filters - Query filters
+ * @param {string} filters.vendorId - Filter by vendor
+ * @param {string} filters.status - Filter by status (comma-separated)
+ * @param {string} filters.dateFrom - Filter by date from
+ * @param {string} filters.dateTo - Filter by date to
+ * @returns {Promise<Array>} Bills
+ */
+async function getBills(filters = {}) {
+  const where = { deletedAt: null, cancelledAt: null };
+
+  if (filters.vendorId) {
+    where.vendorId = filters.vendorId;
+  }
+
+  if (filters.status) {
+    // Handle comma-separated status values (e.g., "Unpaid,Partial")
+    const statuses = filters.status.split(',').map(s => s.trim());
+    where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
+  }
+
+  if (filters.dateFrom && filters.dateTo) {
+    where.billDate = {
+      gte: new Date(filters.dateFrom),
+      lte: new Date(filters.dateTo)
+    };
+  }
+
+  const bills = await db.prisma.bill.findMany({
+    where,
+    include: {
+      vendor: true,
+      purchaseOrder: true,
+      _count: {
+        select: {
+          payments: { where: { voidedAt: null } }
+        }
+      }
+    },
+    orderBy: { billDate: 'desc' }
+  });
+
+  // Add computed fields
+  return bills.map(bill => ({
+    ...bill,
+    remainingAmount: formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount)),
+    canBePaid: bill.remainingAmount > 0
+  }));
+}
+
+/**
+ * Update bill (only unpaid bills with no payments)
+ *
+ * @param {string} billId - Bill ID
+ * @param {Object} updates - Updated data
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} Updated bill
+ */
+async function updateBill(billId, updates, userId) {
+  return withTransaction(async (tx) => {
+    const bill = await lockForUpdate(tx, 'Bill', billId);
+
+    // Can only update unpaid bills with no payments
+    if (bill.status !== 'Unpaid') {
+      throw new ValidationError('Can only update unpaid bills');
+    }
+
+    if (parseFloat(bill.paidAmount) > 0) {
+      throw new ValidationError('Cannot update bill with payments');
+    }
+
+    const updated = await tx.bill.update({
+      where: { id: billId },
+      data: {
+        billDate: updates.billDate || bill.billDate,
+        dueDate: updates.dueDate || bill.dueDate,
+        subtotal: updates.subtotal || bill.subtotal,
+        taxAmount: updates.taxAmount || bill.taxAmount,
+        total: updates.total || bill.total,
+        updatedAt: new Date()
+      },
+      include: {
+        vendor: true,
+        purchaseOrder: true
+      }
+    });
+
+    // Create audit trail
+    await tx.pOBillAudit.create({
+      data: {
+        purchaseOrderId: bill.purchaseOrderId,
+        billId,
+        action: 'BILL_UPDATED',
+        beforeState: {
+          total: parseFloat(bill.total),
+          subtotal: parseFloat(bill.subtotal),
+          taxAmount: parseFloat(bill.taxAmount)
+        },
+        afterState: {
+          total: parseFloat(updated.total),
+          subtotal: parseFloat(updated.subtotal),
+          taxAmount: parseFloat(updated.taxAmount)
+        },
+        performedBy: userId
+      }
+    });
+
+    return updated;
+  });
+}
+
 module.exports = {
   createBill,
   cancelBill,
+  updateBill,
   updateBillStatus,
-  getBill
+  getBill,
+  getBills
 };

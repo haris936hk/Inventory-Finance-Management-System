@@ -372,9 +372,58 @@ async function getPaymentsForBill(billId) {
   }));
 }
 
+/**
+ * Get all vendor payments with filters
+ *
+ * @param {Object} filters - Query filters
+ * @param {string} filters.vendorId - Filter by vendor
+ * @param {string} filters.billId - Filter by bill
+ * @returns {Promise<Array>} Payments
+ */
+async function getVendorPayments(filters = {}) {
+  const where = { deletedAt: null };
+
+  if (filters.vendorId) {
+    where.vendorId = filters.vendorId;
+  }
+
+  if (filters.billId) {
+    where.billId = filters.billId;
+  }
+
+  const payments = await db.prisma.vendorPayment.findMany({
+    where,
+    include: {
+      vendor: true,
+      bill: true,
+      createdByUser: {
+        select: {
+          fullName: true
+        }
+      }
+    },
+    orderBy: { paymentDate: 'desc' }
+  });
+
+  return payments.map(p => ({
+    ...p,
+    isVoided: !!p.voidedAt,
+    effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
+  }));
+}
+
+/**
+ * Alias for getPaymentsForBill
+ */
+async function getBillPayments(billId) {
+  return getPaymentsForBill(billId);
+}
+
 module.exports = {
   recordPayment,
   voidPayment,
   getPayment,
-  getPaymentsForBill
+  getPaymentsForBill,
+  getBillPayments,
+  getVendorPayments
 };

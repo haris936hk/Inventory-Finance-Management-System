@@ -118,13 +118,34 @@ const VendorBills = () => {
     }
   );
 
-  // Update status mutation
+  // Update status mutation (deprecated - kept for backward compatibility)
   const updateStatusMutation = useMutation(
     ({ id, status }) => axios.put(`/finance/vendor-bills/${id}/status`, { status }),
     {
       onSuccess: () => {
         message.success('Bill status updated');
         queryClient.invalidateQueries('vendor-bills');
+        queryClient.invalidateQueries('purchase-orders');
+      },
+      onError: (error) => {
+        const errorMessage = error.response?.data?.message || 'Failed to update status';
+        message.error(errorMessage);
+      }
+    }
+  );
+
+  // Cancel bill mutation
+  const cancelBillMutation = useMutation(
+    ({ id, reason }) => axios.post(`/finance/vendor-bills/${id}/cancel`, { reason }),
+    {
+      onSuccess: () => {
+        message.success('Bill cancelled successfully');
+        queryClient.invalidateQueries('vendor-bills');
+        queryClient.invalidateQueries('purchase-orders');
+      },
+      onError: (error) => {
+        const errorMessage = error.response?.data?.message || error.response?.data?.error?.message || 'Failed to cancel bill';
+        message.error(errorMessage);
       }
     }
   );
@@ -196,6 +217,34 @@ const VendorBills = () => {
       title: `Change Status to ${newStatus}`,
       content: `Are you sure you want to change this bill status to ${newStatus}?`,
       onOk: () => updateStatusMutation.mutate({ id: record.id, status: newStatus })
+    });
+  };
+
+  const handleCancelBill = (record) => {
+    let reason = '';
+    Modal.confirm({
+      title: 'Cancel Bill',
+      content: (
+        <div>
+          <p>Are you sure you want to cancel bill <strong>{record.billNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 8 }}>
+            <ExclamationCircleOutlined /> This action will reverse the bill amount from the vendor balance and PO billed amount.
+          </p>
+          <TextArea
+            rows={3}
+            placeholder="Enter cancellation reason (required)"
+            onChange={(e) => { reason = e.target.value; }}
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => {
+        if (!reason || reason.trim() === '') {
+          message.error('Please provide a cancellation reason');
+          return Promise.reject();
+        }
+        return cancelBillMutation.mutateAsync({ id: record.id, reason: reason.trim() });
+      }
     });
   };
 
@@ -391,7 +440,7 @@ const VendorBills = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Edit',
-            disabled: record.status === 'Paid',
+            disabled: record.status !== 'Unpaid' || parseFloat(record.paidAmount || 0) > 0,
             onClick: () => {
               setEditingBill(record);
               form.setFieldsValue({
@@ -409,8 +458,18 @@ const VendorBills = () => {
             key: 'payment',
             icon: <DollarCircleOutlined />,
             label: 'Record Payment',
+            disabled: record.status === 'Paid',
             onClick: () => navigate(`/app/finance/vendor-payments/record?billId=${record.id}`)
           },
+          {
+            key: 'cancel',
+            icon: <StopOutlined />,
+            label: 'Cancel Bill',
+            danger: true,
+            disabled: record.status !== 'Unpaid' || parseFloat(record.paidAmount || 0) > 0,
+            onClick: () => handleCancelBill(record)
+          },
+          { type: 'divider' },
           {
             key: 'print',
             icon: <PrinterOutlined />,

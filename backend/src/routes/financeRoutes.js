@@ -78,6 +78,19 @@ router.route('/vendor-bills/:id')
   .get(hasPermission(['finance.view']), financeController.getVendorBill)
   .put(hasPermission(['finance.edit']), financeController.updateVendorBill);
 
+// Cancel bill (new endpoint)
+router.post('/vendor-bills/:id/cancel',
+  hasPermission(['finance.edit']),
+  financeController.cancelVendorBill
+);
+
+// Get bill payments (new endpoint)
+router.get('/vendor-bills/:billId/payments',
+  hasPermission(['finance.view']),
+  financeController.getBillPayments
+);
+
+// Status update (kept for backward compatibility, but deprecated)
 router.put('/vendor-bills/:id/status',
   hasPermission(['finance.edit']),
   financeController.updateVendorBillStatus
@@ -87,6 +100,11 @@ router.put('/vendor-bills/:id/status',
 router.route('/vendor-payments')
   .get(hasPermission(['finance.view']), financeController.getVendorPayments)
   .post(hasPermission(['finance.create']), financeController.recordVendorPayment);
+
+// Void payment (new endpoint)
+router.post('/vendor-payments/:id/void',
+  hasPermission(['finance.edit']),
+  financeController.voidVendorPayment);
 
 // Installment Plan routes
 router.post('/installment-plans',

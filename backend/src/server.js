@@ -15,7 +15,6 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const financeRoutes = require('./routes/financeRoutes');
-const financeRoutesV2 = require('./routes/financeRoutesV2'); // NEW: V2 API with lifecycle management
 const reportRoutes = require('./routes/reportRoutes');
 const importExportRoutes = require('./routes/importExportRoutes');
 
@@ -50,8 +49,7 @@ if (process.env.NODE_ENV === 'development') {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/inventory', inventoryRoutes);
-app.use('/api/finance', financeRoutes); // V1 API (backward compatibility)
-app.use('/api/v2/finance', financeRoutesV2); // V2 API with lifecycle management
+app.use('/api/finance', financeRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/import', importExportRoutes);
 

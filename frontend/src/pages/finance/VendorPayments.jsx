@@ -10,7 +10,7 @@ import {
   PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined,
   DeleteOutlined, DollarCircleOutlined, PrinterOutlined,
   MoreOutlined, BankOutlined, CreditCardOutlined, MoneyCollectOutlined,
-  ShopOutlined, FileTextOutlined
+  ShopOutlined, FileTextOutlined, StopOutlined, ExclamationCircleOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
@@ -103,6 +103,23 @@ const VendorPayments = () => {
     }
   );
 
+  // Void Payment mutation
+  const voidPaymentMutation = useMutation(
+    ({ id, reason }) => axios.post(`/finance/vendor-payments/${id}/void`, { reason }),
+    {
+      onSuccess: () => {
+        message.success('Payment voided successfully');
+        queryClient.invalidateQueries('vendor-payments');
+        queryClient.invalidateQueries('vendor-bills');
+        queryClient.invalidateQueries('vendors');
+      },
+      onError: (error) => {
+        const errorMessage = error.response?.data?.message || error.response?.data?.error?.message || 'Failed to void payment';
+        message.error(errorMessage);
+      }
+    }
+  );
+
   const handleCloseModal = () => {
     setModalVisible(false);
     setEditingPayment(null);
@@ -127,17 +144,48 @@ const VendorPayments = () => {
     return icons[method] || <DollarCircleOutlined />;
   };
 
+  const handleVoidPayment = (record) => {
+    let reason = '';
+    Modal.confirm({
+      title: 'Void Payment',
+      content: (
+        <div>
+          <p>Are you sure you want to void payment <strong>{record.paymentNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 8 }}>
+            <ExclamationCircleOutlined /> This will reverse the payment amount from the bill and vendor balance.
+          </p>
+          <TextArea
+            rows={3}
+            placeholder="Enter void reason (required)"
+            onChange={(e) => { reason = e.target.value; }}
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => {
+        if (!reason || reason.trim() === '') {
+          message.error('Please provide a void reason');
+          return Promise.reject();
+        }
+        return voidPaymentMutation.mutateAsync({ id: record.id, reason: reason.trim() });
+      }
+    });
+  };
+
   const columns = [
     {
       title: 'Payment #',
       dataIndex: 'paymentNumber',
       key: 'paymentNumber',
       fixed: 'left',
-      width: 140,
-      render: (text) => (
-        <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
-          {text}
-        </span>
+      width: 160,
+      render: (text, record) => (
+        <Space direction="vertical" size="small">
+          <span style={{ fontWeight: 'bold', color: record.voidedAt ? '#999' : '#1890ff' }}>
+            {text}
+          </span>
+          {record.voidedAt && <Tag color="red" size="small">VOIDED</Tag>}
+        </Space>
       ),
     },
     {
@@ -180,8 +228,12 @@ const VendorPayments = () => {
       key: 'amount',
       width: 120,
       align: 'right',
-      render: (amount) => (
-        <span style={{ fontWeight: 'bold', color: '#52c41a' }}>
+      render: (amount, record) => (
+        <span style={{
+          fontWeight: 'bold',
+          color: record.voidedAt ? '#999' : '#52c41a',
+          textDecoration: record.voidedAt ? 'line-through' : 'none'
+        }}>
           {formatPKR(Number(amount))}
         </span>
       ),
@@ -245,8 +297,17 @@ const VendorPayments = () => {
                         <p><strong>Bill:</strong> {record.bill?.billNumber || 'General Payment'}</p>
                       </Col>
                     </Row>
+                    {record.voidedAt && (
+                      <div style={{ marginTop: 16, padding: 12, backgroundColor: '#fff2e8', border: '1px solid #ffbb96', borderRadius: 4 }}>
+                        <p style={{ color: '#d4380d', fontWeight: 'bold', marginBottom: 8 }}>
+                          <ExclamationCircleOutlined /> VOIDED
+                        </p>
+                        <p><strong>Voided At:</strong> {new Date(record.voidedAt).toLocaleString('en-GB')}</p>
+                        <p><strong>Reason:</strong> {record.voidReason || 'N/A'}</p>
+                      </div>
+                    )}
                     {record.notes && (
-                      <div>
+                      <div style={{ marginTop: 16 }}>
                         <strong>Notes:</strong>
                         <p style={{ marginTop: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
                           {record.notes}
@@ -258,6 +319,16 @@ const VendorPayments = () => {
               });
             }
           },
+          { type: 'divider' },
+          {
+            key: 'void',
+            icon: <StopOutlined />,
+            label: 'Void Payment',
+            danger: true,
+            disabled: !!record.voidedAt,
+            onClick: () => handleVoidPayment(record)
+          },
+          { type: 'divider' },
           {
             key: 'print',
             icon: <PrinterOutlined />,

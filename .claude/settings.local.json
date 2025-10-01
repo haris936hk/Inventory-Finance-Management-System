@@ -29,7 +29,8 @@
       "Bash(tasklist:*)",
       "Bash(Stop-Process -Force -Id 14276)",
       "Bash(git restore:*)",
-      "Bash(npx check-deps:*)"
+      "Bash(npx check-deps:*)",
+      "Bash(dir \"C:\\Users\\Haris Khan\\Documents\\GitHub\\Inventory-Finance-Management-System\\backend\\src\\services\")"
     ],
     "deny": [],
     "ask": []
