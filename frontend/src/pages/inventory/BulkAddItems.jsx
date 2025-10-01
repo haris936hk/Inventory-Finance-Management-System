@@ -250,6 +250,7 @@ const BulkAddItems = () => {
       specifications: values.specifications,
       vendorId: values.vendorId,
       purchasePrice: values.purchasePrice,
+      sellingPrice: values.sellingPrice,
       purchaseDate: values.purchaseDate ? values.purchaseDate.toISOString() : null,
       inboundDate: values.inboundDate ? values.inboundDate.toISOString() : null,
       notes: values.notes
@@ -456,6 +457,19 @@ const BulkAddItems = () => {
                 min={0}
                 style={{ width: '100%' }}
                 placeholder="Enter purchase price per item"
+              />
+            </Form.Item>
+          </Col>
+
+          <Col xs={24} sm={12}>
+            <Form.Item
+              label="Selling Price (PKR)"
+              name="sellingPrice"
+            >
+              <InputNumber
+                min={0}
+                style={{ width: '100%' }}
+                placeholder="Enter selling price per item"
               />
             </Form.Item>
           </Col>

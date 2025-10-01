@@ -385,6 +385,7 @@ class InventoryService {
           }],
           specifications: itemData.specifications,
           purchasePrice: itemData.purchasePrice,
+          sellingPrice: itemData.sellingPrice,
           purchaseDate: itemData.purchaseDate,
           inboundDate: itemData.inboundDate || new Date(),
           categoryId: model.category.id,
@@ -422,6 +423,44 @@ class InventoryService {
       }
       throw error;
     }
+  }
+
+  async deleteItem(id) {
+    // Find item by ID
+    const item = await db.prisma.item.findUnique({
+      where: { id },
+      include: {
+        invoiceItems: true
+      }
+    });
+
+    if (!item) {
+      const error = new Error('Item not found');
+      error.status = 404;
+      throw error;
+    }
+
+    // Check if item is sold or has invoice items
+    if (item.inventoryStatus === 'Sold' || item.inventoryStatus === 'Delivered') {
+      const error = new Error('Cannot delete sold or delivered items');
+      error.status = 400;
+      throw error;
+    }
+
+    if (item.invoiceItems && item.invoiceItems.length > 0) {
+      const error = new Error('Cannot delete item that is part of an invoice');
+      error.status = 400;
+      throw error;
+    }
+
+    // Soft delete the item
+    await db.prisma.item.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+
+    logger.info(`Item deleted: ${item.serialNumber}`);
+    return { message: 'Item deleted successfully' };
   }
 
   async getItems(filters = {}) {

@@ -180,6 +180,14 @@ const InventoryList = () => {
       sorter: (a, b) => (a.purchasePrice || 0) - (b.purchasePrice || 0),
     },
     {
+      title: 'Selling Price',
+      dataIndex: 'sellingPrice',
+      key: 'sellingPrice',
+      width: 120,
+      render: (price) => price ? `PKR ${price}` : '-',
+      sorter: (a, b) => (a.sellingPrice || 0) - (b.sellingPrice || 0),
+    },
+    {
       title: 'Customer',
       dataIndex: 'customer',
       key: 'customer',

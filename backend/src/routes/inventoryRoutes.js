@@ -71,6 +71,11 @@ router.post('/items/bulk',
 router.route('/items/:serialNumber')
   .get(hasPermission(['inventory.view']), inventoryController.getItem);
 
+router.delete('/items/:id',
+  hasPermission(['inventory.delete']),
+  inventoryController.deleteItem
+);
+
 router.get('/items/:serialNumber/history',
   hasPermission(['inventory.view']),
   inventoryController.getItemHistory

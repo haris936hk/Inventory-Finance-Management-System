@@ -270,6 +270,18 @@ const bulkCreateItems = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Delete item
+// @route   DELETE /api/inventory/items/:id
+// @access  Private
+const deleteItem = asyncHandler(async (req, res) => {
+  await inventoryService.deleteItem(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Item deleted successfully'
+  });
+});
+
 // @desc    Update item status
 // @route   PUT /api/inventory/items/:serialNumber/status
 // @access  Private
@@ -279,7 +291,7 @@ const updateItemStatus = asyncHandler(async (req, res) => {
     req.body,
     req.user.id
   );
-  
+
   res.json({
     success: true,
     data: item
@@ -410,6 +422,7 @@ module.exports = {
   getItem,
   createItem,
   bulkCreateItems,
+  deleteItem,
   updateItemStatus,
   getStockSummary,
   // Vendors

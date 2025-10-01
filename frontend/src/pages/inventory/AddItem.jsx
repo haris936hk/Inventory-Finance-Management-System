@@ -416,6 +416,19 @@ const AddItem = () => {
 
           <Col xs={24} sm={12}>
             <Form.Item
+              label="Selling Price (PKR)"
+              name="sellingPrice"
+            >
+              <InputNumber
+                min={0}
+                style={{ width: '100%' }}
+                placeholder="Enter selling price"
+              />
+            </Form.Item>
+          </Col>
+
+          <Col xs={24} sm={12}>
+            <Form.Item
               label="Purchase Date"
               name="purchaseDate"
             >
