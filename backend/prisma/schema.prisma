@@ -37,9 +37,11 @@ model User {
   handovers         Item[]    @relation("HandoverByUser")
   invoicesCreated   Invoice[] @relation("CreatedByUser")
   paymentsRecorded  Payment[] @relation("RecordedByUser")
+  vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentsCreated")
   inventoryMovements InventoryMovement[] @relation("InventoryMovements")
   itemReservations  ItemReservation[] @relation("ReservedByUser")
   inventoryStatusChanges InventoryStatusHistory[] @relation("InventoryStatusChanges")
+  poBillAudits      POBillAudit[] @relation("POBillAudits")
   
   @@index([roleId])
   @@index([deletedAt])
@@ -390,26 +392,36 @@ model PurchaseOrder {
   expectedDate  DateTime?
   status        String    @default("Draft") // "Draft", "Sent", "Partial", "Completed", "Cancelled"
 
-  // Financial
-  subtotal      Decimal   @db.Decimal(18, 2)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
-  total         Decimal   @db.Decimal(18, 2)
-  
+  // Financial - Enhanced precision for better accuracy
+  subtotal      Decimal   @db.Decimal(18, 4)
+  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
+  total         Decimal   @db.Decimal(18, 4)
+
+  // NEW: Track billed amount to enforce SUM(bills) <= PO.total
+  billedAmount  Decimal   @default(0) @db.Decimal(18, 4)
+
+  // NEW: Lock mechanism for concurrent bill creation
+  lockedAt      DateTime?
+  lockedBy      String?   // Session/user ID that holds the lock
+
   // Relationships
   vendorId      String
   vendor        Vendor    @relation(fields: [vendorId], references: [id])
   lineItems     PurchaseOrderItem[]
   items         Item[]
   bills         Bill[]
-  
+  auditLogs     POBillAudit[] @relation("PurchaseOrderAudits")
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([vendorId])
   @@index([status])
+  @@index([status, deletedAt])
   @@index([orderDate])
   @@index([deletedAt])
+  @@index([lockedAt])
 }
 
 model PurchaseOrderItem {
@@ -445,12 +457,20 @@ model Bill {
   dueDate       DateTime?
   status        String    @default("Unpaid") // "Unpaid", "Partial", "Paid"
 
-  // Financial
-  subtotal      Decimal   @db.Decimal(18, 2)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
-  total         Decimal   @db.Decimal(18, 2)
-  paidAmount    Decimal   @default(0) @db.Decimal(10, 2)
-  
+  // Financial - Enhanced precision for consistency
+  subtotal      Decimal   @db.Decimal(18, 4)
+  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
+  total         Decimal   @db.Decimal(18, 4)
+  paidAmount    Decimal   @default(0) @db.Decimal(18, 4)
+
+  // NEW: Soft-cancel instead of hard delete
+  cancelledAt   DateTime?
+  cancelReason  String?   // Why was this bill cancelled
+
+  // NEW: Lock for concurrent payment processing
+  lockedAt      DateTime?
+  lockedBy      String?
+
   // Relationships
   vendorId      String
   vendor        Vendor    @relation(fields: [vendorId], references: [id])
@@ -458,15 +478,20 @@ model Bill {
   purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   payments      VendorPayment[]
   ledgerEntries VendorLedger[]
-  
+  auditLogs     POBillAudit[] @relation("BillAudits")
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([vendorId])
+  @@index([purchaseOrderId])
   @@index([status])
+  @@index([status, cancelledAt])
   @@index([billDate])
+  @@index([cancelledAt])
   @@index([deletedAt])
+  @@index([lockedAt])
 }
 
 // ==================== SALES & INVOICING ====================
@@ -589,25 +614,42 @@ model VendorPayment {
   id            String    @id @default(uuid())
   paymentNumber String    @unique
   paymentDate   DateTime
-  amount        Decimal   @db.Decimal(18, 2)
+  amount        Decimal   @db.Decimal(18, 4)
   method        String    // "Cash", "Bank Transfer", "Cheque"
   reference     String?
   notes         String?
-  
+
   // Relationships
   vendorId      String
   vendor        Vendor    @relation(fields: [vendorId], references: [id])
   billId        String?
   bill          Bill?     @relation(fields: [billId], references: [id])
-  
+
+  // NEW: Payment approval workflow (optional)
+  approvedAt    DateTime?
+  approvedBy    String?
+
+  // NEW: Track who created the payment
+  createdBy     String?
+  createdByUser User?     @relation("VendorPaymentsCreated", fields: [createdBy], references: [id])
+
+  // NEW: Void mechanism instead of delete (payments are immutable)
+  voidedAt      DateTime?
+  voidReason    String?
+  voidedBy      String?
+
+  auditLogs     POBillAudit[] @relation("PaymentAudits")
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([vendorId])
   @@index([billId])
   @@index([paymentDate])
   @@index([deletedAt])
+  @@index([voidedAt])
+  @@index([createdBy])
 }
 
 // ==================== INSTALLMENT MANAGEMENT ====================
@@ -823,4 +865,33 @@ model ItemReservation {
   @@index([reservedBy])
   @@index([expiresAt])
   @@unique([itemId, sessionId]) // Prevent double-reservation of same item in same session
+}
+
+// ==================== PO BILL AUDIT TRAIL ====================
+
+model POBillAudit {
+  id              String    @id @default(uuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation("PurchaseOrderAudits", fields: [purchaseOrderId], references: [id])
+
+  action          String    // "BILL_CREATED", "BILL_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
+  billId          String?
+  bill            Bill?     @relation("BillAudits", fields: [billId], references: [id])
+  paymentId       String?
+  payment         VendorPayment? @relation("PaymentAudits", fields: [paymentId], references: [id])
+
+  beforeState     Json?     // Snapshot before change
+  afterState      Json      // Snapshot after change
+
+  performedBy     String
+  performedByUser User      @relation("POBillAudits", fields: [performedBy], references: [id])
+  performedAt     DateTime  @default(now())
+
+  metadata        Json?     // Additional context
+
+  @@index([purchaseOrderId])
+  @@index([billId])
+  @@index([paymentId])
+  @@index([performedAt])
+  @@index([action])
 }

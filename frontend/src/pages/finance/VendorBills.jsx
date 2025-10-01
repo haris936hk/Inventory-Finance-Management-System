@@ -50,15 +50,17 @@ const VendorBills = () => {
     return response.data.data;
   });
 
-  // Fetch purchase orders for form (including line items)
-  const { data: purchaseOrders } = useQuery('purchase-orders', async () => {
+  // Fetch purchase orders for form (only Sent and Partial)
+  const { data: purchaseOrders } = useQuery('purchase-orders-for-bills', async () => {
     const response = await axios.get('/finance/purchase-orders', {
       params: {
-        status: 'Completed',
         include: 'lineItems' // Request line items to be included
       }
     });
-    return response.data.data;
+    // Only show Sent and Partial purchase orders
+    return response.data.data.filter(po =>
+      po.status === 'Sent' || po.status === 'Partial'
+    );
   });
 
   // Calculate statistics

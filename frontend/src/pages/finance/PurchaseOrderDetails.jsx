@@ -308,7 +308,7 @@ const PurchaseOrderDetails = () => {
             </Space>
           </div>
           <Space>
-            {hasPermission('finance.edit') && purchaseOrder.status !== 'Completed' && (
+            {hasPermission('finance.edit') && purchaseOrder.status === 'Draft' && (
               <Button icon={<EditOutlined />} onClick={handleEdit}>
                 Edit
               </Button>

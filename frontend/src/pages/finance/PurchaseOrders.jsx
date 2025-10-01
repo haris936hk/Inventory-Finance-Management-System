@@ -301,7 +301,7 @@ const PurchaseOrders = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Edit',
-            disabled: record.status === 'Completed',
+            disabled: record.status !== 'Draft',
             onClick: async () => {
               try {
                 // Fetch full purchase order with line items
