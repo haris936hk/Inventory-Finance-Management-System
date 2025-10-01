@@ -9,7 +9,7 @@ import {
 import {
   PlusOutlined, SearchOutlined, FilterOutlined, ExportOutlined,
   EditOutlined, DeleteOutlined, EyeOutlined, BarcodeOutlined,
-  PrinterOutlined, MoreOutlined, ScanOutlined
+  PrinterOutlined, MoreOutlined, ScanOutlined, AppstoreAddOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -425,15 +425,24 @@ const InventoryList = () => {
             <Col xs={24} sm={12} lg={4}>
               <Space>
                 {hasPermission('inventory.create') && (
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => navigate('/app/inventory/items/add')}
-                  >
-                    Add Item
-                  </Button>
+                  <>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => navigate('/app/inventory/items/add')}
+                    >
+                      Add Item
+                    </Button>
+                    <Button
+                      type="default"
+                      icon={<AppstoreAddOutlined />}
+                      onClick={() => navigate('/app/inventory/items/bulk-add')}
+                    >
+                      Bulk Add
+                    </Button>
+                  </>
                 )}
-                
+
                 {selectedRowKeys.length > 0 && (
                   <Button
                     icon={<ExportOutlined />}

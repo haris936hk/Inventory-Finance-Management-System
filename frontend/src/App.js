@@ -18,6 +18,7 @@ import Dashboard from './pages/Dashboard';
 // Inventory Pages
 import InventoryList from './pages/inventory/InventoryList';
 import AddItem from './pages/inventory/AddItem';
+import BulkAddItems from './pages/inventory/BulkAddItems';
 import ItemDetails from './pages/inventory/ItemDetails';
 import Categories from './pages/inventory/Categories';
 import Companies from './pages/inventory/Companies';
@@ -134,6 +135,7 @@ function App() {
                 <Route index element={<Navigate to="/app/inventory/items" />} />
                 <Route path="items" element={<InventoryList />} />
                 <Route path="items/add" element={<AddItem />} />
+                <Route path="items/bulk-add" element={<BulkAddItems />} />
                 <Route path="items/:serialNumber" element={<ItemDetails />} />
                 <Route path="categories" element={<Categories />} />
                 <Route path="companies" element={<Companies />} />
