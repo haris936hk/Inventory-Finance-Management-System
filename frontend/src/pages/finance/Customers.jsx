@@ -338,10 +338,22 @@ const Customers = () => {
               <Table
                 dataSource={selectedCustomer.invoices}
                 columns={[
-                  { title: 'Invoice #', dataIndex: 'invoiceNumber', key: 'invoiceNumber' },
-                  { 
-                    title: 'Date', 
-                    dataIndex: 'invoiceDate', 
+                  {
+                    title: 'Invoice #',
+                    dataIndex: 'invoiceNumber',
+                    key: 'invoiceNumber',
+                    render: (text, record) => (
+                      <Space direction="vertical" size="small">
+                        <span style={{ color: record.cancelledAt ? '#999' : 'inherit' }}>
+                          {text}
+                        </span>
+                        {record.cancelledAt && <Tag color="red" size="small">CANCELLED</Tag>}
+                      </Space>
+                    )
+                  },
+                  {
+                    title: 'Date',
+                    dataIndex: 'invoiceDate',
                     key: 'invoiceDate',
                     render: (date) => new Date(date).toLocaleDateString()
                   },
@@ -349,21 +361,41 @@ const Customers = () => {
                     title: 'Total',
                     dataIndex: 'total',
                     key: 'total',
-                    render: (amount) => formatPKR(parseFloat(amount))
+                    render: (amount, record) => (
+                      <span style={{
+                        color: record.cancelledAt ? '#999' : 'inherit',
+                        textDecoration: record.cancelledAt ? 'line-through' : 'none'
+                      }}>
+                        {formatPKR(parseFloat(amount))}
+                      </span>
+                    )
+                  },
+                  {
+                    title: 'Paid',
+                    dataIndex: 'paidAmount',
+                    key: 'paidAmount',
+                    render: (amount) => formatPKR(parseFloat(amount || 0))
                   },
                   {
                     title: 'Status',
                     dataIndex: 'status',
                     key: 'status',
-                    render: (status) => (
-                      <Tag color={
-                        status === 'Paid' ? 'green' :
-                        status === 'Overdue' ? 'red' :
-                        status === 'Partial' ? 'orange' : 'blue'
-                      }>
-                        {status}
-                      </Tag>
-                    )
+                    render: (status, record) => {
+                      if (record.cancelledAt) {
+                        return <Tag color="red">Cancelled</Tag>;
+                      }
+                      return (
+                        <Tag color={
+                          status === 'Draft' ? 'default' :
+                          status === 'Sent' ? 'blue' :
+                          status === 'Partial' ? 'orange' :
+                          status === 'Paid' ? 'green' :
+                          status === 'Overdue' ? 'red' : 'default'
+                        }>
+                          {status}
+                        </Tag>
+                      );
+                    }
                   }
                 ]}
                 pagination={false}
@@ -374,7 +406,19 @@ const Customers = () => {
               <Table
                 dataSource={selectedCustomer.payments}
                 columns={[
-                  { title: 'Payment #', dataIndex: 'paymentNumber', key: 'paymentNumber' },
+                  {
+                    title: 'Payment #',
+                    dataIndex: 'paymentNumber',
+                    key: 'paymentNumber',
+                    render: (text, record) => (
+                      <Space direction="vertical" size="small">
+                        <span style={{ color: record.voidedAt ? '#999' : 'inherit' }}>
+                          {text}
+                        </span>
+                        {record.voidedAt && <Tag color="red" size="small">VOIDED</Tag>}
+                      </Space>
+                    )
+                  },
                   {
                     title: 'Date',
                     dataIndex: 'paymentDate',
@@ -385,9 +429,25 @@ const Customers = () => {
                     title: 'Amount',
                     dataIndex: 'amount',
                     key: 'amount',
-                    render: (amount) => formatPKR(parseFloat(amount))
+                    render: (amount, record) => (
+                      <span style={{
+                        color: record.voidedAt ? '#999' : 'inherit',
+                        textDecoration: record.voidedAt ? 'line-through' : 'none'
+                      }}>
+                        {formatPKR(parseFloat(amount))}
+                      </span>
+                    )
                   },
-                  { title: 'Method', dataIndex: 'method', key: 'method' }
+                  {
+                    title: 'Method',
+                    dataIndex: 'method',
+                    key: 'method',
+                    render: (method, record) => (
+                      <span style={{ color: record.voidedAt ? '#999' : 'inherit' }}>
+                        {method}
+                      </span>
+                    )
+                  }
                 ]}
                 pagination={false}
               />

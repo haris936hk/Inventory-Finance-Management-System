@@ -4,6 +4,8 @@ const financeService = require('../services/financeService');
 const purchaseOrderService = require('../services/purchaseOrderService');
 const billService = require('../services/billService');
 const paymentService = require('../services/paymentService');
+const invoiceService = require('../services/invoiceService');
+const customerPaymentService = require('../services/customerPaymentService');
 const { ValidationError } = require('../utils/transactionWrapper');
 
 // ============= CUSTOMERS =============
@@ -164,6 +166,30 @@ const updateInvoiceStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Cancel invoice
+// @route   POST /api/finance/invoices/:id/cancel
+// @access  Private
+const cancelInvoice = asyncHandler(async (req, res) => {
+  const { reason } = req.body;
+
+  if (!reason || reason.trim() === '') {
+    res.status(400);
+    throw new Error('Cancellation reason is required');
+  }
+
+  const cancelled = await invoiceService.cancelInvoice(
+    req.params.id,
+    reason.trim(),
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    message: 'Invoice cancelled successfully',
+    data: cancelled
+  });
+});
+
 // ============= PAYMENTS =============
 
 // @desc    Record payment
@@ -212,6 +238,30 @@ const getPayments = asyncHandler(async (req, res) => {
     success: true,
     count: payments.length,
     data: payments
+  });
+});
+
+// @desc    Void customer payment
+// @route   POST /api/finance/payments/:id/void
+// @access  Private
+const voidCustomerPayment = asyncHandler(async (req, res) => {
+  const { reason } = req.body;
+
+  if (!reason || reason.trim() === '') {
+    res.status(400);
+    throw new Error('Void reason is required');
+  }
+
+  const voided = await customerPaymentService.voidPayment(
+    req.params.id,
+    reason.trim(),
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    message: 'Payment voided successfully',
+    data: voided
   });
 });
 
@@ -646,9 +696,11 @@ module.exports = {
   getInvoice,
   createInvoice,
   updateInvoiceStatus,
+  cancelInvoice,
   // Payments
   recordPayment,
   getPayments,
+  voidCustomerPayment,
   // Accounts
   getAccounts,
   createAccount,

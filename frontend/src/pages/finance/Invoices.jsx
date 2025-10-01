@@ -5,6 +5,7 @@ import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
   Row, Col, Statistic, Badge, Dropdown, message, Modal
 } from 'antd';
+const { TextArea } = Input;
 import {
   PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, DollarOutlined,
@@ -68,6 +69,21 @@ const Invoices = () => {
     }
   );
 
+  // Cancel invoice mutation
+  const cancelInvoiceMutation = useMutation(
+    ({ id, reason }) => axios.post(`/finance/invoices/${id}/cancel`, { reason }),
+    {
+      onSuccess: () => {
+        message.success('Invoice cancelled successfully');
+        queryClient.invalidateQueries('invoices');
+        queryClient.invalidateQueries('customers');
+      },
+      onError: (error) => {
+        message.error(error.response?.data?.message || 'Failed to cancel invoice');
+      }
+    }
+  );
+
   const getStatusColor = (status) => {
     const colors = {
       'Draft': 'default',
@@ -93,6 +109,36 @@ const Invoices = () => {
     message.info('Email functionality not configured');
   };
 
+  const handleCancelInvoice = (record) => {
+    let reason = '';
+    Modal.confirm({
+      title: 'Cancel Invoice',
+      content: (
+        <div>
+          <p>Are you sure you want to cancel invoice <strong>{record.invoiceNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            ⚠️ Only Draft invoices can be cancelled. This action cannot be undone.
+          </p>
+          <TextArea
+            placeholder="Enter cancellation reason (required)"
+            rows={3}
+            onChange={(e) => { reason = e.target.value; }}
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => {
+        if (!reason || reason.trim() === '') {
+          message.error('Please provide a cancellation reason');
+          return Promise.reject();
+        }
+        return cancelInvoiceMutation.mutateAsync({ id: record.id, reason: reason.trim() });
+      },
+      okText: 'Cancel Invoice',
+      okButtonProps: { danger: true }
+    });
+  };
+
   const columns = [
     {
       title: 'Invoice #',
@@ -101,9 +147,16 @@ const Invoices = () => {
       fixed: 'left',
       width: 120,
       render: (text, record) => (
-        <Button type="link" onClick={() => navigate(`/app/finance/invoices/${record.id}`)}>
-          {text}
-        </Button>
+        <Space direction="vertical" size="small">
+          <Button
+            type="link"
+            onClick={() => navigate(`/app/finance/invoices/${record.id}`)}
+            style={{ color: record.cancelledAt ? '#999' : undefined }}
+          >
+            {text}
+          </Button>
+          {record.cancelledAt && <Tag color="red" size="small">CANCELLED</Tag>}
+        </Space>
       )
     },
     {
@@ -138,7 +191,14 @@ const Invoices = () => {
       dataIndex: 'total',
       key: 'total',
       width: 120,
-      render: (amount) => formatPKR(parseFloat(amount)),
+      render: (amount, record) => (
+        <span style={{
+          color: record.cancelledAt ? '#999' : 'inherit',
+          textDecoration: record.cancelledAt ? 'line-through' : 'none'
+        }}>
+          {formatPKR(parseFloat(amount))}
+        </span>
+      ),
       sorter: (a, b) => a.total - b.total
     },
     {
@@ -171,10 +231,16 @@ const Invoices = () => {
         { text: 'Sent', value: 'Sent' },
         { text: 'Partial', value: 'Partial' },
         { text: 'Paid', value: 'Paid' },
-        { text: 'Overdue', value: 'Overdue' }
+        { text: 'Overdue', value: 'Overdue' },
+        { text: 'Cancelled', value: 'Cancelled' }
       ],
       onFilter: (value, record) => record.status === value,
-      render: (status) => <Tag color={getStatusColor(status)}>{status}</Tag>
+      render: (status, record) => {
+        if (record.cancelledAt) {
+          return <Tag color="red">Cancelled</Tag>;
+        }
+        return <Tag color={getStatusColor(status)}>{status}</Tag>;
+      }
     },
     {
       title: 'Actions',
@@ -220,14 +286,8 @@ const Invoices = () => {
             key: 'cancel',
             label: 'Cancel Invoice',
             danger: true,
-            onClick: () => {
-              Modal.confirm({
-                title: 'Cancel Invoice',
-                content: 'Are you sure you want to cancel this invoice?',
-                onOk: () => updateStatusMutation.mutate({ id: record.id, status: 'Cancelled' })
-              });
-            },
-            disabled: ['Paid', 'Cancelled'].includes(record.status)
+            onClick: () => handleCancelInvoice(record),
+            disabled: record.status !== 'Draft' || record.cancelledAt || parseFloat(record.paidAmount || 0) > 0
           }
         ];
 

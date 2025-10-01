@@ -45,10 +45,22 @@ router.put('/invoices/:id/status',
   financeController.updateInvoiceStatus
 );
 
+// Cancel invoice (new endpoint)
+router.post('/invoices/:id/cancel',
+  hasPermission(['finance.edit']),
+  financeController.cancelInvoice
+);
+
 // Payment routes
 router.route('/payments')
   .get(hasPermission(['finance.view']), financeController.getPayments)
   .post(hasPermission(['finance.create']), financeController.recordPayment);
+
+// Void customer payment (new endpoint)
+router.post('/payments/:id/void',
+  hasPermission(['finance.edit']),
+  financeController.voidCustomerPayment
+);
 
 // Account routes
 router.route('/accounts')

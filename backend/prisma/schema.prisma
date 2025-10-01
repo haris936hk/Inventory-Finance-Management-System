@@ -36,13 +36,16 @@ model User {
   stockEntries      Item[]    @relation("CreatedByUser")
   handovers         Item[]    @relation("HandoverByUser")
   invoicesCreated   Invoice[] @relation("CreatedByUser")
+  invoicesCancelled Invoice[] @relation("InvoicesCancelled")
   paymentsRecorded  Payment[] @relation("RecordedByUser")
+  paymentsVoided    Payment[] @relation("PaymentsVoided")
   vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentsCreated")
   inventoryMovements InventoryMovement[] @relation("InventoryMovements")
   itemReservations  ItemReservation[] @relation("ReservedByUser")
   inventoryStatusChanges InventoryStatusHistory[] @relation("InventoryStatusChanges")
   poBillAudits      POBillAudit[] @relation("POBillAudits")
-  
+  invoicePaymentAudits InvoicePaymentAudit[] @relation("InvoicePaymentAudits")
+
   @@index([roleId])
   @@index([deletedAt])
 }
@@ -503,57 +506,67 @@ model Invoice {
   dueDate       DateTime
   status        String    @default("Draft") // "Draft", "Sent", "Partial", "Paid", "Overdue", "Cancelled"
 
-  // Financial
-  subtotal      Decimal   @db.Decimal(18, 2)
+  // Financial - UPGRADED: Use DECIMAL(18,4) for precision consistency
+  subtotal      Decimal   @db.Decimal(18, 4)
   discountType  String?   // "Percentage", "Fixed"
   discountValue Decimal   @default(0) @db.Decimal(10, 2)
 
   // GST/VAT Compliance
   taxType       String    @default("GST") // "GST", "VAT", "CGST+SGST", "IGST"
   taxRate       Decimal   @default(0) @db.Decimal(5, 2)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
   cgstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  cgstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  cgstAmount    Decimal   @default(0) @db.Decimal(18, 4)
   sgstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  sgstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  sgstAmount    Decimal   @default(0) @db.Decimal(18, 4)
   igstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  igstAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  igstAmount    Decimal   @default(0) @db.Decimal(18, 4)
 
-  total         Decimal   @db.Decimal(18, 2)
-  paidAmount    Decimal   @default(0) @db.Decimal(10, 2)
+  total         Decimal   @db.Decimal(18, 4)
+  paidAmount    Decimal   @default(0) @db.Decimal(18, 4)
 
   // Tax Compliance Details
   placeOfSupply String?   // State/Province for tax jurisdiction
   hsn           String?   // HSN/SAC Code
   gstinNumber   String?   // Customer's GSTIN
-  
+
   // Terms
   terms         String?   @db.Text
   notes         String?   @db.Text
-  
+
   // Installment support
   hasInstallment Boolean  @default(false)
   installmentPlan InstallmentPlan?
-  
+
+  // NEW: Soft-cancel mechanism
+  cancelledAt   DateTime?
+  cancelReason  String?
+  cancelledBy   String?
+  cancelledByUser User?   @relation("InvoicesCancelled", fields: [cancelledBy], references: [id])
+
   // Relationships
   customerId    String
   customer      Customer  @relation(fields: [customerId], references: [id])
   items         InvoiceItem[]
   payments      Payment[]
   ledgerEntries CustomerLedger[]
-  
+  auditLogs     InvoicePaymentAudit[]
+
   // User tracking
   createdById   String
   createdBy     User      @relation("CreatedByUser", fields: [createdById], references: [id])
-  
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  voidReason    String?
-  
+  voidReason    String?   // DEPRECATED: Use cancelReason instead
+
   @@index([customerId])
   @@index([status])
+  @@index([status, cancelledAt])
   @@index([invoiceDate])
+  @@index([dueDate])
+  @@index([cancelledAt])
   @@index([deletedAt])
 }
 
@@ -583,11 +596,11 @@ model Payment {
   id            String    @id @default(uuid())
   paymentNumber String    @unique
   paymentDate   DateTime
-  amount        Decimal   @db.Decimal(18, 2)
-  method        String    // "Cash", "Bank Transfer", "Cheque"
-  reference     String?   // Cheque number, transaction ID, etc.
+  amount        Decimal   @db.Decimal(18, 4)
+  method        String    // "Cash", "Bank Transfer", "Cheque", "UPI", "Card"
+  reference     String?   // Cheque number, transaction ID, UPI ref, etc.
   notes         String?
-  
+
   // Relationships
   customerId    String
   customer      Customer  @relation(fields: [customerId], references: [id])
@@ -595,18 +608,25 @@ model Payment {
   invoice       Invoice?  @relation(fields: [invoiceId], references: [id])
   installmentId String?
   installment   Installment? @relation(fields: [installmentId], references: [id])
-  
+
+  // NEW: Void mechanism instead of delete
+  voidedAt      DateTime?
+  voidReason    String?
+  voidedBy      String?
+  voidedByUser  User?     @relation("PaymentsVoided", fields: [voidedBy], references: [id])
+
   // User tracking
   recordedById  String
   recordedBy    User      @relation("RecordedByUser", fields: [recordedById], references: [id])
-  
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
-  
+
   @@index([customerId])
   @@index([invoiceId])
   @@index([paymentDate])
+  @@index([voidedAt])
   @@index([deletedAt])
 }
 
@@ -696,6 +716,31 @@ model Installment {
   @@index([planId])
   @@index([status])
   @@index([dueDate])
+}
+
+// ==================== INVOICE PAYMENT AUDIT TRAIL ====================
+
+model InvoicePaymentAudit {
+  id            String    @id @default(uuid())
+  invoiceId     String
+  invoice       Invoice   @relation(fields: [invoiceId], references: [id])
+
+  action        String    // "INVOICE_CREATED", "INVOICE_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
+  paymentId     String?
+
+  beforeState   Json?     // Snapshot before change
+  afterState    Json      // Snapshot after change
+
+  performedBy   String
+  performedByUser User    @relation("InvoicePaymentAudits", fields: [performedBy], references: [id])
+  performedAt   DateTime  @default(now())
+
+  metadata      Json?     // Additional context (reason, notes, etc.)
+
+  @@index([invoiceId])
+  @@index([paymentId])
+  @@index([performedAt])
+  @@index([action])
 }
 
 // ==================== LEDGER TABLES ====================
