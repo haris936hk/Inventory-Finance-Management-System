@@ -243,14 +243,17 @@ const LedgerView = ({
       dataIndex: 'balance',
       key: 'balance',
       align: 'right',
-      render: (balance) => (
-        <span style={{
-          color: balance > 0 ? '#f5222d' : '#52c41a',
-          fontWeight: 'bold'
-        }}>
-          {formatPKR(balance)}
-        </span>
-      ),
+      render: (balance) => {
+        const balanceNum = parseFloat(balance) || 0;
+        return (
+          <span style={{
+            color: balanceNum > 0 ? '#f5222d' : '#52c41a',
+            fontWeight: 'bold'
+          }}>
+            {formatPKR(balanceNum)}
+          </span>
+        );
+      },
       width: 120
     }
   ];

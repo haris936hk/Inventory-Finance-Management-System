@@ -356,7 +356,7 @@ const PurchaseOrderDetails = () => {
           <Card>
             <Statistic
               title="Line Items"
-              value={purchaseOrder._count?.lineItems || 0}
+              value={purchaseOrder.lineItems?.length || 0}
               valueStyle={{ color: '#722ed1' }}
             />
           </Card>
