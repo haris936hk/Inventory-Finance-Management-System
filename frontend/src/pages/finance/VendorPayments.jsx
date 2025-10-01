@@ -182,7 +182,7 @@ const VendorPayments = () => {
       align: 'right',
       render: (amount) => (
         <span style={{ fontWeight: 'bold', color: '#52c41a' }}>
-          formatPKR(Number(amount))
+          {formatPKR(Number(amount))}
         </span>
       ),
     },

@@ -1,16 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Descriptions, Table, Button, Space, Tag, Row, Col,
-  Statistic, Divider, Typography, message, Spin, Alert, Progress
+  Statistic, Divider, Typography, message, Spin, Alert, Progress,
+  Modal, Form, Select, DatePicker, InputNumber
 } from 'antd';
 import {
   ArrowLeftOutlined, EditOutlined, PrinterOutlined, ShopOutlined,
   CalendarOutlined, FileTextOutlined, DollarOutlined, ExclamationCircleOutlined,
-  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined
+  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
 
@@ -19,7 +21,12 @@ const { Title, Text } = Typography;
 const VendorBillDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState(null);
+  const [selectedVendorId, setSelectedVendorId] = useState(null);
+  const [form] = Form.useForm();
 
   // Fetch vendor bill details
   const { data: vendorBill, isLoading, error } = useQuery(
@@ -46,6 +53,108 @@ const VendorBillDetails = () => {
       enabled: !!id
     }
   );
+
+  // Fetch vendors for edit form
+  const { data: vendors } = useQuery('vendors', async () => {
+    const response = await axios.get('/inventory/vendors');
+    return response.data.data;
+  });
+
+  // Fetch purchase orders for form
+  const { data: purchaseOrders } = useQuery('purchase-orders', async () => {
+    const response = await axios.get('/finance/purchase-orders', {
+      params: {
+        status: 'Completed',
+        include: 'lineItems'
+      }
+    });
+    return response.data.data;
+  });
+
+  // Update Bill mutation
+  const updateMutation = useMutation(
+    (data) => axios.put(`/finance/vendor-bills/${id}`, data),
+    {
+      onSuccess: () => {
+        message.success('Vendor Bill updated successfully');
+        queryClient.invalidateQueries(['vendor-bill', id]);
+        handleCloseModal();
+      },
+      onError: (error) => {
+        console.error('Bill update failed:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        message.error(errorMessage);
+      }
+    }
+  );
+
+  const handleCloseModal = () => {
+    setModalVisible(false);
+    setSelectedPurchaseOrder(null);
+    setSelectedVendorId(null);
+    form.resetFields();
+  };
+
+  const handleVendorChange = (vendorId) => {
+    setSelectedVendorId(vendorId);
+    setSelectedPurchaseOrder(null);
+    form.setFieldsValue({
+      purchaseOrderId: null,
+      subtotal: null,
+      taxAmount: null
+    });
+  };
+
+  const handlePurchaseOrderChange = (poId) => {
+    if (!poId) {
+      setSelectedPurchaseOrder(null);
+      form.setFieldsValue({
+        subtotal: null,
+        taxAmount: null
+      });
+      return;
+    }
+
+    const selectedPO = purchaseOrders?.find(po => po.id === poId);
+    if (selectedPO) {
+      setSelectedPurchaseOrder(selectedPO);
+      form.setFieldsValue({
+        subtotal: parseFloat(selectedPO.subtotal || 0),
+        taxAmount: parseFloat(selectedPO.taxAmount || 0)
+      });
+      message.success(`Populated bill amounts from PO ${selectedPO.poNumber}`);
+    }
+  };
+
+  const filteredPurchaseOrders = React.useMemo(() => {
+    if (!selectedVendorId || !purchaseOrders) return [];
+    return purchaseOrders.filter(po => po.vendorId === selectedVendorId);
+  }, [selectedVendorId, purchaseOrders]);
+
+  const handleEdit = () => {
+    if (!vendorBill) return;
+
+    setSelectedVendorId(vendorBill.vendorId);
+    form.setFieldsValue({
+      ...vendorBill,
+      billDate: vendorBill.billDate ? dayjs(vendorBill.billDate) : null,
+      dueDate: vendorBill.dueDate ? dayjs(vendorBill.dueDate) : null
+    });
+
+    setModalVisible(true);
+  };
+
+  const handleFormSubmit = (values) => {
+    const processedValues = {
+      ...values,
+      billDate: values.billDate ? values.billDate.toISOString() : new Date().toISOString(),
+      dueDate: values.dueDate ? values.dueDate.toISOString() : null,
+      subtotal: parseFloat(values.subtotal) || 0,
+      taxAmount: parseFloat(values.taxAmount) || 0,
+      total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
+    };
+    updateMutation.mutate(processedValues);
+  };
 
   if (isLoading) {
     return (
@@ -182,7 +291,7 @@ const VendorBillDetails = () => {
           </div>
           <Space>
             {hasPermission('finance.edit') && vendorBill.status !== 'Paid' && (
-              <Button icon={<EditOutlined />}>
+              <Button icon={<EditOutlined />} onClick={handleEdit}>
                 Edit
               </Button>
             )}
@@ -465,6 +574,220 @@ const VendorBillDetails = () => {
           />
         )}
       </Card>
+
+      {/* Edit Modal */}
+      <Modal
+        title="Edit Vendor Bill"
+        open={modalVisible}
+        onCancel={handleCloseModal}
+        footer={null}
+        width={900}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleFormSubmit}
+          initialValues={{
+            billDate: dayjs(),
+            status: 'Unpaid',
+            taxAmount: 0
+          }}
+        >
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Vendor"
+                name="vendorId"
+                rules={[{ required: true, message: 'Please select a vendor' }]}
+              >
+                <Select
+                  placeholder="Select vendor first"
+                  showSearch
+                  optionFilterProp="children"
+                  onChange={handleVendorChange}
+                >
+                  {vendors?.map(vendor => (
+                    <Select.Option key={vendor.id} value={vendor.id}>
+                      {vendor.name} ({vendor.code})
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Purchase Order (Optional)"
+                name="purchaseOrderId"
+              >
+                <Select
+                  placeholder={
+                    !selectedVendorId
+                      ? "Select vendor first"
+                      : filteredPurchaseOrders.length === 0
+                      ? "No POs available for this vendor"
+                      : "Select PO to auto-populate amounts"
+                  }
+                  allowClear
+                  showSearch
+                  optionFilterProp="children"
+                  onChange={handlePurchaseOrderChange}
+                  disabled={!selectedVendorId || filteredPurchaseOrders.length === 0}
+                  notFoundContent={
+                    !selectedVendorId
+                      ? "Please select a vendor first"
+                      : "No purchase orders found for this vendor"
+                  }
+                >
+                  {filteredPurchaseOrders.map(po => (
+                    <Select.Option key={po.id} value={po.id}>
+                      {po.poNumber} ({formatPKR(Number(po.total || 0))})
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Bill Date"
+                name="billDate"
+                rules={[{ required: true, message: 'Please select bill date' }]}
+              >
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="Due Date" name="dueDate">
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Informational Alert */}
+          <Alert
+            message="Smart Bill Editing"
+            description="You can change the vendor or link a different Purchase Order to automatically update amounts. Adjust the amounts manually if needed."
+            type="info"
+            icon={<InfoCircleOutlined />}
+            style={{ marginBottom: 16 }}
+            showIcon
+          />
+
+          <Divider />
+
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Subtotal (PKR)"
+                name="subtotal"
+                rules={[
+                  { required: true, message: 'Please enter subtotal' },
+                  { type: 'number', min: 0, message: 'Amount must be positive' }
+                ]}
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  precision={2}
+                  min={0}
+                  placeholder="0.00"
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Tax Amount (PKR)"
+                name="taxAmount"
+                rules={[{ type: 'number', min: 0, message: 'Amount must be positive' }]}
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  precision={2}
+                  min={0}
+                  placeholder="0.00"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Purchase Order Line Items Preview */}
+          {selectedPurchaseOrder && (
+            <>
+              <Divider />
+              <Card
+                size="small"
+                title={`Purchase Order ${selectedPurchaseOrder.poNumber} - Line Items`}
+                style={{ backgroundColor: '#f9f9f9' }}
+              >
+                <Table
+                  size="small"
+                  dataSource={selectedPurchaseOrder.lineItems || []}
+                  pagination={false}
+                  rowKey="id"
+                  columns={[
+                    {
+                      title: 'Description',
+                      dataIndex: 'description',
+                      key: 'description'
+                    },
+                    {
+                      title: 'Quantity',
+                      dataIndex: 'quantity',
+                      key: 'quantity',
+                      align: 'center',
+                      width: 80
+                    },
+                    {
+                      title: 'Unit Price',
+                      dataIndex: 'unitPrice',
+                      key: 'unitPrice',
+                      align: 'right',
+                      width: 100,
+                      render: (price) => formatPKR(Number(price))
+                    },
+                    {
+                      title: 'Total',
+                      dataIndex: 'totalPrice',
+                      key: 'totalPrice',
+                      align: 'right',
+                      width: 100,
+                      render: (total) => (
+                        <span style={{ fontWeight: 'bold' }}>
+                          {formatPKR(Number(total))}
+                        </span>
+                      )
+                    }
+                  ]}
+                  summary={() => (
+                    <Table.Summary>
+                      <Table.Summary.Row>
+                        <Table.Summary.Cell index={0} colSpan={3}>
+                          <span style={{ fontWeight: 'bold' }}>Total</span>
+                        </Table.Summary.Cell>
+                        <Table.Summary.Cell index={3}>
+                          <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
+                            {formatPKR(Number(selectedPurchaseOrder.total || 0))}
+                          </span>
+                        </Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    </Table.Summary>
+                  )}
+                />
+              </Card>
+            </>
+          )}
+
+          <div style={{ textAlign: 'right', marginTop: 16 }}>
+            <Space>
+              <Button onClick={handleCloseModal}>Cancel</Button>
+              <Button type="primary" htmlType="submit" loading={updateMutation.isLoading}>
+                Update
+              </Button>
+            </Space>
+          </div>
+        </Form>
+      </Modal>
     </>
   );
 };

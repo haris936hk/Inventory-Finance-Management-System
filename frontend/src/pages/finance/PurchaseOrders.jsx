@@ -302,14 +302,45 @@ const PurchaseOrders = () => {
             icon: <EditOutlined />,
             label: 'Edit',
             disabled: record.status === 'Completed',
-            onClick: () => {
-              setEditingPO(record);
-              form.setFieldsValue({
-                ...record,
-                orderDate: record.orderDate ? dayjs(record.orderDate) : null,
-                expectedDate: record.expectedDate ? dayjs(record.expectedDate) : null
-              });
-              setModalVisible(true);
+            onClick: async () => {
+              try {
+                // Fetch full purchase order with line items
+                const response = await axios.get(`/finance/purchase-orders/${record.id}`);
+                const fullPO = response.data.data;
+
+                setEditingPO(fullPO);
+                form.setFieldsValue({
+                  ...fullPO,
+                  orderDate: fullPO.orderDate ? dayjs(fullPO.orderDate) : null,
+                  expectedDate: fullPO.expectedDate ? dayjs(fullPO.expectedDate) : null,
+                  taxRate: fullPO.taxAmount && fullPO.subtotal
+                    ? (Number(fullPO.taxAmount) / Number(fullPO.subtotal) * 100).toFixed(2)
+                    : 0
+                });
+
+                // Load existing line items
+                if (fullPO.lineItems && fullPO.lineItems.length > 0) {
+                  const items = fullPO.lineItems.map(item => ({
+                    productModelId: item.productModelId,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unitPrice: Number(item.unitPrice),
+                    totalPrice: Number(item.totalPrice),
+                    specifications: item.specifications || {},
+                    notes: item.notes || '',
+                    productModel: item.productModel
+                  }));
+                  setSelectedItems(items);
+                  setSubtotal(Number(fullPO.subtotal));
+                  setTaxAmount(Number(fullPO.taxAmount));
+                  setTotal(Number(fullPO.total));
+                }
+
+                setModalVisible(true);
+              } catch (error) {
+                message.error('Failed to load purchase order details');
+                console.error('Error loading PO:', error);
+              }
             }
           },
           { type: 'divider' },

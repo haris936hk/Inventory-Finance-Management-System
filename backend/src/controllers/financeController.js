@@ -371,20 +371,47 @@ const getPurchaseOrder = asyncHandler(async (req, res) => {
 // @access  Private
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
   const db = require('../config/database');
+  const { lineItems = [], ...purchaseOrderData } = req.body;
+
+  // Delete existing line items and create new ones
+  await db.prisma.purchaseOrderItem.deleteMany({
+    where: { purchaseOrderId: req.params.id }
+  });
 
   const purchaseOrder = await db.prisma.purchaseOrder.update({
     where: { id: req.params.id },
     data: {
-      orderDate: req.body.orderDate,
-      expectedDate: req.body.expectedDate,
-      status: req.body.status,
-      subtotal: req.body.subtotal,
-      taxAmount: req.body.taxAmount || 0,
-      total: req.body.total,
-      vendorId: req.body.vendorId
+      orderDate: purchaseOrderData.orderDate,
+      expectedDate: purchaseOrderData.expectedDate,
+      status: purchaseOrderData.status,
+      subtotal: purchaseOrderData.subtotal,
+      taxAmount: purchaseOrderData.taxAmount || 0,
+      total: purchaseOrderData.total,
+      vendorId: purchaseOrderData.vendorId,
+      lineItems: {
+        create: lineItems.map(item => ({
+          productModelId: item.productModelId,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          totalPrice: item.totalPrice,
+          specifications: item.specifications || {},
+          notes: item.notes
+        }))
+      }
     },
     include: {
-      vendor: true
+      vendor: true,
+      lineItems: {
+        include: {
+          productModel: {
+            include: {
+              category: true,
+              company: true
+            }
+          }
+        }
+      }
     }
   });
 
