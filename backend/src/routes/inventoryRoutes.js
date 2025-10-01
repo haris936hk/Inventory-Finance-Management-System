@@ -71,6 +71,16 @@ router.post('/items/bulk',
 router.route('/items/:serialNumber')
   .get(hasPermission(['inventory.view']), inventoryController.getItem);
 
+router.get('/items/:serialNumber/history',
+  hasPermission(['inventory.view']),
+  inventoryController.getItemHistory
+);
+
+router.get('/items/:serialNumber/movements',
+  hasPermission(['inventory.view']),
+  inventoryController.getItemMovements
+);
+
 router.put('/items/:serialNumber/status',
   hasPermission(['inventory.edit']),
   inventoryController.updateItemStatus

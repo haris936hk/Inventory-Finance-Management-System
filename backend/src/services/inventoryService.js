@@ -486,7 +486,8 @@ class InventoryService {
         category: true,
         model: {
           include: {
-            company: true
+            company: true,
+            category: true
           }
         },
         vendor: true,
@@ -511,7 +512,8 @@ class InventoryService {
         category: true,
         model: {
           include: {
-            company: true
+            company: true,
+            category: true
           }
         },
         vendor: true,
@@ -789,6 +791,78 @@ class InventoryService {
     }
 
     return results;
+  }
+
+  /**
+   * Get item status history
+   */
+  async getItemHistory(serialNumber) {
+    const item = await db.prisma.item.findFirst({
+      where: {
+        serialNumber,
+        deletedAt: null
+      }
+    });
+
+    if (!item) {
+      const error = new Error('Item not found');
+      error.status = 404;
+      throw error;
+    }
+
+    return await db.prisma.inventoryStatusHistory.findMany({
+      where: {
+        itemId: item.id
+      },
+      include: {
+        changedByUser: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true
+          }
+        }
+      },
+      orderBy: {
+        changeDate: 'desc'
+      }
+    });
+  }
+
+  /**
+   * Get item movements
+   */
+  async getItemMovements(serialNumber) {
+    const item = await db.prisma.item.findFirst({
+      where: {
+        serialNumber,
+        deletedAt: null
+      }
+    });
+
+    if (!item) {
+      const error = new Error('Item not found');
+      error.status = 404;
+      throw error;
+    }
+
+    return await db.prisma.inventoryMovement.findMany({
+      where: {
+        itemId: item.id
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
   }
 }
 

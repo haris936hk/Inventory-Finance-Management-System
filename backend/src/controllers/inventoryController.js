@@ -363,6 +363,30 @@ const deleteVendor = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get item history (status changes)
+// @route   GET /api/inventory/items/:serialNumber/history
+// @access  Private
+const getItemHistory = asyncHandler(async (req, res) => {
+  const history = await inventoryService.getItemHistory(req.params.serialNumber);
+
+  res.json({
+    success: true,
+    data: history
+  });
+});
+
+// @desc    Get item movements
+// @route   GET /api/inventory/items/:serialNumber/movements
+// @access  Private
+const getItemMovements = asyncHandler(async (req, res) => {
+  const movements = await inventoryService.getItemMovements(req.params.serialNumber);
+
+  res.json({
+    success: true,
+    data: movements
+  });
+});
+
 module.exports = {
   // Categories
   getCategories,
@@ -393,5 +417,8 @@ module.exports = {
   getVendor,
   createVendor,
   updateVendor,
-  deleteVendor
+  deleteVendor,
+  // Item History & Movements
+  getItemHistory,
+  getItemMovements
 };
