@@ -2,13 +2,15 @@
 import React, { useState } from 'react';
 import {
   Card, Table, Button, Space, Tag, Input, DatePicker, Select,
-  Statistic, Row, Col, Typography
+  Statistic, Row, Col, Typography, Modal, message
 } from 'antd';
+const { TextArea } = Input;
 import {
   PlusOutlined, CreditCardOutlined, CalendarOutlined,
-  UserOutlined, DollarOutlined, FilterOutlined
+  UserOutlined, DollarOutlined, FilterOutlined, DeleteOutlined,
+  EyeOutlined
 } from '@ant-design/icons';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -20,6 +22,7 @@ const { Text } = Typography;
 
 const Payments = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState('');
   const [dateRange, setDateRange] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState('');
@@ -43,6 +46,22 @@ const Payments = () => {
 
   const payments = paymentsData || [];
 
+  // Void payment mutation
+  const voidPaymentMutation = useMutation(
+    ({ id, reason }) => axios.post(`/finance/payments/${id}/void`, { reason }),
+    {
+      onSuccess: () => {
+        message.success('Payment voided successfully');
+        queryClient.invalidateQueries('payments');
+        queryClient.invalidateQueries('invoices');
+        queryClient.invalidateQueries('customers');
+      },
+      onError: (error) => {
+        message.error(error.response?.data?.message || 'Failed to void payment');
+      }
+    }
+  );
+
   // Calculate stats from the payments data
   const stats = {
     totalAmount: payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
@@ -63,12 +82,49 @@ const Payments = () => {
     'Online': 'cyan'
   };
 
+  const handleVoidPayment = (record) => {
+    let reason = '';
+    Modal.confirm({
+      title: 'Void Payment',
+      content: (
+        <div>
+          <p>Are you sure you want to void payment <strong>{record.paymentNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            ⚠️ This will reverse all financial impacts. This action cannot be undone.
+          </p>
+          <TextArea
+            placeholder="Enter void reason (required)"
+            rows={3}
+            onChange={(e) => { reason = e.target.value; }}
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => {
+        if (!reason || reason.trim() === '') {
+          message.error('Please provide a void reason');
+          return Promise.reject();
+        }
+        return voidPaymentMutation.mutateAsync({ id: record.id, reason: reason.trim() });
+      },
+      okText: 'Void Payment',
+      okButtonProps: { danger: true }
+    });
+  };
+
   const columns = [
     {
       title: 'Payment ID',
       dataIndex: 'paymentNumber',
       key: 'paymentNumber',
-      render: (text) => <Text strong>{text}</Text>
+      render: (text, record) => (
+        <Space direction="vertical" size="small">
+          <Text strong style={{ color: record.voidedAt ? '#999' : '#1890ff' }}>
+            {text}
+          </Text>
+          {record.voidedAt && <Tag color="red" size="small">VOIDED</Tag>}
+        </Space>
+      )
     },
     {
       title: 'Date',
@@ -99,8 +155,14 @@ const Payments = () => {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount) => (
-        <Text strong style={{ color: '#52c41a' }}>
+      render: (amount, record) => (
+        <Text
+          strong
+          style={{
+            color: record.voidedAt ? '#999' : '#52c41a',
+            textDecoration: record.voidedAt ? 'line-through' : 'none'
+          }}
+        >
           {formatPKR(amount)}
         </Text>
       ),
@@ -127,6 +189,26 @@ const Payments = () => {
       dataIndex: 'recordedBy',
       key: 'recordedBy',
       render: (recordedBy) => recordedBy?.fullName || 'Unknown'
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      render: (_, record) => (
+        <Space>
+          <Button
+            icon={<EyeOutlined />}
+            size="small"
+            onClick={() => navigate(`/app/finance/payments/${record.id}`)}
+          />
+          <Button
+            icon={<DeleteOutlined />}
+            size="small"
+            danger
+            onClick={() => handleVoidPayment(record)}
+            disabled={record.voidedAt || record.deletedAt}
+          />
+        </Space>
+      )
     }
   ];
 
