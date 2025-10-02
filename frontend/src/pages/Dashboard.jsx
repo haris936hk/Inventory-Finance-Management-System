@@ -47,7 +47,7 @@ const Dashboard = () => {
   }
 
   const data = dashboardData || {
-    inventory: { totalItems: 0, availableItems: 0, soldThisMonth: 0, utilizationRate: 0 },
+    inventory: { totalItems: 0, availableItems: 0, soldThisMonth: 0, utilizationRate: '0.00' },
     financial: { totalRevenue: 0, monthlyRevenue: 0, outstandingAmount: 0 },
     customers: { total: 0, newThisMonth: 0 },
     topProducts: [],
@@ -92,15 +92,11 @@ const Dashboard = () => {
               value={data.financial.monthlyRevenue}
               prefix="PKR"
               valueStyle={{ color: '#52c41a' }}
-              suffix={
-                <span style={{ fontSize: 14, color: '#52c41a' }}>
-                  <ArrowUpOutlined /> 12%
-                </span>
-              }
+              precision={2}
             />
             <div style={{ marginTop: 8 }}>
               <Text type="secondary">Total: </Text>
-              <Text strong>PKR {data.financial.totalRevenue}</Text>
+              <Text strong>PKR {parseFloat(data.financial.totalRevenue).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
             </div>
           </Card>
         </Col>
@@ -112,15 +108,13 @@ const Dashboard = () => {
               value={data.financial.outstandingAmount}
               prefix="PKR"
               valueStyle={{ color: '#faad14' }}
+              precision={2}
             />
             <div style={{ marginTop: 8 }}>
-              <Button 
-                type="link" 
-                size="small" 
-                onClick={() => navigate('/app/finance/invoices?status=overdue')}
-              >
-                View Overdue Invoices →
-              </Button>
+              <Text type="secondary">Overdue: </Text>
+              <Text strong style={{ color: '#ff4d4f' }}>
+                {data.financial.overdueInvoices || 0}
+              </Text>
             </div>
           </Card>
         </Col>
@@ -204,9 +198,9 @@ const Dashboard = () => {
                     title={invoice.invoiceNumber}
                     description={invoice.customer?.name}
                   />
-                  <div>
-                    <div>PKR {invoice.total}</div>
-                    <Tag 
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ marginBottom: 4 }}>PKR {parseFloat(invoice.total).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <Tag
                       color={
                         invoice.status === 'Paid' ? 'green' :
                         invoice.status === 'Overdue' ? 'red' :
@@ -247,12 +241,12 @@ const Dashboard = () => {
                     avatar={
                       <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
                     }
-                    title={`PKR ${payment.amount}`}
+                    title={`PKR ${parseFloat(payment.amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     description={payment.customer?.name}
                   />
                   <div>
                     <Text type="secondary">
-                      {new Date(payment.paymentDate).toLocaleDateString()}
+                      {new Date(payment.paymentDate).toLocaleDateString('en-PK')}
                     </Text>
                   </div>
                 </List.Item>

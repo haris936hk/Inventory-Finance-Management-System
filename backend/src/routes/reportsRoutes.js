@@ -9,6 +9,12 @@ const {
   exportReport
 } = require('../controllers/reportsController');
 
+const {
+  getDashboardStats,
+  getRevenueTrend,
+  getInventoryStatusBreakdown
+} = require('../controllers/dashboardController');
+
 const { protect } = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 
@@ -16,6 +22,11 @@ const router = express.Router();
 
 // Apply authentication to all routes
 router.use(protect);
+
+// Dashboard Routes
+router.get('/dashboard', getDashboardStats);
+router.get('/dashboard/revenue-trend', getRevenueTrend);
+router.get('/dashboard/inventory-status', getInventoryStatusBreakdown);
 
 // Financial Reports
 router.get('/profit-loss', checkPermission('reports.view'), getProfitLossStatement);
