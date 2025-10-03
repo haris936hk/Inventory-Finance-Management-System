@@ -330,7 +330,7 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/purchase-orders/:id
 // @access  Private
 const getPurchaseOrder = asyncHandler(async (req, res) => {
-  const purchaseOrder = await purchaseOrderService.getPurchaseOrderById(req.params.id);
+  const purchaseOrder = await purchaseOrderService.getPurchaseOrder(req.params.id);
 
   if (!purchaseOrder) {
     res.status(404);

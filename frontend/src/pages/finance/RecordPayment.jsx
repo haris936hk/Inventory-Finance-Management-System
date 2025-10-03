@@ -23,6 +23,7 @@ const RecordPayment = () => {
   const [form] = Form.useForm();
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
 
   // Fetch customers
   const { data: customers } = useQuery('customers', async () => {
@@ -66,6 +67,8 @@ const RecordPayment = () => {
   const handleInvoiceChange = (invoiceId) => {
     const invoice = customerInvoices?.find(inv => inv.id === invoiceId);
     setSelectedInvoice(invoice);
+    // Re-validate the amount field when invoice changes
+    form.validateFields(['amount']).catch(() => {});
   };
 
   const handleSubmit = (values) => {
@@ -219,6 +222,15 @@ const RecordPayment = () => {
                             if (isNaN(numValue) || numValue <= 0) {
                               return Promise.reject(new Error('Amount must be greater than 0'));
                             }
+
+                            // Validate against invoice remaining balance if invoice is selected
+                            if (selectedInvoice) {
+                              const remainingBalance = (selectedInvoice.total || 0) - (selectedInvoice.paidAmount || 0);
+                              if (numValue > remainingBalance) {
+                                return Promise.reject(new Error(`Amount cannot exceed remaining balance of ${formatPKR(remainingBalance)}`));
+                              }
+                            }
+
                             return Promise.resolve();
                           }
                         }
@@ -240,7 +252,7 @@ const RecordPayment = () => {
                   name="paymentMethod"
                   rules={[{ required: true, message: 'Please select payment method' }]}
                 >
-                  <Select>
+                  <Select onChange={(value) => setPaymentMethod(value)}>
                     <Select.Option value="Cash">Cash</Select.Option>
                     <Select.Option value="Bank Transfer">Bank Transfer</Select.Option>
                     <Select.Option value="Cheque">Cheque</Select.Option>
@@ -253,6 +265,12 @@ const RecordPayment = () => {
                   label="Reference Number"
                   name="referenceNumber"
                   help="Transaction ID, cheque number, etc."
+                  rules={[
+                    {
+                      required: paymentMethod !== 'Cash',
+                      message: 'Reference number is required for this payment method'
+                    }
+                  ]}
                 >
                   <Input placeholder="Enter reference number" />
                 </Form.Item>
