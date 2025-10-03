@@ -564,6 +564,7 @@ model Invoice {
   @@index([customerId])
   @@index([status])
   @@index([status, cancelledAt])
+  @@index([customerId, status]) // Composite index for faster customer invoice queries
   @@index([invoiceDate])
   @@index([dueDate])
   @@index([cancelledAt])
