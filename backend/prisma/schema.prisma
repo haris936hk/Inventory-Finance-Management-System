@@ -6,9 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ==================== USER & ACCESS MANAGEMENT ====================
@@ -940,4 +939,16 @@ model POBillAudit {
   @@index([paymentId])
   @@index([performedAt])
   @@index([action])
+}
+
+// ==================== SYSTEM SETTINGS ====================
+
+model SystemSettings {
+  id        String   @id @default(uuid())
+  key       String   @unique // "general", "inventory", "finance", "notifications", "backup"
+  value     Json     // Settings object for that category
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
 }

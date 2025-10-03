@@ -18,6 +18,7 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const financeRoutes = require('./routes/financeRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const importExportRoutes = require('./routes/importExportRoutes');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -54,6 +55,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/import', importExportRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
