@@ -31,6 +31,7 @@ import {
 import { useAuthStore } from '../stores/authStore';
 import ImportModal from '../components/ImportModal';
 import ExportModal from '../components/ExportModal';
+import ProfileModal from '../components/ProfileModal';
 
 const { Header, Sider, Content, Footer } = Layout;
 
@@ -40,6 +41,7 @@ const PrivateLayout = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
   
   const { isAuthenticated, user, logout, hasPermission } = useAuthStore();
 
@@ -184,7 +186,7 @@ const PrivateLayout = () => {
       key: 'profile',
       icon: <UserOutlined />,
       label: 'Profile',
-      onClick: () => navigate('/app/settings/profile'),
+      onClick: () => setProfileModalVisible(true),
     },
     {
       type: 'divider',
@@ -332,10 +334,15 @@ const PrivateLayout = () => {
         visible={importModalVisible}
         onClose={() => setImportModalVisible(false)}
       />
-      
+
       <ExportModal
         visible={exportModalVisible}
         onClose={() => setExportModalVisible(false)}
+      />
+
+      <ProfileModal
+        visible={profileModalVisible}
+        onClose={() => setProfileModalVisible(false)}
       />
     </Layout>
   );

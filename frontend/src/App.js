@@ -45,6 +45,7 @@ import Reports from './pages/reports/Reports';
 // Settings
 import Users from './pages/settings/Users';
 import Settings from './pages/settings/Settings';
+import Profile from './pages/settings/Profile';
 
 // Styles
 import 'antd/dist/reset.css';
@@ -168,6 +169,9 @@ function App() {
                 <Route index element={<Settings />} />
                 <Route path="users" element={<Users />} />
               </Route>
+
+              {/* Profile */}
+              <Route path="profile" element={<Profile />} />
             </Route>
 
             {/* Catch all */}

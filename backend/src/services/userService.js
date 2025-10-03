@@ -104,9 +104,13 @@ class UserService {
         isActive: true,
         role: {
           select: {
-            name: true
+            id: true,
+            name: true,
+            permissions: true
           }
-        }
+        },
+        createdAt: true,
+        updatedAt: true
       }
     });
   }

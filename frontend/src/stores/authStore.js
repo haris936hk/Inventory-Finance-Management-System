@@ -82,6 +82,24 @@ export const useAuthStore = create(
       hasAnyPermission: (permissionList) => {
         const { permissions } = get();
         return permissionList.some(p => permissions.includes(p));
+      },
+
+      updateUser: (updatedUser) => {
+        // Normalize role to string if it's an object
+        const normalizedRole = typeof updatedUser.role === 'object' && updatedUser.role?.name
+          ? updatedUser.role.name
+          : updatedUser.role;
+
+        // Extract permissions from role object or use existing permissions
+        const newPermissions = updatedUser.role?.permissions || updatedUser.permissions || get().permissions || [];
+
+        set({
+          user: {
+            ...updatedUser,
+            role: normalizedRole
+          },
+          permissions: newPermissions
+        });
       }
     }),
     {
