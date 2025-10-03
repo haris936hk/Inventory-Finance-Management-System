@@ -364,24 +364,24 @@ const InventoryList = () => {
     <>
       <Card>
         <div style={{ marginBottom: 16 }}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12} lg={6}>
+          <Row gutter={[8, 8]} align="middle">
+            <Col xs={24} sm={12} md={8} lg={5}>
               <Search
                 placeholder="Search by serial number"
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
                 addonAfter={
-                  <Button 
-                    type="text" 
+                  <Button
+                    type="text"
                     icon={<ScanOutlined />}
                     onClick={() => setScannerVisible(true)}
                   />
                 }
               />
             </Col>
-            
-            <Col xs={24} sm={12} lg={4}>
+
+            <Col xs={12} sm={6} md={4} lg={3}>
               <Select
                 placeholder="Category"
                 allowClear
@@ -396,7 +396,7 @@ const InventoryList = () => {
               </Select>
             </Col>
 
-            <Col xs={24} sm={12} lg={4}>
+            <Col xs={12} sm={6} md={4} lg={3}>
               <Select
                 placeholder="Status"
                 allowClear
@@ -412,7 +412,7 @@ const InventoryList = () => {
               </Select>
             </Col>
 
-            <Col xs={24} sm={12} lg={6}>
+            <Col xs={24} sm={12} md={8} lg={5}>
               <RangePicker
                 style={{ width: '100%' }}
                 onChange={(dates) => {
@@ -430,8 +430,8 @@ const InventoryList = () => {
               />
             </Col>
 
-            <Col xs={24} sm={12} lg={4}>
-              <Space>
+            <Col xs={24} sm={24} md={24} lg={8} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Space wrap>
                 {hasPermission('inventory.create') && (
                   <>
                     <Button
