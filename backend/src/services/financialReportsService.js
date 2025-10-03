@@ -7,6 +7,7 @@ class FinancialReportsService {
   async generateProfitLossStatement(startDate, endDate) {
     try {
       // Income from Sales (Invoices)
+      // Calculate revenue (accrual basis: includes all finalized invoices)
       const sales = await prisma.invoice.aggregate({
         where: {
           invoiceDate: {
@@ -14,32 +15,13 @@ class FinancialReportsService {
             lte: new Date(endDate)
           },
           status: {
-            in: ['Paid', 'Partial']
+            in: ['Sent', 'Paid', 'Partial']  // Include all finalized invoices
           },
           deletedAt: null
         },
         _sum: {
           total: true,
           taxAmount: true
-        }
-      });
-
-      // Cost of Goods Sold (from sold items)
-      const cogs = await prisma.invoiceItem.aggregate({
-        where: {
-          invoice: {
-            invoiceDate: {
-              gte: new Date(startDate),
-              lte: new Date(endDate)
-            },
-            status: {
-              in: ['Paid', 'Partial']
-            },
-            deletedAt: null
-          }
-        },
-        _sum: {
-          total: true
         }
       });
 
@@ -91,6 +73,7 @@ class FinancialReportsService {
 
   async calculateCOGS(startDate, endDate) {
     // Get sold items and their purchase prices
+    // Uses accrual basis: includes all finalized invoices regardless of payment status
     const soldItems = await prisma.invoiceItem.findMany({
       where: {
         invoice: {
@@ -99,7 +82,7 @@ class FinancialReportsService {
             lte: new Date(endDate)
           },
           status: {
-            in: ['Paid', 'Partial']
+            in: ['Sent', 'Paid', 'Partial']  // Include all finalized invoices
           },
           deletedAt: null
         }
@@ -226,9 +209,44 @@ class FinancialReportsService {
     }
   }
 
+  async calculateCashBalance(asOfDate) {
+    // Get all customer payments received (cash inflow)
+    const customerPayments = await prisma.payment.aggregate({
+      where: {
+        paymentDate: { lte: new Date(asOfDate) },
+        deletedAt: null
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    // Get all vendor payments made (cash outflow)
+    const vendorPayments = await prisma.vendorPayment.aggregate({
+      where: {
+        paymentDate: { lte: new Date(asOfDate) },
+        deletedAt: null
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    // Calculate net cash balance
+    // Note: In a complete system, you'd also include:
+    // - Opening cash balance
+    // - Other cash transactions (bank fees, interest, etc.)
+    // - Cash deposits/withdrawals
+    const cashBalance =
+      (customerPayments._sum.amount || 0) -
+      (vendorPayments._sum.amount || 0);
+
+    return cashBalance;
+  }
+
   async calculateAssets(asOfDate) {
-    // Cash (would come from cash accounts in real implementation)
-    const cash = 50000; // Placeholder - implement actual cash calculation
+    // Cash - calculate from actual transactions
+    const cash = await this.calculateCashBalance(asOfDate);
 
     // Accounts Receivable (unpaid invoices)
     const receivables = await prisma.invoice.aggregate({
@@ -245,10 +263,10 @@ class FinancialReportsService {
 
     const accountsReceivable = (receivables._sum.total || 0) - (receivables._sum.paidAmount || 0);
 
-    // Inventory Value (current stock)
+    // Inventory Value (current stock - all unsold items)
     const inventory = await prisma.item.aggregate({
       where: {
-        status: { in: ['In Store', 'In Hand'] },
+        status: { in: ['In Store', 'In Hand', 'In Lab'] },  // Include all owned inventory
         deletedAt: null
       },
       _sum: {
@@ -258,8 +276,12 @@ class FinancialReportsService {
 
     const inventoryValue = inventory._sum.purchasePrice || 0;
 
-    // Fixed Assets (placeholder)
-    const fixedAssets = 100000; // Implement fixed asset tracking
+    // Fixed Assets (not yet implemented)
+    // TODO: Implement fixed asset tracking system with:
+    // - Asset purchases and disposals
+    // - Depreciation calculation
+    // - Net book value reporting
+    const fixedAssets = 0;
 
     return {
       cash: parseFloat(cash),
@@ -306,10 +328,19 @@ class FinancialReportsService {
       asOfDate.toISOString().split('T')[0]
     );
 
+    // Retained earnings calculation
+    // TODO: Implement accounting period closing process to track retained earnings
+    // For now, set to 0 until year-end closing functionality is implemented
+    // Future implementation should:
+    // - Create AccountingPeriod model in schema
+    // - Store opening retained earnings for each fiscal year
+    // - Accumulate prior years' net income
+    const retainedEarnings = 0;
+
     return {
-      retainedEarnings: 0, // Implement retained earnings calculation
+      retainedEarnings: retainedEarnings,
       currentYearEarnings: currentYearPL.summary.netIncome,
-      total: currentYearPL.summary.netIncome
+      total: retainedEarnings + currentYearPL.summary.netIncome  // Total Equity = Retained + Current
     };
   }
 

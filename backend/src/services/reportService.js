@@ -3,6 +3,7 @@ const db = require('../config/database');
 const ExcelJS = require('exceljs');
 const supabaseStorage = require('../config/supabase');
 const path = require('path');
+const financialReportsService = require('./financialReportsService');
 
 class ReportService {
   async getDashboardData() {
@@ -327,6 +328,15 @@ class ReportService {
       }
     });
 
+    // Calculate COGS properly using financialReportsService
+    const cogs = await financialReportsService.calculateCOGS(startDate, endDate);
+
+    // Revenue (accrual basis)
+    const revenue = income._sum.total || 0;
+
+    // Operating expenses (from bills)
+    const operatingExpenses = expenses._sum.total || 0;
+
     return {
       income: {
         invoiced: income._sum.total || 0,
@@ -344,8 +354,9 @@ class ReportService {
         net: (paymentsReceived._sum.amount || 0) - (paymentsMade._sum.amount || 0)
       },
       profitLoss: {
-        grossProfit: (income._sum.total || 0) - (expenses._sum.total || 0),
-        netProfit: (income._sum.paidAmount || 0) - (expenses._sum.paidAmount || 0)
+        grossProfit: revenue - cogs,  // Gross Profit = Revenue - COGS
+        operatingExpenses: operatingExpenses,
+        netProfit: revenue - cogs - operatingExpenses  // Net Profit = Gross Profit - Operating Expenses
       }
     };
   }
@@ -464,24 +475,33 @@ class ReportService {
     const valuation = {};
     let totalCost = 0;
     let totalValue = 0;
+    let totalPotentialRevenue = 0;
+    let totalPotentialProfit = 0;
 
     items.forEach(item => {
       const categoryName = item.category.name;
       const cost = parseFloat(item.purchasePrice || 0);
-      const value = parseFloat(item.sellingPrice || item.purchasePrice || 0);
-      
+      // Inventory valued at cost (not selling price) per GAAP/IFRS standards
+      const value = cost;
+      const potentialSellingPrice = parseFloat(item.sellingPrice || 0);
+      const potentialProfit = potentialSellingPrice - cost;
+
       if (!valuation[categoryName]) {
         valuation[categoryName] = {
           quantity: 0,
           totalCost: 0,
           totalValue: 0,
+          potentialRevenue: 0,
+          potentialProfit: 0,
           items: []
         };
       }
-      
+
       valuation[categoryName].quantity++;
       valuation[categoryName].totalCost += cost;
       valuation[categoryName].totalValue += value;
+      valuation[categoryName].potentialRevenue += potentialSellingPrice;
+      valuation[categoryName].potentialProfit += potentialProfit;
       valuation[categoryName].items.push({
         serialNumber: item.serialNumber,
         model: item.model.name,
@@ -489,9 +509,11 @@ class ReportService {
         cost,
         value
       });
-      
+
       totalCost += cost;
       totalValue += value;
+      totalPotentialRevenue += potentialSellingPrice;
+      totalPotentialProfit += potentialProfit;
     });
 
     return {
@@ -499,9 +521,10 @@ class ReportService {
       summary: {
         totalItems: items.length,
         totalCost,
-        totalValue,
-        potentialProfit: totalValue - totalCost,
-        profitMargin: totalCost ? ((totalValue - totalCost) / totalCost * 100).toFixed(2) : 0
+        totalValue,  // Same as totalCost (valued at cost)
+        potentialRevenue: totalPotentialRevenue,
+        potentialProfit: totalPotentialProfit,
+        potentialMargin: totalPotentialRevenue ? ((totalPotentialProfit / totalPotentialRevenue) * 100).toFixed(2) : 0
       }
     };
   }

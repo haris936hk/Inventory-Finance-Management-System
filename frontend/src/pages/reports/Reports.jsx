@@ -18,6 +18,9 @@ import dayjs from 'dayjs';
 // Import comprehensive financial reports
 import ProfitLossStatement from '../../components/reports/ProfitLossStatement';
 import BalanceSheet from '../../components/reports/BalanceSheet';
+import CashFlowReport from '../../components/reports/CashFlowReport';
+import ARAgingReport from '../../components/reports/ARAgingReport';
+import GSTReport from '../../components/reports/GSTReport';
 
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
@@ -77,25 +80,31 @@ const Reports = () => {
     if (!reportData?.data?.data) return null;
     const data = reportData.data.data;
 
-    // Prepare chart data
-    const chartData = Object.entries(data.summary || {}).map(([category, statuses]) => ({
-      category,
-      ...statuses
-    }));
+    // Prepare chart data - extract count from each status object
+    const chartData = Object.entries(data.summary || {}).map(([category, statuses]) => {
+      const categoryData = { category };
+      Object.entries(statuses).forEach(([status, values]) => {
+        categoryData[status] = values?.count || 0;
+      });
+      return categoryData;
+    });
 
     return (
       <>
         <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           <Col span={6}>
             <Card>
-              <Statistic title="Total Items" value={data.total?.count || 0} />
+              <Statistic
+                title="Total Items"
+                value={typeof data.total === 'object' ? (data.total?.count || 0) : (data.total || 0)}
+              />
             </Card>
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic 
-                title="Total Value" 
-                value={data.total?.value || 0} 
+              <Statistic
+                title="Total Value"
+                value={typeof data.total === 'object' ? (data.total?.value || 0) : 0}
                 prefix="PKR"
               />
             </Card>
@@ -308,14 +317,17 @@ const Reports = () => {
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic 
-                title="Profit Margin" 
-                value={data.summary?.profitMargin || 0} 
-                suffix="%"
-                valueStyle={{ 
-                  color: data.summary?.profitMargin > 0 ? '#52c41a' : '#ff4d4f' 
+              <Statistic
+                title="Potential Profit"
+                value={data.summary?.potentialProfit || 0}
+                prefix="PKR"
+                valueStyle={{
+                  color: (data.summary?.potentialProfit || 0) > 0 ? '#52c41a' : '#ff4d4f'
                 }}
               />
+              <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+                Margin: {data.summary?.potentialMargin || 0}%
+              </div>
             </Card>
           </Col>
         </Row>
@@ -389,6 +401,15 @@ const Reports = () => {
           </TabPane>
           <TabPane tab="Stock Valuation" key="valuation">
             {renderStockValuation()}
+          </TabPane>
+          <TabPane tab="Cash Flow" key="cash-flow">
+            <CashFlowReport />
+          </TabPane>
+          <TabPane tab="AR Aging" key="ar-aging">
+            <ARAgingReport />
+          </TabPane>
+          <TabPane tab="GST Report" key="gst">
+            <GSTReport />
           </TabPane>
         </Tabs>
       )}
