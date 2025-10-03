@@ -32,6 +32,7 @@ const InventoryList = () => {
   const [scannerVisible, setScannerVisible] = useState(false);
   const [statusModalVisible, setStatusModalVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [pageSize, setPageSize] = useState(20);
 
   // Fetch items
   const { data: itemsData, isLoading } = useQuery(
@@ -473,9 +474,10 @@ const InventoryList = () => {
           scroll={{ x: 1800 }}
           pagination={{
             total: itemsData?.length || 0,
-            pageSize: 20,
+            pageSize: pageSize,
             showSizeChanger: true,
             showTotal: (total) => `Total ${total} items`,
+            onShowSizeChange: (current, size) => setPageSize(size),
           }}
         />
       </Card>
