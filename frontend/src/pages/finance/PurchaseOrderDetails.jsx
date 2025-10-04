@@ -313,7 +313,7 @@ const PurchaseOrderDetails = () => {
                 Edit
               </Button>
             )}
-            <Button icon={<PrinterOutlined />} onClick={() => message.info('Print functionality coming soon')}>
+            <Button icon={<PrinterOutlined />} onClick={() => window.open(`/print/purchase-orders/${id}`, '_blank')}>
               Print
             </Button>
           </Space>

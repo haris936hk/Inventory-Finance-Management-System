@@ -1,0 +1,506 @@
+/* Purchase Order Print Styles - Improved Design */
+
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Screen View Styles */
+.print-page {
+  background-color: #e8e8e8;
+  min-height: 100vh;
+  padding: 30px 20px;
+  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+}
+
+.print-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: white;
+}
+
+.print-controls {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  z-index: 1000;
+  display: flex;
+  gap: 12px;
+  background: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.print-container {
+  max-width: 210mm; /* A4 width */
+  min-height: 297mm; /* A4 height */
+  margin: 0 auto;
+  background: white;
+  padding: 20mm 18mm;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  color: #000;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+
+/* Company Header */
+.company-header {
+  margin-bottom: 25px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #000;
+}
+
+.company-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.company-name {
+  font-size: 20pt;
+  font-weight: bold;
+  margin: 0 0 8px 0;
+  color: #000;
+  letter-spacing: 0.5px;
+}
+
+.company-details {
+  font-size: 10pt;
+  line-height: 1.5;
+  color: #000;
+}
+
+.company-details div {
+  margin: 2px 0;
+}
+
+/* PO Title */
+.po-title {
+  text-align: center;
+  margin: 25px 0 30px 0;
+}
+
+.po-title h2 {
+  font-size: 24pt;
+  font-weight: bold;
+  margin: 0;
+  color: #000;
+  letter-spacing: 1px;
+}
+
+/* Vendor and PO Details Section */
+.po-details-section {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  border: 2px solid #000;
+  min-height: 120px;
+}
+
+.vendor-section {
+  flex: 1;
+  padding: 15px;
+  border-right: 2px solid #000;
+  background-color: #fff;
+}
+
+.section-label {
+  font-weight: bold;
+  font-size: 9pt;
+  margin-bottom: 10px;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+.vendor-info {
+  font-size: 10pt;
+  line-height: 1.6;
+  color: #000;
+}
+
+.vendor-info div {
+  margin: 3px 0;
+}
+
+.vendor-name {
+  font-weight: bold;
+  font-size: 11pt;
+  margin-bottom: 6px;
+  color: #000;
+}
+
+.po-info-section {
+  width: 220px;
+  padding: 15px 20px;
+  display: flex;
+  align-items: flex-start;
+  background-color: #fff;
+}
+
+.po-info-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.po-info-table td {
+  padding: 8px 0;
+  font-size: 10pt;
+}
+
+.po-info-table .label {
+  font-weight: bold;
+  text-align: left;
+  padding-right: 20px;
+  color: #000;
+  width: 60px;
+}
+
+.po-info-table .value {
+  text-align: right;
+  font-weight: normal;
+  color: #000;
+}
+
+/* Line Items Table */
+.line-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 25px;
+  font-size: 10pt;
+}
+
+.line-items-table thead {
+  background-color: #e0e0e0;
+}
+
+.line-items-table th {
+  padding: 12px 10px;
+  text-align: left;
+  font-weight: bold;
+  font-size: 9pt;
+  border: 1px solid #000;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.line-items-table td {
+  padding: 12px 10px;
+  border: 1px solid #999;
+  vertical-align: top;
+  color: #000;
+}
+
+.line-items-table tbody tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.line-items-table .col-product {
+  width: 22%;
+  font-weight: 500;
+}
+
+.line-items-table .col-description {
+  width: 33%;
+}
+
+.line-items-table .col-qty {
+  width: 12%;
+  text-align: center;
+}
+
+.line-items-table .col-rate {
+  width: 16%;
+  text-align: right;
+  font-family: 'Courier New', monospace;
+}
+
+.line-items-table .col-amount {
+  width: 17%;
+  text-align: right;
+  font-weight: 500;
+  font-family: 'Courier New', monospace;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+/* Footer Section */
+.footer-section {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 40px;
+  gap: 30px;
+}
+
+.payment-terms {
+  flex: 1;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  font-size: 9pt;
+  line-height: 1.7;
+}
+
+.terms-label {
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #000;
+  font-size: 10pt;
+}
+
+.terms-text {
+  color: #333;
+}
+
+.totals-section {
+  width: 320px;
+  padding: 10px 0;
+}
+
+.totals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11pt;
+}
+
+.totals-table td {
+  padding: 10px 15px;
+  border-top: 1px solid #ccc;
+}
+
+.totals-table tr:first-child td {
+  border-top: none;
+}
+
+.totals-label {
+  text-align: right;
+  padding-right: 30px;
+  font-weight: normal;
+  color: #000;
+}
+
+.totals-value {
+  text-align: right;
+  font-weight: normal;
+  color: #000;
+  font-family: 'Courier New', monospace;
+}
+
+.total-row {
+  border-top: 2px solid #000 !important;
+}
+
+.total-row td {
+  border-top: 2px solid #000 !important;
+  padding-top: 15px !important;
+}
+
+.total-row .totals-label,
+.total-row .totals-value {
+  font-weight: bold;
+  font-size: 13pt;
+  color: #000;
+}
+
+/* Signature Section */
+.signature-section {
+  margin-top: 50px;
+  margin-bottom: 40px;
+}
+
+.signature-line {
+  margin-bottom: 35px;
+}
+
+.signature-label {
+  font-size: 9pt;
+  margin-bottom: 8px;
+  color: #666;
+  font-weight: normal;
+}
+
+.signature-box {
+  border-bottom: 2px solid #000;
+  height: 45px;
+  width: 350px;
+}
+
+/* Page Footer */
+.page-footer {
+  text-align: center;
+  margin-top: 30px;
+  padding-top: 15px;
+  border-top: 1px solid #ccc;
+}
+
+.page-number {
+  font-size: 9pt;
+  color: #999;
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 15mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 210mm;
+    height: 297mm;
+  }
+
+  .print-page {
+    background: white;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .print-container {
+    max-width: 100%;
+    min-height: auto;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
+  .no-print,
+  .print-controls {
+    display: none !important;
+  }
+
+  /* Ensure proper page breaks */
+  .line-items-table {
+    page-break-inside: auto;
+  }
+
+  .line-items-table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  .signature-section {
+    page-break-inside: avoid;
+  }
+
+  .footer-section {
+    page-break-inside: avoid;
+  }
+
+  /* Force exact colors and borders for print */
+  .company-header {
+    border-bottom: 3px solid #000 !important;
+  }
+
+  .po-details-section {
+    border: 2px solid #000 !important;
+  }
+
+  .vendor-section {
+    border-right: 2px solid #000 !important;
+  }
+
+  .line-items-table th {
+    background-color: #e0e0e0 !important;
+    border: 1px solid #000 !important;
+  }
+
+  .line-items-table td {
+    border: 1px solid #999 !important;
+  }
+
+  .line-items-table tbody tr:nth-child(even) {
+    background-color: #fafafa !important;
+  }
+
+  .payment-terms {
+    background-color: #f9f9f9 !important;
+    border: 1px solid #ddd !important;
+  }
+
+  .signature-box {
+    border-bottom: 2px solid #000 !important;
+  }
+
+  /* Ensure black text */
+  * {
+    color: #000 !important;
+  }
+
+  .terms-text {
+    color: #333 !important;
+  }
+
+  .section-label,
+  .signature-label,
+  .page-number {
+    color: #666 !important;
+  }
+}
+
+/* Responsive adjustments for smaller screens */
+@media screen and (max-width: 768px) {
+  .print-page {
+    padding: 15px 10px;
+  }
+
+  .print-container {
+    padding: 15mm 10mm;
+  }
+
+  .print-controls {
+    top: 15px;
+    right: 15px;
+    padding: 10px 15px;
+  }
+
+  .po-details-section {
+    flex-direction: column;
+  }
+
+  .vendor-section {
+    border-right: none;
+    border-bottom: 2px solid #000;
+  }
+
+  .po-info-section {
+    width: 100%;
+  }
+
+  .footer-section {
+    flex-direction: column;
+  }
+
+  .payment-terms {
+    margin-bottom: 20px;
+  }
+
+  .totals-section {
+    width: 100%;
+  }
+
+  .signature-box {
+    width: 100%;
+    max-width: 350px;
+  }
+}

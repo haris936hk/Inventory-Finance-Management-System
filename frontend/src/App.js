@@ -34,6 +34,7 @@ import Payments from './pages/finance/Payments';
 import RecordPayment from './pages/finance/RecordPayment';
 import PurchaseOrders from './pages/finance/PurchaseOrders';
 import PurchaseOrderDetails from './pages/finance/PurchaseOrderDetails';
+import PurchaseOrderPrint from './pages/finance/PurchaseOrderPrint';
 import VendorBills from './pages/finance/VendorBills';
 import VendorBillDetails from './pages/finance/VendorBillDetails';
 import VendorPayments from './pages/finance/VendorPayments';
@@ -173,6 +174,9 @@ function App() {
               {/* Profile */}
               <Route path="profile" element={<Profile />} />
             </Route>
+
+            {/* Standalone Print Routes (No Layout) */}
+            <Route path="/print/purchase-orders/:id" element={<PurchaseOrderPrint />} />
 
             {/* Catch all */}
             <Route path="*" element={<Navigate to="/app/dashboard" />} />

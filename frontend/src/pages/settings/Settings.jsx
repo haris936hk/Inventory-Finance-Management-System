@@ -39,6 +39,7 @@ const Settings = () => {
           companyAddress: '',
           companyPhone: '',
           companyEmail: '',
+          companyFBR: '',
           language: 'en'
         },
         inventory: {
@@ -173,6 +174,13 @@ const Settings = () => {
             >
               <Input placeholder="Enter email address" />
             </Form.Item>
+
+            <Form.Item
+              label="FBR Registration No."
+              name={['general', 'companyFBR']}
+            >
+              <Input placeholder="Enter FBR registration number (e.g., 2600-4136614-19)" />
+            </Form.Item>
           </Col>
           <Col span={12}>
             <Alert
@@ -211,6 +219,9 @@ const Settings = () => {
               </Descriptions.Item>
               <Descriptions.Item label="Company Email">
                 {settings?.general?.companyEmail || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="FBR Registration No.">
+                {settings?.general?.companyFBR || '-'}
               </Descriptions.Item>
               <Descriptions.Item label="Language">
                 {getLanguageLabel(settings?.general?.language)}

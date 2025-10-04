@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
     companyAddress: '',
     companyPhone: '',
     companyEmail: '',
+    companyFBR: '',
     language: 'en'
   },
   inventory: {

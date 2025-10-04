@@ -350,7 +350,7 @@ const PurchaseOrders = () => {
             key: 'print',
             icon: <PrinterOutlined />,
             label: 'Print',
-            onClick: () => message.info('Print functionality coming soon')
+            onClick: () => window.open(`/print/purchase-orders/${record.id}`, '_blank')
           }
         ];
 
