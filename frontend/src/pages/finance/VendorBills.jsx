@@ -249,34 +249,8 @@ const VendorBills = () => {
   };
 
   const getStatusActions = (record) => {
-    const items = [];
-
-    switch (record.status) {
-      case 'Unpaid':
-        items.push({
-          key: 'partial',
-          icon: <ClockCircleOutlined />,
-          label: 'Mark Partial',
-          onClick: () => handleStatusChange(record, 'Partial')
-        });
-        items.push({
-          key: 'paid',
-          icon: <CheckOutlined />,
-          label: 'Mark Paid',
-          onClick: () => handleStatusChange(record, 'Paid')
-        });
-        break;
-      case 'Partial':
-        items.push({
-          key: 'paid',
-          icon: <CheckOutlined />,
-          label: 'Mark Paid',
-          onClick: () => handleStatusChange(record, 'Paid')
-        });
-        break;
-    }
-
-    return items;
+    // Status actions removed - use Record Payment instead
+    return [];
   };
 
   const isOverdue = (bill) => {
@@ -451,8 +425,6 @@ const VendorBills = () => {
               setModalVisible(true);
             }
           },
-          { type: 'divider' },
-          ...statusActions,
           { type: 'divider' },
           {
             key: 'payment',
