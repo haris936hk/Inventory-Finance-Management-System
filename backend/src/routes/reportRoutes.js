@@ -66,6 +66,11 @@ router.get('/financial-dashboard',
   reportController.getFinancialDashboard
 );
 
+router.get('/vendor-bills-aging',
+  hasPermission(['reports.view']),
+  reportController.getVendorBillsAging
+);
+
 // Export
 router.post('/export',
   hasPermission(['reports.export']),

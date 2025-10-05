@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   Card, Table, DatePicker, Button, Row, Col, Statistic,
-  Typography, Alert, Space, message, Spin
+  Typography, Alert, Space, message, Spin, Tooltip, Collapse
 } from 'antd';
 import {
   DownloadOutlined, PrinterOutlined, ReloadOutlined,
-  CheckCircleOutlined, WarningOutlined
+  CheckCircleOutlined, WarningOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
@@ -13,6 +13,7 @@ import dayjs from 'dayjs';
 import { formatCurrency } from '../../config/constants';
 
 const { Title, Text } = Typography;
+const { Panel } = Collapse;
 
 const BalanceSheet = () => {
   const [asOfDate, setAsOfDate] = useState(dayjs());
@@ -136,7 +137,14 @@ const BalanceSheet = () => {
       },
       {
         key: 'cash',
-        description: 'Cash',
+        description: (
+          <span>
+            Cash{' '}
+            <Tooltip title="Opening Balance + Customer Payments - Vendor Payments">
+              <InfoCircleOutlined style={{ fontSize: '12px', color: '#1890ff' }} />
+            </Tooltip>
+          </span>
+        ),
         amount: assets.current.cash || 0,
         level: 2
       },
@@ -350,6 +358,34 @@ const BalanceSheet = () => {
       >
         {renderSummaryCards()}
         {renderBalanceAlert()}
+
+        {balanceSheetData?.cashBreakdown && (
+          <Alert
+            message="Cash Balance Calculation"
+            description={
+              <div>
+                <Text>
+                  Opening Balance: <Text strong>{formatCurrency(balanceSheetData.cashBreakdown.openingBalance || 0)}</Text>
+                  {' + '}
+                  Customer Payments: <Text strong>{formatCurrency(balanceSheetData.cashBreakdown.customerPayments || 0)}</Text>
+                  {' - '}
+                  Vendor Payments: <Text strong>{formatCurrency(balanceSheetData.cashBreakdown.vendorPayments || 0)}</Text>
+                  {' = '}
+                  <Text strong type="success">{formatCurrency(balanceSheetData.assets.current.cash || 0)}</Text>
+                </Text>
+                <div style={{ marginTop: 8, fontSize: '12px' }}>
+                  <Text type="secondary">
+                    💡 You can update the Opening Balance in Settings → Finance tab
+                  </Text>
+                </div>
+              </div>
+            }
+            type="info"
+            showIcon
+            icon={<InfoCircleOutlined />}
+            style={{ marginBottom: 24 }}
+          />
+        )}
 
         <Card title="Balance Sheet Statement">
           {renderBalanceSheetTable()}

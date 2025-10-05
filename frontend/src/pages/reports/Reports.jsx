@@ -21,6 +21,7 @@ import BalanceSheet from '../../components/reports/BalanceSheet';
 import CashFlowReport from '../../components/reports/CashFlowReport';
 import ARAgingReport from '../../components/reports/ARAgingReport';
 import GSTReport from '../../components/reports/GSTReport';
+import VendorBillsAgingReport from '../../components/reports/VendorBillsAgingReport';
 
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
@@ -410,6 +411,9 @@ const Reports = () => {
           </TabPane>
           <TabPane tab="GST Report" key="gst">
             <GSTReport />
+          </TabPane>
+          <TabPane tab="Vendor Bills Aging" key="vendor-bills-aging">
+            <VendorBillsAgingReport />
           </TabPane>
         </Tabs>
       )}

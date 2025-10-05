@@ -111,7 +111,7 @@ class FinancialReportsService {
           lte: new Date(endDate)
         },
         status: {
-          in: ['Paid', 'Partial']
+          in: ['Sent', 'Paid', 'Partial']  // Match main revenue query filter
         },
         deletedAt: null
       },
@@ -166,6 +166,25 @@ class FinancialReportsService {
       // Balance check
       const balanceCheck = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01;
 
+      // Get cash breakdown for transparency
+      const openingBalance = await this.getOpeningCashBalance();
+      const customerPayments = await prisma.payment.aggregate({
+        where: {
+          paymentDate: { lte: asOf },
+          deletedAt: null,
+          voidedAt: null
+        },
+        _sum: { amount: true }
+      });
+      const vendorPayments = await prisma.vendorPayment.aggregate({
+        where: {
+          paymentDate: { lte: asOf },
+          deletedAt: null,
+          voidedAt: null
+        },
+        _sum: { amount: true }
+      });
+
       return {
         asOfDate: asOf,
         assets: {
@@ -202,6 +221,12 @@ class FinancialReportsService {
           assets: totalAssets,
           liabilitiesAndEquity: totalLiabilities + totalEquity,
           balanced: balanceCheck
+        },
+        cashBreakdown: {
+          openingBalance: parseFloat(openingBalance),
+          customerPayments: parseFloat(customerPayments._sum.amount || 0),
+          vendorPayments: parseFloat(vendorPayments._sum.amount || 0),
+          currentCash: assets.cash
         }
       };
     } catch (error) {
@@ -209,12 +234,27 @@ class FinancialReportsService {
     }
   }
 
+  async getOpeningCashBalance() {
+    try {
+      const settingsService = require('./settingsService');
+      const financeSettings = await settingsService.getSettingsByKey('finance');
+      return parseFloat(financeSettings?.openingCashBalance || 0);
+    } catch (error) {
+      // Default to 0 if settings not found or error occurs
+      return 0;
+    }
+  }
+
   async calculateCashBalance(asOfDate) {
+    // Get opening cash balance from settings
+    const openingBalance = await this.getOpeningCashBalance();
+
     // Get all customer payments received (cash inflow)
     const customerPayments = await prisma.payment.aggregate({
       where: {
         paymentDate: { lte: new Date(asOfDate) },
-        deletedAt: null
+        deletedAt: null,
+        voidedAt: null  // Exclude voided payments
       },
       _sum: {
         amount: true
@@ -225,7 +265,8 @@ class FinancialReportsService {
     const vendorPayments = await prisma.vendorPayment.aggregate({
       where: {
         paymentDate: { lte: new Date(asOfDate) },
-        deletedAt: null
+        deletedAt: null,
+        voidedAt: null  // Exclude voided payments
       },
       _sum: {
         amount: true
@@ -233,11 +274,9 @@ class FinancialReportsService {
     });
 
     // Calculate net cash balance
-    // Note: In a complete system, you'd also include:
-    // - Opening cash balance
-    // - Other cash transactions (bank fees, interest, etc.)
-    // - Cash deposits/withdrawals
+    // Formula: Opening Balance + Cash Inflows - Cash Outflows
     const cashBalance =
+      openingBalance +
       (customerPayments._sum.amount || 0) -
       (vendorPayments._sum.amount || 0);
 
@@ -347,6 +386,14 @@ class FinancialReportsService {
   // ===================== CASH FLOW STATEMENT =====================
   async generateCashFlowStatement(startDate, endDate) {
     try {
+      // Calculate opening and closing balances
+      const startDateObj = new Date(startDate);
+      const previousDay = new Date(startDateObj);
+      previousDay.setDate(previousDay.getDate() - 1);
+
+      const openingBalance = await this.calculateCashBalance(previousDay.toISOString());
+      const closingBalance = await this.calculateCashBalance(endDate);
+
       const operatingCashFlow = await this.calculateOperatingCashFlow(startDate, endDate);
       const investingCashFlow = await this.calculateInvestingCashFlow(startDate, endDate);
       const financingCashFlow = await this.calculateFinancingCashFlow(startDate, endDate);
@@ -355,10 +402,12 @@ class FinancialReportsService {
 
       return {
         period: { startDate, endDate },
-        operatingActivities: operatingCashFlow,
-        investingActivities: investingCashFlow,
-        financingActivities: financingCashFlow,
-        netCashFlow: parseFloat(netCashFlow),
+        operating: operatingCashFlow,
+        investing: investingCashFlow,
+        financing: financingCashFlow,
+        netChange: parseFloat(netCashFlow),
+        openingBalance: parseFloat(openingBalance),
+        closingBalance: parseFloat(closingBalance),
         summary: {
           cashFromOperations: operatingCashFlow.net,
           cashFromInvesting: investingCashFlow.net,
@@ -564,6 +613,146 @@ class FinancialReportsService {
     return Math.round(totalDays / invoices.length);
   }
 
+  // ===================== ACCOUNTS PAYABLE AGING (Vendor Bills) =====================
+  async generateVendorBillsAging(asOfDate = new Date()) {
+    try {
+      const unpaidBills = await prisma.bill.findMany({
+        where: {
+          status: { in: ['Unpaid', 'Partial'] },
+          deletedAt: null,
+          cancelledAt: null
+        },
+        include: {
+          vendor: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      const agingBuckets = {
+        current: [], // 0-30 days
+        days31to60: [], // 31-60 days
+        days61to90: [], // 61-90 days
+        over90: [] // > 90 days
+      };
+
+      const summary = {
+        current: 0,
+        days31to60: 0,
+        days61to90: 0,
+        over90: 0,
+        total: 0
+      };
+
+      unpaidBills.forEach(bill => {
+        const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
+        const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+
+        const billData = {
+          id: bill.id,
+          billNumber: bill.billNumber,
+          billDate: bill.billDate,
+          dueDate: bill.dueDate,
+          vendor: bill.vendor,
+          total: parseFloat(bill.total),
+          paidAmount: parseFloat(bill.paidAmount || 0),
+          balance: balanceAmount,
+          daysOverdue: Math.max(0, daysOverdue),
+          status: bill.status
+        };
+
+        // Categorize into aging buckets
+        if (daysOverdue <= 0 || daysOverdue <= 30) {
+          agingBuckets.current.push(billData);
+          summary.current += balanceAmount;
+        } else if (daysOverdue <= 60) {
+          agingBuckets.days31to60.push(billData);
+          summary.days31to60 += balanceAmount;
+        } else if (daysOverdue <= 90) {
+          agingBuckets.days61to90.push(billData);
+          summary.days61to90 += balanceAmount;
+        } else {
+          agingBuckets.over90.push(billData);
+          summary.over90 += balanceAmount;
+        }
+      });
+
+      summary.total = summary.current + summary.days31to60 + summary.days61to90 + summary.over90;
+
+      // Vendor-wise summary
+      const vendorSummary = await this.getVendorWiseAging(unpaidBills, asOfDate);
+
+      return {
+        asOfDate,
+        summary,
+        buckets: agingBuckets,
+        vendorSummary,
+        statistics: {
+          totalVendorsWithDues: vendorSummary.length,
+          averageDaysOverdue: this.calculateAverageBillDaysOverdue(unpaidBills, asOfDate),
+          overduePercentage: summary.total > 0 ? ((summary.days31to60 + summary.days61to90 + summary.over90) / summary.total * 100) : 0
+        }
+      };
+    } catch (error) {
+      throw new Error(`Failed to generate vendor bills aging report: ${error.message}`);
+    }
+  }
+
+  getVendorWiseAging(bills, asOfDate) {
+    const vendorMap = new Map();
+
+    bills.forEach(bill => {
+      const vendorId = bill.vendor.id;
+      if (!vendorMap.has(vendorId)) {
+        vendorMap.set(vendorId, {
+          vendor: bill.vendor,
+          bills: [],
+          totalDue: 0,
+          current: 0,
+          days31to60: 0,
+          days61to90: 0,
+          over90: 0
+        });
+      }
+
+      const vendorData = vendorMap.get(vendorId);
+      const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
+      const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+
+      vendorData.bills.push(bill);
+      vendorData.totalDue += balanceAmount;
+
+      if (daysOverdue <= 0 || daysOverdue <= 30) {
+        vendorData.current += balanceAmount;
+      } else if (daysOverdue <= 60) {
+        vendorData.days31to60 += balanceAmount;
+      } else if (daysOverdue <= 90) {
+        vendorData.days61to90 += balanceAmount;
+      } else {
+        vendorData.over90 += balanceAmount;
+      }
+    });
+
+    return Array.from(vendorMap.values());
+  }
+
+  calculateAverageBillDaysOverdue(bills, asOfDate) {
+    if (bills.length === 0) return 0;
+
+    const totalDays = bills.reduce((sum, bill) => {
+      const days = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
+      return sum + Math.max(0, days);
+    }, 0);
+
+    return Math.round(totalDays / bills.length);
+  }
+
+
   // ===================== GST REPORTS =====================
   async generateGSTReport(year, month) {
     try {
@@ -629,27 +818,48 @@ class FinancialReportsService {
   }
 
   calculateGSTSummary(sales, purchases) {
+    // Sales tax - we have detailed CGST/SGST/IGST breakdown
     const salesSummary = sales.reduce((acc, sale) => {
-      acc.totalSales += parseFloat(sale.total);
-      acc.cgstCollected += parseFloat(sale.cgstAmount);
-      acc.sgstCollected += parseFloat(sale.sgstAmount);
-      acc.igstCollected += parseFloat(sale.igstAmount);
+      acc.totalSales += parseFloat(sale.total || 0);
+      acc.cgstCollected += parseFloat(sale.cgstAmount || 0);
+      acc.sgstCollected += parseFloat(sale.sgstAmount || 0);
+      acc.igstCollected += parseFloat(sale.igstAmount || 0);
       return acc;
     }, { totalSales: 0, cgstCollected: 0, sgstCollected: 0, igstCollected: 0 });
 
+    // Calculate total sales tax
+    const totalSalesTax = salesSummary.cgstCollected + salesSummary.sgstCollected + salesSummary.igstCollected;
+
+    // Purchase tax - Bills only have taxAmount (no CGST/SGST/IGST breakdown)
+    // We show total tax paid without assuming the breakdown
     const purchaseSummary = purchases.reduce((acc, purchase) => {
-      acc.totalPurchases += parseFloat(purchase.total);
-      // Add GST calculations for purchases if tracking GST on bills
+      acc.totalPurchases += parseFloat(purchase.total || 0);
+      acc.totalTaxPaid += parseFloat(purchase.taxAmount || 0);
       return acc;
-    }, { totalPurchases: 0, cgstPaid: 0, sgstPaid: 0, igstPaid: 0 });
+    }, { totalPurchases: 0, totalTaxPaid: 0 });
+
+    // Net tax position
+    const netTaxPayable = totalSalesTax - purchaseSummary.totalTaxPaid;
 
     return {
-      sales: salesSummary,
-      purchases: purchaseSummary,
-      netGST: {
-        cgst: salesSummary.cgstCollected - purchaseSummary.cgstPaid,
-        sgst: salesSummary.sgstCollected - purchaseSummary.sgstPaid,
-        igst: salesSummary.igstCollected - purchaseSummary.igstPaid
+      sales: {
+        ...salesSummary,
+        totalTax: totalSalesTax
+      },
+      purchases: {
+        totalPurchases: purchaseSummary.totalPurchases,
+        totalTaxPaid: purchaseSummary.totalTaxPaid,
+        // Note: Individual CGST/SGST/IGST not tracked for purchases in current schema
+        note: "Purchase tax breakdown not available - only total tax tracked"
+      },
+      netTax: {
+        salesTax: totalSalesTax,
+        purchaseTax: purchaseSummary.totalTaxPaid,
+        netPayable: netTaxPayable,
+        // Sales tax breakdown (for reference)
+        salesCGST: salesSummary.cgstCollected,
+        salesSGST: salesSummary.sgstCollected,
+        salesIGST: salesSummary.igstCollected
       }
     };
   }

@@ -43,17 +43,16 @@ const Settings = () => {
           language: 'en'
         },
         inventory: {
-          lowStockThreshold: 10,
-          enableBarcodeScanning: true,
-          requireSerialNumbers: true,
-          autoGenerateSerialNumbers: false
+          lowStockThreshold: 10
         },
         finance: {
           defaultPaymentTerms: 30,
           enableInstallments: true,
           taxRate: 0,
           invoicePrefix: 'INV',
-          invoiceStartNumber: 1000
+          invoiceStartNumber: 1000,
+          openingCashBalance: 0,
+          fiscalYearStart: '2025-01-01'
         },
         notifications: {
           lowStockAlerts: true,
@@ -257,38 +256,13 @@ const Settings = () => {
             >
               <InputNumber min={1} placeholder="Enter threshold quantity" style={{ width: '100%' }} />
             </Form.Item>
-
-            <Form.Item
-              label="Enable Barcode Scanning"
-              name={['inventory', 'enableBarcodeScanning']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item
-              label="Require Serial Numbers"
-              name={['inventory', 'requireSerialNumbers']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item
-              label="Auto Generate Serial Numbers"
-              name={['inventory', 'autoGenerateSerialNumbers']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
             <Alert
               message="Inventory Settings"
               description="These settings control how inventory items are managed and tracked in the system."
               type="info"
               showIcon
-              style={{ marginTop: 16 }}
             />
           </Col>
         </Row>
@@ -298,21 +272,6 @@ const Settings = () => {
             <Descriptions column={1} bordered>
               <Descriptions.Item label="Low Stock Threshold">
                 <Text strong>{settings?.inventory?.lowStockThreshold}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Enable Barcode Scanning">
-                <Tag color={settings?.inventory?.enableBarcodeScanning ? 'green' : 'red'}>
-                  {settings?.inventory?.enableBarcodeScanning ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Require Serial Numbers">
-                <Tag color={settings?.inventory?.requireSerialNumbers ? 'green' : 'red'}>
-                  {settings?.inventory?.requireSerialNumbers ? 'Required' : 'Not Required'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Auto Generate Serial Numbers">
-                <Tag color={settings?.inventory?.autoGenerateSerialNumbers ? 'green' : 'red'}>
-                  {settings?.inventory?.autoGenerateSerialNumbers ? 'Enabled' : 'Disabled'}
-                </Tag>
               </Descriptions.Item>
             </Descriptions>
           </Col>
@@ -378,6 +337,30 @@ const Settings = () => {
               <InputNumber min={1} style={{ width: '100%' }} />
             </Form.Item>
 
+            <Divider />
+
+            <Form.Item
+              label="Opening Cash Balance (PKR)"
+              name={['finance', 'openingCashBalance']}
+              tooltip="Set to 0 if your business started with no cash, or enter the cash you had before using this system"
+              rules={[{ required: true, message: 'Opening cash balance is required' }]}
+            >
+              <InputNumber
+                min={0}
+                step={1000}
+                style={{ width: '100%' }}
+                formatter={value => `PKR ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={value => value.replace(/PKR\s?|(,*)/g, '')}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="Fiscal Year Start Date"
+              name={['finance', 'fiscalYearStart']}
+            >
+              <Input type="date" style={{ width: '100%' }} />
+            </Form.Item>
+
             <Alert
               message="Finance Settings"
               description="Configure default financial settings for invoicing and payment processing."
@@ -408,6 +391,12 @@ const Settings = () => {
               <Descriptions.Item label="Invoice Start Number">
                 <Text strong>{settings?.finance?.invoiceStartNumber}</Text>
               </Descriptions.Item>
+              <Descriptions.Item label="Opening Cash Balance">
+                <Text strong>PKR {(settings?.finance?.openingCashBalance || 0).toLocaleString()}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Fiscal Year Start">
+                <Text strong>{settings?.finance?.fiscalYearStart || '2025-01-01'}</Text>
+              </Descriptions.Item>
             </Descriptions>
           </Col>
           <Col span={12}>
@@ -416,6 +405,13 @@ const Settings = () => {
               description="Configure default financial settings for invoicing and payment processing."
               type="info"
               showIcon
+            />
+            <Alert
+              message="Opening Cash Balance"
+              description="This represents the cash your business had before using this system. Leave as 0 if you started from zero, or set it to your actual starting cash balance."
+              type="warning"
+              showIcon
+              style={{ marginTop: 16 }}
             />
           </Col>
         </Row>

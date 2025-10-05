@@ -100,8 +100,23 @@ const CashFlowReport = () => {
     },
     {
       key: '13',
-      description: 'NET CHANGE IN CASH',
-      amount: data?.netChange || 0,
+      section: 'CASH RECONCILIATION',
+      isHeader: true
+    },
+    {
+      key: '14',
+      description: 'Opening Cash Balance',
+      amount: data?.openingBalance || 0
+    },
+    {
+      key: '15',
+      description: 'Net Change in Cash',
+      amount: data?.netChange || 0
+    },
+    {
+      key: '16',
+      description: 'CLOSING CASH BALANCE',
+      amount: data?.closingBalance || 0,
       isTotal: true
     }
   ];
