@@ -13,203 +13,203 @@ datasource db {
 // ==================== USER & ACCESS MANAGEMENT ====================
 
 model User {
-  id                String    @id @default(uuid())
-  username          String    @unique
-  password          String    // Hashed
-  fullName          String
-  email             String?   @unique
-  phone             String?
-  isActive          Boolean   @default(true)
-  lastLogin         DateTime?
-  
+  id        String    @id @default(uuid())
+  username  String    @unique
+  password  String // Hashed
+  fullName  String
+  email     String?   @unique
+  phone     String?
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+
   // Relationships
-  roleId            String
-  role              Role      @relation(fields: [roleId], references: [id])
-  
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
   // Audit
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  deletedAt         DateTime?
-  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   // Activity tracking
-  stockEntries      Item[]    @relation("CreatedByUser")
-  handovers         Item[]    @relation("HandoverByUser")
-  invoicesCreated   Invoice[] @relation("CreatedByUser")
-  invoicesCancelled Invoice[] @relation("InvoicesCancelled")
-  paymentsRecorded  Payment[] @relation("RecordedByUser")
-  paymentsVoided    Payment[] @relation("PaymentsVoided")
-  vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentsCreated")
-  inventoryMovements InventoryMovement[] @relation("InventoryMovements")
-  itemReservations  ItemReservation[] @relation("ReservedByUser")
+  stockEntries           Item[]                   @relation("CreatedByUser")
+  handovers              Item[]                   @relation("HandoverByUser")
+  invoicesCreated        Invoice[]                @relation("CreatedByUser")
+  invoicesCancelled      Invoice[]                @relation("InvoicesCancelled")
+  paymentsRecorded       Payment[]                @relation("RecordedByUser")
+  paymentsVoided         Payment[]                @relation("PaymentsVoided")
+  vendorPaymentsCreated  VendorPayment[]          @relation("VendorPaymentsCreated")
+  inventoryMovements     InventoryMovement[]      @relation("InventoryMovements")
+  itemReservations       ItemReservation[]        @relation("ReservedByUser")
   inventoryStatusChanges InventoryStatusHistory[] @relation("InventoryStatusChanges")
-  poBillAudits      POBillAudit[] @relation("POBillAudits")
-  invoicePaymentAudits InvoicePaymentAudit[] @relation("InvoicePaymentAudits")
+  poBillAudits           POBillAudit[]            @relation("POBillAudits")
+  invoicePaymentAudits   InvoicePaymentAudit[]    @relation("InvoicePaymentAudits")
 
   @@index([roleId])
   @@index([deletedAt])
 }
 
 model Role {
-  id          String    @id @default(uuid())
-  name        String    @unique // "Inventory Operator", "Financial + Inventory Operator"
+  id          String  @id @default(uuid())
+  name        String  @unique // "Inventory Operator", "Financial + Inventory Operator"
   description String?
-  
+
   // Permissions (JSON array of permission strings)
-  permissions Json      // ["inventory.view", "inventory.edit", "finance.view", etc.]
-  
-  users       User[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  permissions Json // ["inventory.view", "inventory.edit", "finance.view", etc.]
+
+  users User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==================== PRODUCT CATALOG ====================
 
 model ProductCategory {
-  id          String    @id @default(uuid())
-  name        String    @unique // "Lithium Battery", "Rectifier Module", etc.
-  code        String    @unique // "LB", "RM", etc. for serial number generation
+  id          String  @id @default(uuid())
+  name        String  @unique // "Lithium Battery", "Rectifier Module", etc.
+  code        String  @unique // "LB", "RM", etc. for serial number generation
   description String?
-  isActive    Boolean   @default(true)
-  
+  isActive    Boolean @default(true)
+
   // Specification template (JSON schema defining required/optional specs)
-  specTemplate Json?    // {voltage: {type: "select", options: ["48V", "51V"], required: true}, ...}
-  
+  specTemplate Json? // {voltage: {type: "select", options: ["48V", "51V"], required: true}, ...}
+
   // Relationships
-  models      ProductModel[]
-  items       Item[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  
+  models ProductModel[]
+  items  Item[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([deletedAt])
 }
 
 model Company {
-  id           String    @id @default(uuid())
-  name         String    @unique // "Vision", "Sacred Sun", "Narada", "Vertiv"
-  code         String?   @unique
-  description  String?
+  id            String  @id @default(uuid())
+  name          String  @unique // "Vision", "Sacred Sun", "Narada", "Vertiv"
+  code          String? @unique
+  description   String?
   contactPerson String?
-  email        String?
-  phone        String?
-  address      String?
-  website      String?
-  isActive     Boolean   @default(true)
+  email         String?
+  phone         String?
+  address       String?
+  website       String?
+  isActive      Boolean @default(true)
 
   // Relationships
-  models       ProductModel[]
+  models ProductModel[]
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([deletedAt])
 }
 
 model ProductModel {
-  id             String    @id @default(uuid())
-  name           String    // "V-LFP48100", "SLSIFP48100A", "R48-3000e3"
-  code           String    @unique
-  description    String?
-  isActive       Boolean   @default(true)
+  id          String  @id @default(uuid())
+  name        String // "V-LFP48100", "SLSIFP48100A", "R48-3000e3"
+  code        String  @unique
+  description String?
+  isActive    Boolean @default(true)
 
   // Relationships
-  categoryId     String
-  category       ProductCategory @relation(fields: [categoryId], references: [id])
-  companyId      String
-  company        Company         @relation(fields: [companyId], references: [id])
+  categoryId String
+  category   ProductCategory @relation(fields: [categoryId], references: [id])
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id])
 
-  items          Item[]
+  items              Item[]
   purchaseOrderItems PurchaseOrderItem[] @relation("PurchaseOrderModelItems")
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
-  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([name, companyId])
   @@index([categoryId])
   @@index([companyId])
   @@index([deletedAt])
-  @@unique([name, companyId])
 }
 
 // ==================== INVENTORY MANAGEMENT ====================
 
 model Item {
-  id             String    @id @default(uuid())
-  serialNumber   String    @unique // Mandatory, from box or custom format
-  condition      String    @default("New") // "New", "Used"
+  id           String @id @default(uuid())
+  serialNumber String @unique // Mandatory, from box or custom format
+  condition    String @default("New") // "New", "Used"
 
   // Enhanced inventory status tracking
-  inventoryStatus String   @default("Available") // "Available", "Reserved", "Sold", "Delivered"
-  status          String   // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover" (physical location)
-  statusHistory   Json[]   // Array of {status, date, userId, notes}
+  inventoryStatus String @default("Available") // "Available", "Reserved", "Sold", "Delivered"
+  status          String // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover" (physical location)
+  statusHistory   Json[] // Array of {status, date, userId, notes}
 
   // Reservation tracking
-  reservedAt      DateTime?
-  reservedBy      String?
-  reservedForType String?   // "Invoice", "Manual"
-  reservedForId   String?   // Invoice ID or other reference
+  reservedAt        DateTime?
+  reservedBy        String?
+  reservedForType   String? // "Invoice", "Manual"
+  reservedForId     String? // Invoice ID or other reference
   reservationExpiry DateTime? // For temporary reservations
-  
+
   // Specifications (hybrid approach - JSON for flexibility)
-  specifications Json?     // {voltage: "48V", cells: 16, bms: "Supported", ...}
-  
+  specifications Json? // {voltage: "48V", cells: 16, bms: "Supported", ...}
+
   // Purchase info
-  purchasePrice  Decimal?  @db.Decimal(10, 2)
-  purchaseDate   DateTime?
-  inboundDate    DateTime
-  
+  purchasePrice Decimal?  @db.Decimal(10, 2)
+  purchaseDate  DateTime?
+  inboundDate   DateTime
+
   // Sale info (when sold/delivered)
-  sellingPrice   Decimal?  @db.Decimal(10, 2)
-  outboundDate   DateTime?
-  
+  sellingPrice Decimal?  @db.Decimal(10, 2)
+  outboundDate DateTime?
+
   // Customer relationship (normalized)
-  customerId     String?
-  customer       Customer? @relation(fields: [customerId], references: [id])
-  
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
   // Handover details (when status = "Handover" or "Delivered")
-  handoverTo     String?   // External person who receives/picks up the product
-  handoverToNIC  String?   // External person's NIC
-  handoverToPhone String?  // External person's phone/CELL number
-  handoverBy     String?   // Internal company employee who hands over
-  handoverById   String?
-  handoverByUser User?     @relation("HandoverByUser", fields: [handoverById], references: [id])
-  handoverDetails String?  // Handover process details (vehicle info, transport details, etc.)
-  handoverDate   DateTime?
-  
+  handoverTo      String? // External person who receives/picks up the product
+  handoverToNIC   String? // External person's NIC
+  handoverToPhone String? // External person's phone/CELL number
+  handoverBy      String? // Internal company employee who hands over
+  handoverById    String?
+  handoverByUser  User?     @relation("HandoverByUser", fields: [handoverById], references: [id])
+  handoverDetails String? // Handover process details (vehicle info, transport details, etc.)
+  handoverDate    DateTime?
+
   // Relationships
-  categoryId     String
-  category       ProductCategory @relation(fields: [categoryId], references: [id])
-  modelId        String
-  model          ProductModel    @relation(fields: [modelId], references: [id])
-  vendorId       String?
-  vendor         Vendor?         @relation(fields: [vendorId], references: [id])
-  warehouseId    String?
-  warehouse      Warehouse?      @relation(fields: [warehouseId], references: [id])
+  categoryId      String
+  category        ProductCategory @relation(fields: [categoryId], references: [id])
+  modelId         String
+  model           ProductModel    @relation(fields: [modelId], references: [id])
+  vendorId        String?
+  vendor          Vendor?         @relation(fields: [vendorId], references: [id])
+  warehouseId     String?
+  warehouse       Warehouse?      @relation(fields: [warehouseId], references: [id])
   purchaseOrderId String?
-  purchaseOrder  PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
-  
+  purchaseOrder   PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+
   // Invoice relationship
-  invoiceItems   InvoiceItem[]
+  invoiceItems InvoiceItem[]
 
   // Inventory movements and status tracking
   movements      InventoryMovement[]
   statusTracking InventoryStatusHistory[]
 
   // Reservations
-  reservations   ItemReservation[] @relation("ItemReservations")
+  reservations ItemReservation[] @relation("ItemReservations")
 
   // User tracking
-  createdById    String
-  createdBy      User      @relation("CreatedByUser", fields: [createdById], references: [id])
-  
+  createdById String
+  createdBy   User   @relation("CreatedByUser", fields: [createdById], references: [id])
+
   // Audit
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
-  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([status])
   @@index([inventoryStatus])
   @@index([categoryId])
@@ -224,22 +224,22 @@ model Item {
 
 // Track all inventory status changes for audit trail
 model InventoryStatusHistory {
-  id              String    @id @default(uuid())
-  itemId          String
-  item            Item      @relation(fields: [itemId], references: [id])
+  id     String @id @default(uuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id])
 
-  fromStatus      String?
-  toStatus        String
-  changeReason    String    // "INVOICE_CREATED", "INVOICE_CANCELLED", "INVOICE_PAID", "MANUAL", etc.
-  referenceType   String?   // "Invoice", "Manual", etc.
-  referenceId     String?   // Invoice ID, etc.
+  fromStatus    String?
+  toStatus      String
+  changeReason  String // "INVOICE_CREATED", "INVOICE_CANCELLED", "INVOICE_PAID", "MANUAL", etc.
+  referenceType String? // "Invoice", "Manual", etc.
+  referenceId   String? // Invoice ID, etc.
 
-  changedBy       String
-  changedByUser   User      @relation("InventoryStatusChanges", fields: [changedBy], references: [id])
-  changeDate      DateTime  @default(now())
-  notes           String?
+  changedBy     String
+  changedByUser User     @relation("InventoryStatusChanges", fields: [changedBy], references: [id])
+  changeDate    DateTime @default(now())
+  notes         String?
 
-  createdAt       DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([itemId])
   @@index([referenceType, referenceId])
@@ -248,85 +248,85 @@ model InventoryStatusHistory {
 }
 
 model Warehouse {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  code        String    @unique
-  address     String?
+  id            String  @id @default(uuid())
+  name          String  @unique
+  code          String  @unique
+  address       String?
   contactPerson String?
-  phone       String?
-  isActive    Boolean   @default(true)
-  
-  items       Item[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  
+  phone         String?
+  isActive      Boolean @default(true)
+
+  items Item[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([deletedAt])
 }
 
 // ==================== VENDOR/SUPPLIER MANAGEMENT ====================
 
 model Vendor {
-  id              String    @id @default(uuid())
-  name            String    @unique
-  code            String    @unique
-  contactPerson   String?
-  email           String?
-  phone           String?
-  address         String?
-  taxNumber       String?   // Tax registration number
-  paymentTerms    String?   // "Net 30", "Due on Receipt", etc.
-  
+  id            String  @id @default(uuid())
+  name          String  @unique
+  code          String  @unique
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  taxNumber     String? // Tax registration number
+  paymentTerms  String? // "Net 30", "Due on Receipt", etc.
+
   // Financial
-  openingBalance  Decimal   @default(0) @db.Decimal(10, 2)
-  currentBalance  Decimal   @default(0) @db.Decimal(10, 2)
-  
+  openingBalance Decimal @default(0) @db.Decimal(10, 2)
+  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+
   // Relationships
-  items           Item[]
-  purchaseOrders  PurchaseOrder[]
-  ledgerEntries   VendorLedger[]
-  bills           Bill[]
-  payments        VendorPayment[]
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  
+  items          Item[]
+  purchaseOrders PurchaseOrder[]
+  ledgerEntries  VendorLedger[]
+  bills          Bill[]
+  payments       VendorPayment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([deletedAt])
 }
 
 // ==================== CUSTOMER MANAGEMENT ====================
 
 model Customer {
-  id              String    @id @default(uuid())
-  name            String
-  company         String?
-  email           String?   
-  phone           String    @unique
-  address         String?
-  nic             String?   // National ID
-  taxNumber       String?
-  gstinNumber     String?   // GST Identification Number
-  panNumber       String?   // PAN Number for tax compliance
-  state           String?   // State for GST jurisdiction
-  businessType    String?   // "B2B", "B2C", "Export"
-  
+  id           String  @id @default(uuid())
+  name         String
+  company      String?
+  email        String?
+  phone        String  @unique
+  address      String?
+  nic          String? // National ID
+  taxNumber    String?
+  gstinNumber  String? // GST Identification Number
+  panNumber    String? // PAN Number for tax compliance
+  state        String? // State for GST jurisdiction
+  businessType String? // "B2B", "B2C", "Export"
+
   // Financial
-  creditLimit     Decimal   @default(0) @db.Decimal(10, 2)
-  openingBalance  Decimal   @default(0) @db.Decimal(10, 2)
-  currentBalance  Decimal   @default(0) @db.Decimal(10, 2)
-  
+  creditLimit    Decimal @default(0) @db.Decimal(10, 2)
+  openingBalance Decimal @default(0) @db.Decimal(10, 2)
+  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+
   // Relationships
-  items           Item[]
-  invoices        Invoice[]
-  ledgerEntries   CustomerLedger[]
-  payments        Payment[]
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  
+  items         Item[]
+  invoices      Invoice[]
+  ledgerEntries CustomerLedger[]
+  payments      Payment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([phone])
   @@index([nic])
   @@index([deletedAt])
@@ -335,50 +335,50 @@ model Customer {
 // ==================== FINANCIAL - GENERAL LEDGER ====================
 
 model Account {
-  id            String    @id @default(uuid())
-  code          String    @unique // "1000", "1100", etc.
-  name          String    // "Cash", "Accounts Receivable", etc.
-  type          String    // "Asset", "Liability", "Income", "Expense", "Equity"
-  parentId      String?
-  parent        Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children      Account[] @relation("AccountHierarchy")
-  
+  id       String    @id @default(uuid())
+  code     String    @unique // "1000", "1100", etc.
+  name     String // "Cash", "Accounts Receivable", etc.
+  type     String // "Asset", "Liability", "Income", "Expense", "Equity"
+  parentId String?
+  parent   Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children Account[] @relation("AccountHierarchy")
+
   // Balance
-  openingBalance Decimal  @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal  @default(0) @db.Decimal(10, 2)
-  
+  openingBalance Decimal @default(0) @db.Decimal(10, 2)
+  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+
   // Relationships
   journalEntries JournalEntry[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
-  
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([type])
   @@index([parentId])
   @@index([deletedAt])
 }
 
 model JournalEntry {
-  id            String    @id @default(uuid())
-  entryDate     DateTime
-  reference     String?   // Invoice#, PO#, etc.
-  description   String
-  
+  id          String   @id @default(uuid())
+  entryDate   DateTime
+  reference   String? // Invoice#, PO#, etc.
+  description String
+
   // Double entry
-  accountId     String
-  account       Account   @relation(fields: [accountId], references: [id])
-  debit         Decimal   @default(0) @db.Decimal(10, 2)
-  credit        Decimal   @default(0) @db.Decimal(10, 2)
-  
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+  debit     Decimal @default(0) @db.Decimal(10, 2)
+  credit    Decimal @default(0) @db.Decimal(10, 2)
+
   // Source tracking
-  sourceType    String?   // "Invoice", "Bill", "Payment", "Manual"
-  sourceId      String?   // Reference to source document
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
-  
+  sourceType String? // "Invoice", "Bill", "Payment", "Manual"
+  sourceId   String? // Reference to source document
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
   @@index([accountId])
   @@index([entryDate])
   @@index([sourceType, sourceId])
@@ -388,35 +388,35 @@ model JournalEntry {
 // ==================== PURCHASE MANAGEMENT ====================
 
 model PurchaseOrder {
-  id            String    @id @default(uuid())
-  poNumber      String    @unique
-  orderDate     DateTime
-  expectedDate  DateTime?
-  status        String    @default("Draft") // "Draft", "Sent", "Partial", "Completed", "Cancelled"
+  id           String    @id @default(uuid())
+  poNumber     String    @unique
+  orderDate    DateTime
+  expectedDate DateTime?
+  status       String    @default("Draft") // "Draft", "Sent", "Partial", "Completed", "Cancelled"
 
   // Financial - Enhanced precision for better accuracy
-  subtotal      Decimal   @db.Decimal(18, 4)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
-  total         Decimal   @db.Decimal(18, 4)
+  subtotal  Decimal @db.Decimal(18, 4)
+  taxAmount Decimal @default(0) @db.Decimal(18, 4)
+  total     Decimal @db.Decimal(18, 4)
 
   // NEW: Track billed amount to enforce SUM(bills) <= PO.total
-  billedAmount  Decimal   @default(0) @db.Decimal(18, 4)
+  billedAmount Decimal @default(0) @db.Decimal(18, 4)
 
   // NEW: Lock mechanism for concurrent bill creation
-  lockedAt      DateTime?
-  lockedBy      String?   // Session/user ID that holds the lock
+  lockedAt DateTime?
+  lockedBy String? // Session/user ID that holds the lock
 
   // Relationships
-  vendorId      String
-  vendor        Vendor    @relation(fields: [vendorId], references: [id])
-  lineItems     PurchaseOrderItem[]
-  items         Item[]
-  bills         Bill[]
-  auditLogs     POBillAudit[] @relation("PurchaseOrderAudits")
+  vendorId  String
+  vendor    Vendor              @relation(fields: [vendorId], references: [id])
+  lineItems PurchaseOrderItem[]
+  items     Item[]
+  bills     Bill[]
+  auditLogs POBillAudit[]       @relation("PurchaseOrderAudits")
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([vendorId])
   @@index([status])
@@ -427,64 +427,64 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id                String        @id @default(uuid())
+  id String @id @default(uuid())
 
   // Line item details
-  description       String        // Product description
-  quantity          Int           @default(1)
-  unitPrice         Decimal       @db.Decimal(10, 2)
-  totalPrice        Decimal       @db.Decimal(18, 2) // quantity * unitPrice
-  specifications    Json?         // Product specifications
-  notes             String?       // Additional notes for this line item
+  description    String // Product description
+  quantity       Int     @default(1)
+  unitPrice      Decimal @db.Decimal(10, 2)
+  totalPrice     Decimal @db.Decimal(18, 2) // quantity * unitPrice
+  specifications Json? // Product specifications
+  notes          String? // Additional notes for this line item
 
   // Purchase Order relationship
-  purchaseOrderId   String
-  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
   // Product Model relationship (what we're ordering)
-  productModelId    String
-  productModel      ProductModel  @relation("PurchaseOrderModelItems", fields: [productModelId], references: [id])
+  productModelId String
+  productModel   ProductModel @relation("PurchaseOrderModelItems", fields: [productModelId], references: [id])
 
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([purchaseOrderId])
   @@index([productModelId])
 }
 
 model Bill {
-  id            String    @id @default(uuid())
-  billNumber    String    @unique
-  billDate      DateTime
-  dueDate       DateTime?
-  status        String    @default("Unpaid") // "Unpaid", "Partial", "Paid"
+  id         String    @id @default(uuid())
+  billNumber String    @unique
+  billDate   DateTime
+  dueDate    DateTime?
+  status     String    @default("Unpaid") // "Unpaid", "Partial", "Paid"
 
   // Financial - Enhanced precision for consistency
-  subtotal      Decimal   @db.Decimal(18, 4)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
-  total         Decimal   @db.Decimal(18, 4)
-  paidAmount    Decimal   @default(0) @db.Decimal(18, 4)
+  subtotal   Decimal @db.Decimal(18, 4)
+  taxAmount  Decimal @default(0) @db.Decimal(18, 4)
+  total      Decimal @db.Decimal(18, 4)
+  paidAmount Decimal @default(0) @db.Decimal(18, 4)
 
   // NEW: Soft-cancel instead of hard delete
-  cancelledAt   DateTime?
-  cancelReason  String?   // Why was this bill cancelled
+  cancelledAt  DateTime?
+  cancelReason String? // Why was this bill cancelled
 
   // NEW: Lock for concurrent payment processing
-  lockedAt      DateTime?
-  lockedBy      String?
+  lockedAt DateTime?
+  lockedBy String?
 
   // Relationships
-  vendorId      String
-  vendor        Vendor    @relation(fields: [vendorId], references: [id])
+  vendorId        String
+  vendor          Vendor          @relation(fields: [vendorId], references: [id])
   purchaseOrderId String?
-  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-  payments      VendorPayment[]
-  ledgerEntries VendorLedger[]
-  auditLogs     POBillAudit[] @relation("BillAudits")
+  purchaseOrder   PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+  payments        VendorPayment[]
+  ledgerEntries   VendorLedger[]
+  auditLogs       POBillAudit[]   @relation("BillAudits")
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([vendorId])
   @@index([purchaseOrderId])
@@ -499,66 +499,66 @@ model Bill {
 // ==================== SALES & INVOICING ====================
 
 model Invoice {
-  id            String    @id @default(uuid())
-  invoiceNumber String    @unique
+  id            String   @id @default(uuid())
+  invoiceNumber String   @unique
   invoiceDate   DateTime
   dueDate       DateTime
-  status        String    @default("Draft") // "Draft", "Sent", "Partial", "Paid", "Overdue", "Cancelled"
+  status        String   @default("Draft") // "Draft", "Sent", "Partial", "Paid", "Overdue", "Cancelled"
 
   // Financial - UPGRADED: Use DECIMAL(18,4) for precision consistency
-  subtotal      Decimal   @db.Decimal(18, 4)
-  discountType  String?   // "Percentage", "Fixed"
-  discountValue Decimal   @default(0) @db.Decimal(10, 2)
+  subtotal      Decimal @db.Decimal(18, 4)
+  discountType  String? // "Percentage", "Fixed"
+  discountValue Decimal @default(0) @db.Decimal(10, 2)
 
   // GST/VAT Compliance
-  taxType       String    @default("GST") // "GST", "VAT", "CGST+SGST", "IGST"
-  taxRate       Decimal   @default(0) @db.Decimal(5, 2)
-  taxAmount     Decimal   @default(0) @db.Decimal(18, 4)
-  cgstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  cgstAmount    Decimal   @default(0) @db.Decimal(18, 4)
-  sgstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  sgstAmount    Decimal   @default(0) @db.Decimal(18, 4)
-  igstRate      Decimal   @default(0) @db.Decimal(5, 2)
-  igstAmount    Decimal   @default(0) @db.Decimal(18, 4)
+  taxType    String  @default("GST") // "GST", "VAT", "CGST+SGST", "IGST"
+  taxRate    Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount  Decimal @default(0) @db.Decimal(18, 4)
+  cgstRate   Decimal @default(0) @db.Decimal(5, 2)
+  cgstAmount Decimal @default(0) @db.Decimal(18, 4)
+  sgstRate   Decimal @default(0) @db.Decimal(5, 2)
+  sgstAmount Decimal @default(0) @db.Decimal(18, 4)
+  igstRate   Decimal @default(0) @db.Decimal(5, 2)
+  igstAmount Decimal @default(0) @db.Decimal(18, 4)
 
-  total         Decimal   @db.Decimal(18, 4)
-  paidAmount    Decimal   @default(0) @db.Decimal(18, 4)
+  total      Decimal @db.Decimal(18, 4)
+  paidAmount Decimal @default(0) @db.Decimal(18, 4)
 
   // Tax Compliance Details
-  placeOfSupply String?   // State/Province for tax jurisdiction
-  hsn           String?   // HSN/SAC Code
-  gstinNumber   String?   // Customer's GSTIN
+  placeOfSupply String? // State/Province for tax jurisdiction
+  hsn           String? // HSN/SAC Code
+  gstinNumber   String? // Customer's GSTIN
 
   // Terms
-  terms         String?   @db.Text
-  notes         String?   @db.Text
+  terms String? @db.Text
+  notes String? @db.Text
 
   // Installment support
-  hasInstallment Boolean  @default(false)
+  hasInstallment  Boolean          @default(false)
   installmentPlan InstallmentPlan?
 
   // NEW: Soft-cancel mechanism
-  cancelledAt   DateTime?
-  cancelReason  String?
-  cancelledBy   String?
-  cancelledByUser User?   @relation("InvoicesCancelled", fields: [cancelledBy], references: [id])
+  cancelledAt     DateTime?
+  cancelReason    String?
+  cancelledBy     String?
+  cancelledByUser User?     @relation("InvoicesCancelled", fields: [cancelledBy], references: [id])
 
   // Relationships
   customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id])
+  customer      Customer              @relation(fields: [customerId], references: [id])
   items         InvoiceItem[]
   payments      Payment[]
   ledgerEntries CustomerLedger[]
   auditLogs     InvoicePaymentAudit[]
 
   // User tracking
-  createdById   String
-  createdBy     User      @relation("CreatedByUser", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("CreatedByUser", fields: [createdById], references: [id])
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
-  voidReason    String?   // DEPRECATED: Use cancelReason instead
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  voidReason String? // DEPRECATED: Use cancelReason instead
 
   @@index([customerId])
   @@index([status])
@@ -571,21 +571,21 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id          String    @id @default(uuid())
-  quantity    Int       @default(1)
-  unitPrice   Decimal   @db.Decimal(10, 2)
-  total       Decimal   @db.Decimal(10, 2)
+  id          String  @id @default(uuid())
+  quantity    Int     @default(1)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
   description String?
-  
+
   // Relationships
-  invoiceId   String
-  invoice     Invoice   @relation(fields: [invoiceId], references: [id])
-  itemId      String
-  item        Item      @relation(fields: [itemId], references: [id])
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  itemId    String
+  item      Item    @relation(fields: [itemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([invoiceId])
   @@index([itemId])
 }
@@ -593,35 +593,35 @@ model InvoiceItem {
 // ==================== PAYMENT MANAGEMENT ====================
 
 model Payment {
-  id            String    @id @default(uuid())
-  paymentNumber String    @unique
+  id            String   @id @default(uuid())
+  paymentNumber String   @unique
   paymentDate   DateTime
-  amount        Decimal   @db.Decimal(18, 4)
-  method        String    // "Cash", "Bank Transfer", "Cheque", "UPI", "Card"
-  reference     String?   // Cheque number, transaction ID, UPI ref, etc.
+  amount        Decimal  @db.Decimal(18, 4)
+  method        String // "Cash", "Bank Transfer", "Cheque", "UPI", "Card"
+  reference     String? // Cheque number, transaction ID, UPI ref, etc.
   notes         String?
 
   // Relationships
   customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id])
+  customer      Customer     @relation(fields: [customerId], references: [id])
   invoiceId     String?
-  invoice       Invoice?  @relation(fields: [invoiceId], references: [id])
+  invoice       Invoice?     @relation(fields: [invoiceId], references: [id])
   installmentId String?
   installment   Installment? @relation(fields: [installmentId], references: [id])
 
   // NEW: Void mechanism instead of delete
-  voidedAt      DateTime?
-  voidReason    String?
-  voidedBy      String?
-  voidedByUser  User?     @relation("PaymentsVoided", fields: [voidedBy], references: [id])
+  voidedAt     DateTime?
+  voidReason   String?
+  voidedBy     String?
+  voidedByUser User?     @relation("PaymentsVoided", fields: [voidedBy], references: [id])
 
   // User tracking
-  recordedById  String
-  recordedBy    User      @relation("RecordedByUser", fields: [recordedById], references: [id])
+  recordedById String
+  recordedBy   User   @relation("RecordedByUser", fields: [recordedById], references: [id])
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([customerId])
   @@index([invoiceId])
@@ -631,38 +631,38 @@ model Payment {
 }
 
 model VendorPayment {
-  id            String    @id @default(uuid())
-  paymentNumber String    @unique
+  id            String   @id @default(uuid())
+  paymentNumber String   @unique
   paymentDate   DateTime
-  amount        Decimal   @db.Decimal(18, 4)
-  method        String    // "Cash", "Bank Transfer", "Cheque"
+  amount        Decimal  @db.Decimal(18, 4)
+  method        String // "Cash", "Bank Transfer", "Cheque"
   reference     String?
   notes         String?
 
   // Relationships
-  vendorId      String
-  vendor        Vendor    @relation(fields: [vendorId], references: [id])
-  billId        String?
-  bill          Bill?     @relation(fields: [billId], references: [id])
+  vendorId String
+  vendor   Vendor  @relation(fields: [vendorId], references: [id])
+  billId   String?
+  bill     Bill?   @relation(fields: [billId], references: [id])
 
   // NEW: Payment approval workflow (optional)
-  approvedAt    DateTime?
-  approvedBy    String?
+  approvedAt DateTime?
+  approvedBy String?
 
   // NEW: Track who created the payment
   createdBy     String?
-  createdByUser User?     @relation("VendorPaymentsCreated", fields: [createdBy], references: [id])
+  createdByUser User?   @relation("VendorPaymentsCreated", fields: [createdBy], references: [id])
 
   // NEW: Void mechanism instead of delete (payments are immutable)
-  voidedAt      DateTime?
-  voidReason    String?
-  voidedBy      String?
+  voidedAt   DateTime?
+  voidReason String?
+  voidedBy   String?
 
-  auditLogs     POBillAudit[] @relation("PaymentAudits")
+  auditLogs POBillAudit[] @relation("PaymentAudits")
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([vendorId])
   @@index([billId])
@@ -675,44 +675,44 @@ model VendorPayment {
 // ==================== INSTALLMENT MANAGEMENT ====================
 
 model InstallmentPlan {
-  id              String    @id @default(uuid())
-  totalAmount     Decimal   @db.Decimal(18, 2)
-  downPayment     Decimal   @default(0) @db.Decimal(10, 2)
+  id                   String   @id @default(uuid())
+  totalAmount          Decimal  @db.Decimal(18, 2)
+  downPayment          Decimal  @default(0) @db.Decimal(10, 2)
   numberOfInstallments Int
-  intervalType    String    // "Monthly", "Weekly", "Quarterly"
-  startDate       DateTime
-  
+  intervalType         String // "Monthly", "Weekly", "Quarterly"
+  startDate            DateTime
+
   // Relationships
-  invoiceId       String    @unique
-  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
-  installments    Installment[]
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  invoiceId    String        @unique
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id])
+  installments Installment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([invoiceId])
 }
 
 model Installment {
-  id            String    @id @default(uuid())
+  id                String    @id @default(uuid())
   installmentNumber Int
-  dueDate       DateTime
-  amount        Decimal   @db.Decimal(18, 2)
-  paidAmount    Decimal   @default(0) @db.Decimal(10, 2)
-  status        String    @default("Pending") // "Pending", "Partial", "Paid", "Overdue"
-  paidDate      DateTime?
-  
+  dueDate           DateTime
+  amount            Decimal   @db.Decimal(18, 2)
+  paidAmount        Decimal   @default(0) @db.Decimal(10, 2)
+  status            String    @default("Pending") // "Pending", "Partial", "Paid", "Overdue"
+  paidDate          DateTime?
+
   // Late payment
-  lateCharges   Decimal   @default(0) @db.Decimal(10, 2)
-  
+  lateCharges Decimal @default(0) @db.Decimal(10, 2)
+
   // Relationships
-  planId        String
-  plan          InstallmentPlan @relation(fields: [planId], references: [id])
-  payments      Payment[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  planId   String
+  plan     InstallmentPlan @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([planId])
   @@index([status])
   @@index([dueDate])
@@ -721,21 +721,21 @@ model Installment {
 // ==================== INVOICE PAYMENT AUDIT TRAIL ====================
 
 model InvoicePaymentAudit {
-  id            String    @id @default(uuid())
-  invoiceId     String
-  invoice       Invoice   @relation(fields: [invoiceId], references: [id])
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
 
-  action        String    // "INVOICE_CREATED", "INVOICE_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
-  paymentId     String?
+  action    String // "INVOICE_CREATED", "INVOICE_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
+  paymentId String?
 
-  beforeState   Json?     // Snapshot before change
-  afterState    Json      // Snapshot after change
+  beforeState Json? // Snapshot before change
+  afterState  Json // Snapshot after change
 
-  performedBy   String
-  performedByUser User    @relation("InvoicePaymentAudits", fields: [performedBy], references: [id])
-  performedAt   DateTime  @default(now())
+  performedBy     String
+  performedByUser User     @relation("InvoicePaymentAudits", fields: [performedBy], references: [id])
+  performedAt     DateTime @default(now())
 
-  metadata      Json?     // Additional context (reason, notes, etc.)
+  metadata Json? // Additional context (reason, notes, etc.)
 
   @@index([invoiceId])
   @@index([paymentId])
@@ -746,41 +746,41 @@ model InvoicePaymentAudit {
 // ==================== LEDGER TABLES ====================
 
 model CustomerLedger {
-  id            String    @id @default(uuid())
-  entryDate     DateTime
-  description   String
-  debit         Decimal   @default(0) @db.Decimal(10, 2)
-  credit        Decimal   @default(0) @db.Decimal(10, 2)
-  balance       Decimal   @db.Decimal(18, 2)
-  
+  id          String   @id @default(uuid())
+  entryDate   DateTime
+  description String
+  debit       Decimal  @default(0) @db.Decimal(10, 2)
+  credit      Decimal  @default(0) @db.Decimal(10, 2)
+  balance     Decimal  @db.Decimal(18, 2)
+
   // Relationships
-  customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id])
-  invoiceId     String?
-  invoice       Invoice?  @relation(fields: [invoiceId], references: [id])
-  
-  createdAt     DateTime  @default(now())
-  
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  invoiceId  String?
+  invoice    Invoice? @relation(fields: [invoiceId], references: [id])
+
+  createdAt DateTime @default(now())
+
   @@index([customerId])
   @@index([entryDate])
 }
 
 model VendorLedger {
-  id            String    @id @default(uuid())
-  entryDate     DateTime
-  description   String
-  debit         Decimal   @default(0) @db.Decimal(10, 2)
-  credit        Decimal   @default(0) @db.Decimal(10, 2)
-  balance       Decimal   @db.Decimal(18, 2)
-  
+  id          String   @id @default(uuid())
+  entryDate   DateTime
+  description String
+  debit       Decimal  @default(0) @db.Decimal(10, 2)
+  credit      Decimal  @default(0) @db.Decimal(10, 2)
+  balance     Decimal  @db.Decimal(18, 2)
+
   // Relationships
-  vendorId      String
-  vendor        Vendor    @relation(fields: [vendorId], references: [id])
-  billId        String?
-  bill          Bill?     @relation(fields: [billId], references: [id])
-  
-  createdAt     DateTime  @default(now())
-  
+  vendorId String
+  vendor   Vendor  @relation(fields: [vendorId], references: [id])
+  billId   String?
+  bill     Bill?   @relation(fields: [billId], references: [id])
+
+  createdAt DateTime @default(now())
+
   @@index([vendorId])
   @@index([entryDate])
 }
@@ -788,38 +788,38 @@ model VendorLedger {
 // ==================== TAX MANAGEMENT ====================
 
 model TaxConfiguration {
-  id            String    @id @default(uuid())
-  name          String    @unique // "GST", "VAT"
-  rate          Decimal   @db.Decimal(5, 2)
-  isActive      Boolean   @default(true)
-  applicableOn  String[]  // Array of category IDs
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String   @id @default(uuid())
+  name         String   @unique // "GST", "VAT"
+  rate         Decimal  @db.Decimal(5, 2)
+  isActive     Boolean  @default(true)
+  applicableOn String[] // Array of category IDs
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==================== GST REPORTING ====================
 
 model GSTReturn {
-  id            String    @id @default(uuid())
-  returnType    String    // "GSTR1", "GSTR2", "GSTR3B"
-  period        String    // "2025-01" (YYYY-MM format)
-  year          Int
-  month         Int
-  status        String    @default("Draft") // "Draft", "Filed", "Revised"
+  id         String @id @default(uuid())
+  returnType String // "GSTR1", "GSTR2", "GSTR3B"
+  period     String // "2025-01" (YYYY-MM format)
+  year       Int
+  month      Int
+  status     String @default("Draft") // "Draft", "Filed", "Revised"
 
   // GST Summary
-  totalSales    Decimal   @default(0) @db.Decimal(18, 2)
-  totalPurchases Decimal  @default(0) @db.Decimal(18, 2)
-  cgstPayable   Decimal   @default(0) @db.Decimal(10, 2)
-  sgstPayable   Decimal   @default(0) @db.Decimal(10, 2)
-  igstPayable   Decimal   @default(0) @db.Decimal(10, 2)
+  totalSales     Decimal @default(0) @db.Decimal(18, 2)
+  totalPurchases Decimal @default(0) @db.Decimal(18, 2)
+  cgstPayable    Decimal @default(0) @db.Decimal(10, 2)
+  sgstPayable    Decimal @default(0) @db.Decimal(10, 2)
+  igstPayable    Decimal @default(0) @db.Decimal(10, 2)
 
-  filedDate     DateTime?
-  filedBy       String?
+  filedDate DateTime?
+  filedBy   String?
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([returnType, year, month])
   @@index([year, month])
@@ -828,20 +828,20 @@ model GSTReturn {
 // ==================== AUTOMATION TRACKING ====================
 
 model AutomationLog {
-  id            String    @id @default(uuid())
-  action        String    // "PURCHASE_INVENTORY_UPDATE", "BILL_EXPENSE_UPDATE"
-  sourceType    String    // "PurchaseOrder", "Bill", "Invoice"
-  sourceId      String    // ID of the source document
+  id         String @id @default(uuid())
+  action     String // "PURCHASE_INVENTORY_UPDATE", "BILL_EXPENSE_UPDATE"
+  sourceType String // "PurchaseOrder", "Bill", "Invoice"
+  sourceId   String // ID of the source document
 
   // Details of what was automated
-  description   String
-  affectedRecords Json    // Array of {model, id, action} objects
+  description     String
+  affectedRecords Json // Array of {model, id, action} objects
 
   // Status
-  status        String    @default("Success") // "Success", "Failed", "Partial"
-  errorMessage  String?
+  status       String  @default("Success") // "Success", "Failed", "Partial"
+  errorMessage String?
 
-  executedAt    DateTime  @default(now())
+  executedAt DateTime @default(now())
 
   @@index([action])
   @@index([sourceType, sourceId])
@@ -851,14 +851,14 @@ model AutomationLog {
 // ==================== FINANCIAL REPORTS CACHE ====================
 
 model ReportCache {
-  id            String    @id @default(uuid())
-  reportType    String    // "PL", "BS", "CF", "AR_AGING"
-  parameters    Json      // Report parameters like date range, filters
-  parameterHash String    // Hash of parameters for quick lookup
+  id            String @id @default(uuid())
+  reportType    String // "PL", "BS", "CF", "AR_AGING"
+  parameters    Json // Report parameters like date range, filters
+  parameterHash String // Hash of parameters for quick lookup
 
-  data          Json      // Cached report data
-  generatedAt   DateTime  @default(now())
-  expiresAt     DateTime  // Cache expiry
+  data        Json // Cached report data
+  generatedAt DateTime @default(now())
+  expiresAt   DateTime // Cache expiry
 
   @@unique([reportType, parameterHash])
   @@index([reportType])
@@ -868,20 +868,20 @@ model ReportCache {
 // ==================== INVENTORY MOVEMENT TRACKING ====================
 
 model InventoryMovement {
-  id            String    @id @default(uuid())
-  itemId        String
-  item          Item      @relation(fields: [itemId], references: [id])
-  movementType  String    // "PURCHASE_RECEIPT", "SALE", "ADJUSTMENT", "TRANSFER", "HANDOVER"
-  fromStatus    String?
-  toStatus      String
-  quantity      Int       @default(1)
-  reference     String?   // PO number, Invoice number, etc.
-  notes         String?
+  id           String  @id @default(uuid())
+  itemId       String
+  item         Item    @relation(fields: [itemId], references: [id])
+  movementType String // "PURCHASE_RECEIPT", "SALE", "ADJUSTMENT", "TRANSFER", "HANDOVER"
+  fromStatus   String?
+  toStatus     String
+  quantity     Int     @default(1)
+  reference    String? // PO number, Invoice number, etc.
+  notes        String?
 
-  userId        String
-  user          User      @relation("InventoryMovements", fields: [userId], references: [id])
+  userId String
+  user   User   @relation("InventoryMovements", fields: [userId], references: [id])
 
-  createdAt     DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([itemId])
   @@index([movementType])
@@ -891,48 +891,48 @@ model InventoryMovement {
 // ==================== ITEM RESERVATION SYSTEM ====================
 
 model ItemReservation {
-  id            String    @id @default(uuid())
-  itemId        String
-  item          Item      @relation("ItemReservations", fields: [itemId], references: [id])
-  sessionId     String    // Unique session ID for grouping reservations
-  reservedBy    String
-  user          User      @relation("ReservedByUser", fields: [reservedBy], references: [id])
-  reason        String    // "INVOICE_CREATION", "MANUAL_HOLD"
-  reservedAt    DateTime  @default(now())
-  expiresAt     DateTime  // Auto-expire reservations after X minutes
+  id         String   @id @default(uuid())
+  itemId     String
+  item       Item     @relation("ItemReservations", fields: [itemId], references: [id])
+  sessionId  String // Unique session ID for grouping reservations
+  reservedBy String
+  user       User     @relation("ReservedByUser", fields: [reservedBy], references: [id])
+  reason     String // "INVOICE_CREATION", "MANUAL_HOLD"
+  reservedAt DateTime @default(now())
+  expiresAt  DateTime // Auto-expire reservations after X minutes
 
   // Optional reference to document being created
-  referenceType String?   // "Invoice", "PurchaseOrder", etc.
-  referenceId   String?   // ID of the document
+  referenceType String? // "Invoice", "PurchaseOrder", etc.
+  referenceId   String? // ID of the document
 
+  @@unique([itemId, sessionId]) // Prevent double-reservation of same item in same session
   @@index([itemId])
   @@index([sessionId])
   @@index([reservedBy])
   @@index([expiresAt])
-  @@unique([itemId, sessionId]) // Prevent double-reservation of same item in same session
 }
 
 // ==================== PO BILL AUDIT TRAIL ====================
 
 model POBillAudit {
-  id              String    @id @default(uuid())
+  id              String        @id @default(uuid())
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation("PurchaseOrderAudits", fields: [purchaseOrderId], references: [id])
 
-  action          String    // "BILL_CREATED", "BILL_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
-  billId          String?
-  bill            Bill?     @relation("BillAudits", fields: [billId], references: [id])
-  paymentId       String?
-  payment         VendorPayment? @relation("PaymentAudits", fields: [paymentId], references: [id])
+  action    String // "BILL_CREATED", "BILL_CANCELLED", "PAYMENT_RECORDED", "PAYMENT_VOIDED", "STATUS_CHANGED"
+  billId    String?
+  bill      Bill?          @relation("BillAudits", fields: [billId], references: [id])
+  paymentId String?
+  payment   VendorPayment? @relation("PaymentAudits", fields: [paymentId], references: [id])
 
-  beforeState     Json?     // Snapshot before change
-  afterState      Json      // Snapshot after change
+  beforeState Json? // Snapshot before change
+  afterState  Json // Snapshot after change
 
   performedBy     String
-  performedByUser User      @relation("POBillAudits", fields: [performedBy], references: [id])
-  performedAt     DateTime  @default(now())
+  performedByUser User     @relation("POBillAudits", fields: [performedBy], references: [id])
+  performedAt     DateTime @default(now())
 
-  metadata        Json?     // Additional context
+  metadata Json? // Additional context
 
   @@index([purchaseOrderId])
   @@index([billId])
@@ -946,7 +946,7 @@ model POBillAudit {
 model SystemSettings {
   id        String   @id @default(uuid())
   key       String   @unique // "general", "inventory", "finance", "notifications", "backup"
-  value     Json     // Settings object for that category
+  value     Json // Settings object for that category
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

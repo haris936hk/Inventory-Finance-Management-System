@@ -128,7 +128,7 @@ class FinancialReportsService {
 
   async getExpenseBreakdown(startDate, endDate) {
     return await prisma.bill.groupBy({
-      by: ['vendor'],
+      by: ['vendorId'],
       where: {
         billDate: {
           gte: new Date(startDate),
@@ -310,10 +310,16 @@ class FinancialReportsService {
       },
       _sum: {
         purchasePrice: true
+      },
+      _count: {
+        id: true
       }
     });
 
     const inventoryValue = inventory._sum.purchasePrice || 0;
+    const inventoryCount = inventory._count.id || 0;
+
+    console.log(`Inventory Calculation: ${inventoryCount} items, Total Value: PKR ${inventoryValue.toLocaleString()}`);
 
     // Fixed Assets (not yet implemented)
     // TODO: Implement fixed asset tracking system with:
