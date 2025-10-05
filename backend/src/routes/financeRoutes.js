@@ -81,6 +81,11 @@ router.put('/purchase-orders/:id/status',
   financeController.updatePurchaseOrderStatus
 );
 
+router.get('/purchase-orders/:id/items',
+  hasPermission(['finance.view']),
+  financeController.getPurchaseOrderItems
+);
+
 // Vendor Bills routes
 router.route('/vendor-bills')
   .get(hasPermission(['finance.view']), financeController.getVendorBills)

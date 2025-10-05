@@ -46,8 +46,12 @@ async function createBill(data, userId) {
       throw new ValidationError('Cannot create bill for cancelled Purchase Order');
     }
 
-    if (po.status === 'Completed') {
-      throw new ValidationError('Cannot create bill for completed Purchase Order');
+    if (po.status === 'Paid') {
+      throw new ValidationError('Cannot create bill for fully paid Purchase Order');
+    }
+
+    if (po.status === 'Delivered') {
+      throw new ValidationError('Cannot create bill for delivered Purchase Order');
     }
 
     if (po.status === 'Draft') {
@@ -116,9 +120,9 @@ async function createBill(data, userId) {
       newPOStatus = 'Partial';
     }
 
-    // Auto-transition to Completed if fully billed
+    // Auto-transition to Paid if fully billed
     if (compareAmounts(updatedBilledAmount, po.total)) {
-      newPOStatus = 'Completed';
+      newPOStatus = 'Paid';
     }
 
     await tx.purchaseOrder.update({
@@ -241,8 +245,8 @@ async function cancelBill(billId, reason, userId) {
     const newBilledAmount = formatAmount(parseFloat(po.billedAmount) - parseFloat(bill.total));
     let newPOStatus = po.status;
 
-    // Revert from Completed if needed
-    if (po.status === 'Completed' && newBilledAmount < parseFloat(po.total)) {
+    // Revert from Paid if needed
+    if (po.status === 'Paid' && newBilledAmount < parseFloat(po.total)) {
       newPOStatus = 'Partial';
     }
 

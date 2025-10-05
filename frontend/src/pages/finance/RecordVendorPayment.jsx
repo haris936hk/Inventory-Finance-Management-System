@@ -24,6 +24,7 @@ const RecordVendorPayment = () => {
   const [form] = Form.useForm();
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
 
   const billId = searchParams.get('billId');
 
@@ -98,6 +99,8 @@ const RecordVendorPayment = () => {
   const handleBillChange = (billId) => {
     const bill = vendorBills?.find(b => b.id === billId);
     setSelectedBill(bill);
+    // Re-validate the amount field when bill changes
+    form.validateFields(['amount']).catch(() => {});
   };
 
   const handleSubmit = (values) => {
@@ -249,7 +252,25 @@ const RecordVendorPayment = () => {
                       name="amount"
                       rules={[
                         { required: true, message: 'Please enter amount' },
-                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' }
+                        { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+                        {
+                          validator: (_, value) => {
+                            const numValue = parseFloat(value);
+                            if (isNaN(numValue) || numValue <= 0) {
+                              return Promise.reject(new Error('Amount must be greater than 0'));
+                            }
+
+                            // Validate against bill remaining balance if bill is selected
+                            if (selectedBill) {
+                              const remainingBalance = Number(selectedBill.total) - Number(selectedBill.paidAmount || 0);
+                              if (numValue > remainingBalance) {
+                                return Promise.reject(new Error(`Amount cannot exceed remaining balance of ${formatPKR(remainingBalance)}`));
+                              }
+                            }
+
+                            return Promise.resolve();
+                          }
+                        }
                       ]}
                     >
                       <InputNumber
@@ -267,34 +288,27 @@ const RecordVendorPayment = () => {
                   name="method"
                   rules={[{ required: true, message: 'Please select payment method' }]}
                 >
-                  <Select>
-                    <Select.Option value="Cash">
-                      <Space>
-                        <MoneyCollectOutlined />
-                        Cash
-                      </Space>
-                    </Select.Option>
-                    <Select.Option value="Bank Transfer">
-                      <Space>
-                        <BankOutlined />
-                        Bank Transfer
-                      </Space>
-                    </Select.Option>
-                    <Select.Option value="Cheque">
-                      <Space>
-                        <CreditCardOutlined />
-                        Cheque
-                      </Space>
-                    </Select.Option>
+                  <Select onChange={(value) => setPaymentMethod(value)}>
+                    <Select.Option value="Cash">Cash</Select.Option>
+                    <Select.Option value="Bank Transfer">Bank Transfer</Select.Option>
+                    <Select.Option value="Cheque">Cheque</Select.Option>
+                    <Select.Option value="Credit Card">Credit Card</Select.Option>
+                    <Select.Option value="Online">Online Payment</Select.Option>
                   </Select>
                 </Form.Item>
 
                 <Form.Item
-                  label="Reference"
+                  label="Reference Number"
                   name="reference"
                   help="Transaction ID, cheque number, etc."
+                  rules={[
+                    {
+                      required: paymentMethod !== 'Cash',
+                      message: 'Reference number is required for this payment method'
+                    }
+                  ]}
                 >
-                  <Input placeholder="e.g., TXN123456, CHQ001" />
+                  <Input placeholder="Enter reference number" />
                 </Form.Item>
 
                 <Form.Item label="Notes" name="notes">

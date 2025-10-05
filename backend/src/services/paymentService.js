@@ -87,7 +87,7 @@ async function recordPayment(data, userId) {
     const payment = await tx.vendorPayment.create({
       data: {
         paymentNumber,
-        paymentDate: data.paymentDate || new Date(),
+        paymentDate: data.paymentDate ? new Date(data.paymentDate) : new Date(),
         amount: paymentAmount,
         method: data.method,
         reference: data.reference || null,

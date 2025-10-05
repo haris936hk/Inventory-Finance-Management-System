@@ -255,15 +255,25 @@ const createItem = asyncHandler(async (req, res) => {
 // @route   POST /api/inventory/items/bulk
 // @access  Private
 const bulkCreateItems = asyncHandler(async (req, res) => {
-  const { items } = req.body;
-  
+  const { items, purchaseOrderId } = req.body;
+
   if (!items || !Array.isArray(items)) {
     res.status(400);
     throw new Error('Items array required');
   }
-  
-  const results = await inventoryService.bulkCreateItems(items, req.user.id);
-  
+
+  // If purchaseOrderId is provided, use the PO-linked method
+  let results;
+  if (purchaseOrderId) {
+    results = await inventoryService.bulkCreateItemsFromPO(purchaseOrderId, items, req.user.id);
+
+    // Also check and update PO delivery status after creating items
+    const purchaseOrderService = require('../services/purchaseOrderService');
+    await purchaseOrderService.checkAndUpdateDeliveryStatus(purchaseOrderId, req.user.id);
+  } else {
+    results = await inventoryService.bulkCreateItems(items, req.user.id);
+  }
+
   res.status(201).json({
     success: true,
     data: results

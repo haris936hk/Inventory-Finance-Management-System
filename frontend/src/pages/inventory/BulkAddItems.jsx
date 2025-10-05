@@ -1,6 +1,6 @@
 // ========== src/pages/inventory/BulkAddItems.jsx ==========
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card, Form, Input, Select, InputNumber, DatePicker, Button,
   Row, Col, Space, message, Steps, Divider, Switch, Table, Tag
@@ -11,12 +11,14 @@ import {
 import { useMutation, useQuery } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import { formatPKR } from '../../config/constants';
 
 const { Step } = Steps;
 const { TextArea } = Input;
 
 const BulkAddItems = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -24,6 +26,10 @@ const BulkAddItems = () => {
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [serialNumbers, setSerialNumbers] = useState([]);
   const [quantity, setQuantity] = useState(1);
+  const [selectedPO, setSelectedPO] = useState(null);
+  const [selectedPOLineItem, setSelectedPOLineItem] = useState(null);
+  const [usePO, setUsePO] = useState(false);
+  const poIdFromUrl = searchParams.get('poId');
 
   // Fetch categories
   const { data: categories } = useQuery('categories', async () => {
@@ -64,6 +70,14 @@ const BulkAddItems = () => {
     return response.data.data;
   });
 
+  // Fetch purchase orders (only Paid status ones)
+  const { data: purchaseOrders } = useQuery('purchase-orders-paid', async () => {
+    const response = await axios.get('/finance/purchase-orders', {
+      params: { status: 'Paid', include: 'lineItems' }
+    });
+    return response.data.data;
+  });
+
   // Create bulk items mutation
   const createMutation = useMutation(
     (data) => axios.post('/inventory/items/bulk', data),
@@ -93,6 +107,21 @@ const BulkAddItems = () => {
     }
   }, [form.getFieldValue('quantity')]);
 
+  // Auto-select PO from URL parameter
+  useEffect(() => {
+    if (poIdFromUrl && purchaseOrders && !selectedPO) {
+      const po = purchaseOrders.find(p => p.id === poIdFromUrl);
+      if (po) {
+        setUsePO(true);
+        setSelectedPO(po);
+        form.setFieldsValue({
+          purchaseOrderId: po.id,
+          vendorId: po.vendorId
+        });
+      }
+    }
+  }, [poIdFromUrl, purchaseOrders, selectedPO, form]);
+
   const onCategoryChange = (categoryId) => {
     const category = categories?.find(c => c.id === categoryId);
     setSelectedCategory(category);
@@ -103,6 +132,41 @@ const BulkAddItems = () => {
   const onCompanyChange = (companyId) => {
     setSelectedCompanyId(companyId);
     form.setFieldsValue({ modelId: undefined });
+  };
+
+  const onPOChange = (poId) => {
+    const po = purchaseOrders?.find(p => p.id === poId);
+    setSelectedPO(po);
+
+    if (po) {
+      // Auto-populate vendor
+      form.setFieldsValue({
+        vendorId: po.vendorId,
+        poLineItemId: undefined
+      });
+      setSelectedPOLineItem(null);
+    }
+  };
+
+  const onPOLineItemChange = (lineItemId) => {
+    const lineItem = selectedPO?.lineItems?.find(li => li.id === lineItemId);
+    setSelectedPOLineItem(lineItem);
+
+    if (lineItem) {
+      // Auto-populate fields from line item
+      const category = categories?.find(c => c.id === lineItem.productModel?.categoryId);
+      setSelectedCategory(category);
+      setSelectedCategoryId(lineItem.productModel?.categoryId);
+      setSelectedCompanyId(lineItem.productModel?.companyId);
+
+      form.setFieldsValue({
+        categoryId: lineItem.productModel?.categoryId,
+        companyId: lineItem.productModel?.companyId,
+        modelId: lineItem.productModelId,
+        purchasePrice: parseFloat(lineItem.unitPrice),
+        specifications: lineItem.specifications || {}
+      });
+    }
   };
 
   const handleSerialNumberChange = (index, value) => {
@@ -253,11 +317,19 @@ const BulkAddItems = () => {
       sellingPrice: values.sellingPrice,
       purchaseDate: values.purchaseDate ? values.purchaseDate.toISOString() : null,
       inboundDate: values.inboundDate ? values.inboundDate.toISOString() : null,
-      notes: values.notes
+      notes: values.notes,
+      // Add line item ID if from PO
+      lineItemId: usePO && selectedPOLineItem ? selectedPOLineItem.id : undefined
     }));
 
-    console.log('Final payload being sent to API:', { items });
-    createMutation.mutate({ items });
+    const payload = {
+      items,
+      // Add PO ID if linking to PO
+      purchaseOrderId: usePO && selectedPO ? selectedPO.id : undefined
+    };
+
+    console.log('Final payload being sent to API:', payload);
+    createMutation.mutate(payload);
   };
 
   const serialNumberColumns = [
@@ -289,6 +361,81 @@ const BulkAddItems = () => {
       content: (
         <>
           <Row gutter={[16, 16]}>
+            <Col xs={24}>
+              <Form.Item
+                label="Link to Purchase Order"
+                valuePropName="checked"
+              >
+                <Switch
+                  checked={usePO}
+                  onChange={(checked) => {
+                    setUsePO(checked);
+                    if (!checked) {
+                      setSelectedPO(null);
+                      setSelectedPOLineItem(null);
+                      form.setFieldsValue({
+                        purchaseOrderId: undefined,
+                        poLineItemId: undefined
+                      });
+                    }
+                  }}
+                  checkedChildren="Yes"
+                  unCheckedChildren="No"
+                />
+                <Text type="secondary" style={{ marginLeft: 10 }}>
+                  Link items to a Purchase Order (auto-fills vendor, price, and product info)
+                </Text>
+              </Form.Item>
+            </Col>
+
+            {usePO && (
+              <>
+                <Col xs={24} sm={12}>
+                  <Form.Item
+                    label="Purchase Order"
+                    name="purchaseOrderId"
+                    rules={[{ required: usePO, message: 'Please select a purchase order' }]}
+                  >
+                    <Select
+                      placeholder="Select Purchase Order"
+                      onChange={onPOChange}
+                      showSearch
+                      optionFilterProp="children"
+                    >
+                      {purchaseOrders?.map(po => (
+                        <Select.Option key={po.id} value={po.id}>
+                          {po.poNumber} - {po.vendor?.name} ({formatPKR(po.total)})
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Col>
+
+                {selectedPO && (
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="PO Line Item"
+                      name="poLineItemId"
+                      rules={[{ required: usePO && selectedPO, message: 'Please select a line item' }]}
+                    >
+                      <Select
+                        placeholder="Select Line Item"
+                        onChange={onPOLineItemChange}
+                        showSearch
+                        optionFilterProp="children"
+                      >
+                        {selectedPO.lineItems?.map(item => (
+                          <Select.Option key={item.id} value={item.id}>
+                            {item.productModel?.name} - {item.description} (Qty: {item.quantity}, {formatPKR(item.unitPrice)} each)
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                )}
+              </>
+            )}
+
             <Col xs={24} sm={12}>
               <Form.Item
                 label="Quantity"
@@ -325,6 +472,7 @@ const BulkAddItems = () => {
                   onChange={onCategoryChange}
                   showSearch
                   optionFilterProp="children"
+                  disabled={usePO && selectedPOLineItem}
                 >
                   {categories?.map(cat => (
                     <Select.Option key={cat.id} value={cat.id}>
@@ -346,6 +494,7 @@ const BulkAddItems = () => {
                   optionFilterProp="children"
                   allowClear
                   onChange={onCompanyChange}
+                  disabled={usePO && selectedPOLineItem}
                 >
                   {companies?.map(company => (
                     <Select.Option key={company.id} value={company.id}>
@@ -367,6 +516,7 @@ const BulkAddItems = () => {
                   showSearch
                   optionFilterProp="children"
                   loading={modelsLoading}
+                  disabled={usePO && selectedPOLineItem}
                   notFoundContent={
                     modelsLoading ? 'Loading models...' :
                     modelsError ? 'Error loading models' :
@@ -438,6 +588,7 @@ const BulkAddItems = () => {
                 showSearch
                 optionFilterProp="children"
                 allowClear
+                disabled={usePO && selectedPO}
               >
                 {vendors?.map(vendor => (
                   <Select.Option key={vendor.id} value={vendor.id}>
@@ -457,6 +608,7 @@ const BulkAddItems = () => {
                 min={0}
                 style={{ width: '100%' }}
                 placeholder="Enter purchase price per item"
+                disabled={usePO && selectedPOLineItem}
               />
             </Form.Item>
           </Col>

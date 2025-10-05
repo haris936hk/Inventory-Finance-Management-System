@@ -48,6 +48,18 @@ const PurchaseOrderDetails = () => {
     return response.data.data;
   });
 
+  // Fetch items linked to this PO
+  const { data: poItems } = useQuery(
+    ['purchase-order-items', id],
+    async () => {
+      const response = await axios.get(`/finance/purchase-orders/${id}/items`);
+      return response.data.data;
+    },
+    {
+      enabled: !!id
+    }
+  );
+
   // Update PO mutation
   const updateMutation = useMutation(
     (data) => axios.put(`/finance/purchase-orders/${id}`, data),
@@ -196,7 +208,8 @@ const PurchaseOrderDetails = () => {
       'Draft': 'default',
       'Sent': 'blue',
       'Partial': 'orange',
-      'Completed': 'green',
+      'Paid': 'cyan',
+      'Delivered': 'green',
       'Cancelled': 'red'
     };
     return colors[status] || 'default';
@@ -233,32 +246,51 @@ const PurchaseOrderDetails = () => {
     {
       title: 'Specifications',
       key: 'specifications',
-      width: 150,
+      width: 200,
       render: (_, record) => {
         const specs = record.specifications;
         if (!specs || Object.keys(specs).length === 0) return '-';
 
         return (
-          <div>
-            {Object.entries(specs).slice(0, 2).map(([key, value]) => (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {Object.entries(specs).map(([key, value]) => (
               <Tag key={key} size="small">
                 {key}: {value}
               </Tag>
             ))}
-            {Object.keys(specs).length > 2 && (
-              <Tag size="small">+{Object.keys(specs).length - 2} more</Tag>
-            )}
           </div>
         );
       }
     },
     {
-      title: 'Quantity',
+      title: 'Ordered Qty',
       dataIndex: 'quantity',
       key: 'quantity',
       width: 100,
       align: 'center',
       render: (qty) => <Text strong>{qty}</Text>
+    },
+    {
+      title: 'Received Qty',
+      key: 'receivedQty',
+      width: 120,
+      align: 'center',
+      render: (_, record) => {
+        const receivedQty = purchaseOrder.receivedQuantities?.[record.id] || 0;
+        const orderedQty = record.quantity;
+        const isFullyReceived = receivedQty >= orderedQty;
+
+        return (
+          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+            <Text strong style={{ color: isFullyReceived ? '#52c41a' : '#fa8c16' }}>
+              {receivedQty} / {orderedQty}
+            </Text>
+            {isFullyReceived && <Tag color="success" size="small">Complete</Tag>}
+            {!isFullyReceived && receivedQty > 0 && <Tag color="warning" size="small">Partial</Tag>}
+            {receivedQty === 0 && <Tag color="default" size="small">Pending</Tag>}
+          </Space>
+        );
+      }
     },
     {
       title: 'Unit Price',
@@ -311,6 +343,15 @@ const PurchaseOrderDetails = () => {
             {hasPermission('finance.edit') && purchaseOrder.status === 'Draft' && (
               <Button icon={<EditOutlined />} onClick={handleEdit}>
                 Edit
+              </Button>
+            )}
+            {hasPermission('inventory.create') && ['Paid', 'Partial'].includes(purchaseOrder.status) && (
+              <Button
+                type="primary"
+                icon={<ShopOutlined />}
+                onClick={() => navigate(`/app/inventory/items/bulk-add?poId=${id}`)}
+              >
+                Receive Items
               </Button>
             )}
             <Button icon={<PrinterOutlined />} onClick={() => window.open(`/print/purchase-orders/${id}`, '_blank')}>
@@ -449,24 +490,39 @@ const PurchaseOrderDetails = () => {
         <Row gutter={16}>
           <Col xs={24} md={12}>
             <Descriptions column={1} size="small">
-              <Descriptions.Item label="Subtotal">
-                {formatPKR(Number(purchaseOrder.subtotal))}
-              </Descriptions.Item>
-              <Descriptions.Item label="Tax Amount">
-                {formatPKR(Number(purchaseOrder.taxAmount))}
-              </Descriptions.Item>
-              <Descriptions.Item label="Total Amount">
-                <Text strong style={{ fontSize: '16px', color: '#52c41a' }}>
+              <Descriptions.Item label="PO Total">
+                <Text strong style={{ fontSize: '16px', color: '#1890ff' }}>
                   {formatPKR(Number(purchaseOrder.total))}
                 </Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Billed Amount">
+                <Text strong style={{ color: '#fa8c16' }}>
+                  {formatPKR(Number(purchaseOrder.billedAmount || 0))}
+                </Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Unbilled Amount">
+                <Text strong style={{ color: Number(purchaseOrder.total) - Number(purchaseOrder.billedAmount || 0) > 0 ? '#f5222d' : '#52c41a' }}>
+                  {formatPKR(Number(purchaseOrder.total) - Number(purchaseOrder.billedAmount || 0))}
+                </Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Number of Bills">
+                {purchaseOrder.bills?.length || 0}
               </Descriptions.Item>
             </Descriptions>
           </Col>
           <Col xs={24} md={12}>
-            {purchaseOrder.status === 'Completed' && (
+            {purchaseOrder.status === 'Paid' && (
               <Alert
-                message="Purchase Order Completed"
-                description="This purchase order has been completed and delivered."
+                message="Purchase Order Fully Billed"
+                description="This purchase order has been fully billed and is ready for delivery."
+                type="success"
+                showIcon
+              />
+            )}
+            {purchaseOrder.status === 'Delivered' && (
+              <Alert
+                message="Purchase Order Delivered"
+                description="This purchase order has been delivered and items received."
                 type="success"
                 showIcon
               />
@@ -479,12 +535,81 @@ const PurchaseOrderDetails = () => {
                 showIcon
               />
             )}
+            {purchaseOrder.status === 'Partial' && (
+              <Alert
+                message="Partially Billed"
+                description={`${((Number(purchaseOrder.billedAmount || 0) / Number(purchaseOrder.total)) * 100).toFixed(1)}% of the purchase order has been billed.`}
+                type="info"
+                showIcon
+              />
+            )}
           </Col>
         </Row>
+
+        {/* Bills Table */}
+        {purchaseOrder.bills && purchaseOrder.bills.length > 0 && (
+          <>
+            <Divider>Vendor Bills</Divider>
+            <Table
+              dataSource={purchaseOrder.bills}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              columns={[
+                {
+                  title: 'Bill Number',
+                  dataIndex: 'billNumber',
+                  key: 'billNumber',
+                  render: (text, record) => (
+                    <a onClick={() => navigate(`/app/finance/vendor-bills/${record.id}`)}>
+                      {text}
+                    </a>
+                  )
+                },
+                {
+                  title: 'Bill Date',
+                  dataIndex: 'billDate',
+                  key: 'billDate',
+                  render: (date) => new Date(date).toLocaleDateString('en-GB')
+                },
+                {
+                  title: 'Total',
+                  dataIndex: 'total',
+                  key: 'total',
+                  render: (amount) => formatPKR(Number(amount))
+                },
+                {
+                  title: 'Paid',
+                  dataIndex: 'paidAmount',
+                  key: 'paidAmount',
+                  render: (amount) => formatPKR(Number(amount || 0))
+                },
+                {
+                  title: 'Outstanding',
+                  key: 'outstanding',
+                  render: (_, record) => formatPKR(Number(record.total) - Number(record.paidAmount || 0))
+                },
+                {
+                  title: 'Status',
+                  dataIndex: 'status',
+                  key: 'status',
+                  render: (status) => {
+                    const statusColors = {
+                      'Unpaid': 'red',
+                      'Partial': 'orange',
+                      'Paid': 'green'
+                    };
+                    return <Tag color={statusColors[status] || 'default'}>{status}</Tag>;
+                  }
+                }
+              ]}
+            />
+          </>
+        )}
       </Card>
 
       {/* Line Items Table */}
-      <Card title="Purchase Order Line Items">
+      <Card title="Purchase Order Line Items" style={{ marginBottom: 16 }}>
         <Table
           columns={lineItemColumns}
           dataSource={purchaseOrder.lineItems || []}
@@ -505,6 +630,85 @@ const PurchaseOrderDetails = () => {
           />
         )}
       </Card>
+
+      {/* Received Items Section */}
+      {poItems && poItems.length > 0 && (
+        <Card
+          title={
+            <Space>
+              <span>Received Inventory Items</span>
+              <Tag color="blue">{poItems.length} items received</Tag>
+            </Space>
+          }
+          style={{ marginBottom: 16 }}
+        >
+          <Table
+            columns={[
+              {
+                title: 'Serial Number',
+                dataIndex: 'serialNumber',
+                key: 'serialNumber',
+                render: (sn) => <Text strong>{sn}</Text>
+              },
+              {
+                title: 'Category',
+                key: 'category',
+                render: (_, record) => <Tag color="blue">{record.category?.name}</Tag>
+              },
+              {
+                title: 'Model',
+                key: 'model',
+                render: (_, record) => (
+                  <Space direction="vertical" size={0}>
+                    <Text strong>{record.model?.name}</Text>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      {record.model?.company?.name}
+                    </Text>
+                  </Space>
+                )
+              },
+              {
+                title: 'Condition',
+                dataIndex: 'condition',
+                key: 'condition',
+                render: (condition) => (
+                  <Tag color={condition === 'New' ? 'green' : 'orange'}>{condition}</Tag>
+                )
+              },
+              {
+                title: 'Status',
+                dataIndex: 'status',
+                key: 'status',
+                render: (status) => <Tag>{status}</Tag>
+              },
+              {
+                title: 'Purchase Price',
+                dataIndex: 'purchasePrice',
+                key: 'purchasePrice',
+                align: 'right',
+                render: (price) => price ? formatPKR(Number(price)) : '-'
+              },
+              {
+                title: 'Selling Price',
+                dataIndex: 'sellingPrice',
+                key: 'sellingPrice',
+                align: 'right',
+                render: (price) => price ? formatPKR(Number(price)) : '-'
+              },
+              {
+                title: 'Received Date',
+                dataIndex: 'inboundDate',
+                key: 'inboundDate',
+                render: (date) => date ? dayjs(date).format('DD/MM/YYYY') : '-'
+              }
+            ]}
+            dataSource={poItems}
+            rowKey="id"
+            pagination={{ pageSize: 10 }}
+            scroll={{ x: 1000 }}
+          />
+        </Card>
+      )}
 
       {/* Edit Modal */}
       <Modal

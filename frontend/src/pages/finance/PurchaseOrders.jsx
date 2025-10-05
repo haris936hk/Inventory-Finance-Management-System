@@ -54,7 +54,7 @@ const PurchaseOrders = () => {
 
   // Calculate statistics
   const statistics = React.useMemo(() => {
-    if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, completed: 0, cancelled: 0 };
+    if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
 
     return purchaseOrdersData.reduce((acc, po) => {
       acc.total += parseFloat(po.total);
@@ -63,17 +63,21 @@ const PurchaseOrders = () => {
           acc.draft += parseFloat(po.total);
           break;
         case 'Sent':
+        case 'Partial':
           acc.sent += parseFloat(po.total);
           break;
-        case 'Completed':
-          acc.completed += parseFloat(po.total);
+        case 'Paid':
+          acc.paid += parseFloat(po.total);
+          break;
+        case 'Delivered':
+          acc.delivered += parseFloat(po.total);
           break;
         case 'Cancelled':
           acc.cancelled += parseFloat(po.total);
           break;
       }
       return acc;
-    }, { total: 0, draft: 0, sent: 0, completed: 0, cancelled: 0 });
+    }, { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 });
   }, [purchaseOrdersData]);
 
   // Create/Update PO mutation
@@ -145,7 +149,8 @@ const PurchaseOrders = () => {
       'Draft': 'default',
       'Sent': 'blue',
       'Partial': 'orange',
-      'Completed': 'green',
+      'Paid': 'cyan',
+      'Delivered': 'green',
       'Cancelled': 'red'
     };
     return colors[status] || 'default';
@@ -171,17 +176,17 @@ const PurchaseOrders = () => {
           onClick: () => handleStatusChange(record, 'Sent')
         });
         break;
-      case 'Sent':
+      case 'Paid':
         items.push({
-          key: 'complete',
+          key: 'deliver',
           icon: <CheckOutlined />,
-          label: 'Mark Completed',
-          onClick: () => handleStatusChange(record, 'Completed')
+          label: 'Mark as Delivered',
+          onClick: () => handleStatusChange(record, 'Delivered')
         });
         break;
     }
 
-    if (['Draft', 'Sent'].includes(record.status)) {
+    if (['Draft', 'Sent', 'Partial'].includes(record.status)) {
       items.push({
         key: 'cancel',
         icon: <StopOutlined />,
@@ -438,8 +443,19 @@ const PurchaseOrders = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="Completed"
-              value={statistics.completed}
+              title="Paid"
+              value={statistics.paid}
+              prefix="PKR"
+              precision={0}
+              valueStyle={{ color: '#13c2c2' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Delivered"
+              value={statistics.delivered}
               prefix="PKR"
               precision={0}
               valueStyle={{ color: '#52c41a' }}
@@ -502,7 +518,8 @@ const PurchaseOrders = () => {
               <Select.Option value="Draft">Draft</Select.Option>
               <Select.Option value="Sent">Sent</Select.Option>
               <Select.Option value="Partial">Partial</Select.Option>
-              <Select.Option value="Completed">Completed</Select.Option>
+              <Select.Option value="Paid">Paid</Select.Option>
+              <Select.Option value="Delivered">Delivered</Select.Option>
               <Select.Option value="Cancelled">Cancelled</Select.Option>
             </Select>
           </Col>

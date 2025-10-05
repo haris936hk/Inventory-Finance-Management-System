@@ -24,7 +24,7 @@ const Payments = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState('');
-  const [dateRange, setDateRange] = useState([]);
+  const [dateRange, setDateRange] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('');
 
   // Fetch payments
@@ -33,7 +33,7 @@ const Payments = () => {
     async () => {
       const params = {};
       if (searchText) params.search = searchText;
-      if (dateRange.length === 2) {
+      if (dateRange && dateRange.length === 2) {
         params.startDate = dateRange[0].format('YYYY-MM-DD');
         params.endDate = dateRange[1].format('YYYY-MM-DD');
       }
@@ -310,7 +310,7 @@ const Payments = () => {
                 icon={<FilterOutlined />}
                 onClick={() => {
                   setSearchText('');
-                  setDateRange([]);
+                  setDateRange(null);
                   setPaymentMethod('');
                 }}
               >

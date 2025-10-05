@@ -442,13 +442,18 @@ class FinanceService {
           }
         },
         payments: {
+          where: {
+            deletedAt: null,
+            voidedAt: null
+          },
           include: {
             recordedBy: {
               select: {
                 fullName: true
               }
             }
-          }
+          },
+          orderBy: { paymentDate: 'desc' }
         },
         installmentPlan: {
           include: {

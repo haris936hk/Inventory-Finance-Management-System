@@ -833,6 +833,108 @@ class InventoryService {
   }
 
   /**
+   * Bulk create items from Purchase Order
+   * Validates PO, creates items linked to PO, and tracks received quantities
+   */
+  async bulkCreateItemsFromPO(purchaseOrderId, itemsData, userId) {
+    const results = {
+      success: [],
+      failed: [],
+      purchaseOrder: null
+    };
+
+    try {
+      // Fetch the PO with line items
+      const po = await db.prisma.purchaseOrder.findUnique({
+        where: { id: purchaseOrderId, deletedAt: null },
+        include: {
+          lineItems: true,
+          vendor: true
+        }
+      });
+
+      if (!po) {
+        throw new Error('Purchase Order not found');
+      }
+
+      // Validate PO status - can only receive items for Paid or Partial POs
+      if (!['Paid', 'Partial', 'Sent'].includes(po.status)) {
+        throw new Error(`Cannot receive items for PO in ${po.status} status. PO must be Paid, Partial, or Sent.`);
+      }
+
+      // Initialize receivedQuantities if not exists
+      const receivedQuantities = po.receivedQuantities || {};
+
+      // Group items by line item to track quantities
+      const itemsByLineItem = {};
+
+      // Create each item
+      for (const itemData of itemsData) {
+        try {
+          // Link item to PO
+          const itemWithPO = {
+            ...itemData,
+            purchaseOrderId: purchaseOrderId,
+            vendorId: po.vendorId
+          };
+
+          const item = await this.createItem(itemWithPO, userId);
+
+          results.success.push({
+            serialNumber: item.serialNumber,
+            id: item.id
+          });
+
+          // Track received quantities per line item
+          if (itemData.lineItemId) {
+            if (!itemsByLineItem[itemData.lineItemId]) {
+              itemsByLineItem[itemData.lineItemId] = 0;
+            }
+            itemsByLineItem[itemData.lineItemId]++;
+          }
+
+        } catch (error) {
+          results.failed.push({
+            serialNumber: itemData.serialNumber,
+            error: error.message
+          });
+        }
+      }
+
+      // Update received quantities in PO
+      for (const [lineItemId, count] of Object.entries(itemsByLineItem)) {
+        receivedQuantities[lineItemId] = (receivedQuantities[lineItemId] || 0) + count;
+      }
+
+      // Update PO with new received quantities
+      const updatedPO = await db.prisma.purchaseOrder.update({
+        where: { id: purchaseOrderId },
+        data: {
+          receivedQuantities
+        },
+        include: {
+          lineItems: true,
+          vendor: true
+        }
+      });
+
+      results.purchaseOrder = updatedPO;
+
+      logger.info(`Bulk created ${results.success.length} items from PO ${po.poNumber}`, {
+        poId: purchaseOrderId,
+        successCount: results.success.length,
+        failedCount: results.failed.length
+      });
+
+    } catch (error) {
+      logger.error('Bulk create from PO failed:', error);
+      throw error;
+    }
+
+    return results;
+  }
+
+  /**
    * Get item status history
    */
   async getItemHistory(serialNumber) {

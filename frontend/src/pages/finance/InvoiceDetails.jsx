@@ -25,7 +25,7 @@ const InvoiceDetails = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
 
-  // Fetch invoice details
+  // Fetch invoice details (includes payments)
   const { data: invoice, isLoading, error } = useQuery(
     ['invoice', id],
     async () => {
@@ -34,15 +34,8 @@ const InvoiceDetails = () => {
     }
   );
 
-  // Fetch payment history for this invoice
-  const { data: payments } = useQuery(
-    ['invoice-payments', id],
-    async () => {
-      const response = await axios.get(`/finance/payments?invoiceId=${id}`);
-      return response.data.data?.payments || [];
-    },
-    { enabled: !!id }
-  );
+  // Use payments from invoice response
+  const payments = invoice?.payments || [];
 
   // Delete mutation
   const deleteMutation = useMutation(
@@ -65,7 +58,6 @@ const InvoiceDetails = () => {
       onSuccess: () => {
         message.success('Invoice marked as paid');
         queryClient.invalidateQueries(['invoice', id]);
-        queryClient.invalidateQueries(['invoice-payments', id]);
       },
       onError: (error) => {
         message.error(error.response?.data?.message || 'Failed to update invoice');
@@ -190,29 +182,25 @@ const InvoiceDetails = () => {
     },
     {
       title: 'Method',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod'
+      dataIndex: 'method',
+      key: 'method'
     },
     {
       title: 'Reference',
-      dataIndex: 'referenceNumber',
-      key: 'referenceNumber',
+      dataIndex: 'reference',
+      key: 'reference',
       render: (ref) => ref || '-'
     },
     {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status) => (
-        <Tag color={status === 'Cleared' ? 'green' : 'orange'}>
-          {status}
-        </Tag>
-      )
+      title: 'Notes',
+      dataIndex: 'notes',
+      key: 'notes',
+      render: (notes) => notes || '-'
     }
   ];
 
-  const paidAmount = payments?.reduce((sum, payment) => sum + (payment.amount || 0), 0) || 0;
-  const outstandingAmount = (invoice.total || 0) - paidAmount;
+  const paidAmount = payments?.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 0;
+  const outstandingAmount = (parseFloat(invoice?.total) || 0) - paidAmount;
 
   return (
     <div style={{ padding: 24 }}>

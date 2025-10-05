@@ -210,7 +210,7 @@ const recordPayment = asyncHandler(async (req, res) => {
 const getPayments = asyncHandler(async (req, res) => {
   const db = require('../config/database');
 
-  const where = { deletedAt: null };
+  const where = { deletedAt: null, voidedAt: null };
 
   if (req.query.customerId) {
     where.customerId = req.query.customerId;
@@ -218,6 +218,42 @@ const getPayments = asyncHandler(async (req, res) => {
 
   if (req.query.invoiceId) {
     where.invoiceId = req.query.invoiceId;
+  }
+
+  // Date range filter
+  if (req.query.startDate || req.query.endDate) {
+    where.paymentDate = {};
+    if (req.query.startDate) {
+      where.paymentDate.gte = new Date(req.query.startDate);
+    }
+    if (req.query.endDate) {
+      where.paymentDate.lte = new Date(req.query.endDate);
+    }
+  }
+
+  // Payment method filter
+  if (req.query.method) {
+    where.method = req.query.method;
+  }
+
+  // Search filter (customer name or payment number)
+  if (req.query.search) {
+    where.OR = [
+      {
+        paymentNumber: {
+          contains: req.query.search,
+          mode: 'insensitive'
+        }
+      },
+      {
+        customer: {
+          name: {
+            contains: req.query.search,
+            mode: 'insensitive'
+          }
+        }
+      }
+    ];
   }
 
   const payments = await db.prisma.payment.findMany({
@@ -383,6 +419,19 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get inventory items linked to a purchase order
+// @route   GET /api/finance/purchase-orders/:id/items
+// @access  Private
+const getPurchaseOrderItems = asyncHandler(async (req, res) => {
+  const items = await purchaseOrderService.getPurchaseOrderItems(req.params.id);
+
+  res.json({
+    success: true,
+    count: items.length,
+    data: items
+  });
+});
+
 // ============= VENDOR BILLS =============
 
 // @desc    Get all vendor bills
@@ -409,12 +458,7 @@ const getVendorBills = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/vendor-bills/:id
 // @access  Private
 const getVendorBill = asyncHandler(async (req, res) => {
-  const bill = await billService.getBillById(req.params.id);
-
-  if (!bill) {
-    res.status(404);
-    throw new Error('Vendor Bill not found');
-  }
+  const bill = await billService.getBill(req.params.id);
 
   res.json({
     success: true,
@@ -710,6 +754,7 @@ module.exports = {
   getPurchaseOrder,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
+  getPurchaseOrderItems,
   // Vendor Bills
   getVendorBills,
   getVendorBill,

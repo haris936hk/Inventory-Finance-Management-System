@@ -1,7 +1,7 @@
 /**
  * Purchase Order Lifecycle Management Service
  *
- * Implements strict lifecycle: Draft → Sent → Partial → Completed
+ * Implements strict lifecycle: Draft → Sent → Partial → Paid → Delivered
  * with proper concurrency controls and data integrity
  */
 
@@ -21,12 +21,14 @@ const { generatePONumber } = require('../utils/generateId');
 
 /**
  * Valid PO status transitions
+ * Draft → Sent → Partial (partial bills) → Paid (fully billed) → Delivered (items received in inventory)
  */
 const STATUS_TRANSITIONS = {
   'Draft': ['Sent', 'Cancelled'],
-  'Sent': ['Partial', 'Completed', 'Cancelled'],
-  'Partial': ['Completed', 'Cancelled'],
-  'Completed': [], // Terminal state
+  'Sent': ['Partial', 'Paid', 'Cancelled'],
+  'Partial': ['Paid', 'Cancelled'],
+  'Paid': ['Delivered'], // Can only deliver after fully paid
+  'Delivered': [], // Terminal state
   'Cancelled': [] // Terminal state
 };
 
@@ -152,11 +154,20 @@ async function updatePurchaseOrderStatus(poId, newStatus, userId) {
     }
 
     // Additional validations
-    if (newStatus === 'Completed') {
-      // Can only complete if fully billed
+    if (newStatus === 'Paid') {
+      // Can only mark as Paid if fully billed
       if (!compareAmounts(po.billedAmount, po.total)) {
         throw new ValidationError(
-          `Cannot complete PO. Billed amount (${po.billedAmount}) must equal total (${po.total})`
+          `Cannot mark as Paid. Billed amount (${po.billedAmount}) must equal total (${po.total})`
+        );
+      }
+    }
+
+    if (newStatus === 'Delivered') {
+      // Can only mark as Delivered if status is Paid
+      if (po.status !== 'Paid') {
+        throw new ValidationError(
+          `Cannot mark as Delivered. PO must be in Paid status first.`
         );
       }
     }
@@ -382,11 +393,123 @@ async function getPurchaseOrders(filters = {}) {
   }));
 }
 
+/**
+ * Check if PO is fully delivered and update status accordingly
+ *
+ * @param {string} poId - Purchase Order ID
+ * @param {string} userId - User ID performing the check
+ * @returns {Promise<Object>} Updated PO or current PO if no change needed
+ */
+async function checkAndUpdateDeliveryStatus(poId, userId) {
+  return withTransaction(async (tx) => {
+    // Lock and fetch PO with line items
+    const po = await lockForUpdate(tx, 'PurchaseOrder', poId);
+
+    if (!po) {
+      throw new ValidationError('Purchase Order not found');
+    }
+
+    // Fetch line items
+    const lineItems = await tx.purchaseOrderItem.findMany({
+      where: { purchaseOrderId: poId }
+    });
+
+    if (lineItems.length === 0) {
+      logger.info(`PO ${po.poNumber} has no line items`);
+      return po;
+    }
+
+    // Check if all line items are fully received
+    const receivedQuantities = po.receivedQuantities || {};
+    let allItemsReceived = true;
+
+    for (const lineItem of lineItems) {
+      const receivedQty = receivedQuantities[lineItem.id] || 0;
+      if (receivedQty < lineItem.quantity) {
+        allItemsReceived = false;
+        break;
+      }
+    }
+
+    // If all items received and PO is in Paid status, update to Delivered
+    if (allItemsReceived && po.status === 'Paid') {
+      const updated = await tx.purchaseOrder.update({
+        where: { id: poId },
+        data: {
+          status: 'Delivered',
+          updatedAt: new Date()
+        },
+        include: {
+          vendor: true,
+          lineItems: true
+        }
+      });
+
+      // Create audit log
+      await tx.pOBillAudit.create({
+        data: {
+          purchaseOrderId: poId,
+          action: 'STATUS_CHANGED',
+          beforeState: { status: po.status },
+          afterState: { status: 'Delivered' },
+          performedBy: userId,
+          metadata: {
+            reason: 'All items received in inventory',
+            receivedQuantities
+          }
+        }
+      });
+
+      logger.info(`PO ${po.poNumber} marked as Delivered`, {
+        poId,
+        totalLineItems: lineItems.length,
+        receivedQuantities
+      });
+
+      return updated;
+    }
+
+    return po;
+  });
+}
+
+/**
+ * Get items linked to a Purchase Order
+ *
+ * @param {string} poId - Purchase Order ID
+ * @returns {Promise<Array>} Items linked to this PO
+ */
+async function getPurchaseOrderItems(poId) {
+  const items = await db.prisma.item.findMany({
+    where: {
+      purchaseOrderId: poId,
+      deletedAt: null
+    },
+    include: {
+      category: true,
+      model: {
+        include: {
+          company: true
+        }
+      },
+      vendor: true,
+      warehouse: true
+    },
+    orderBy: {
+      createdAt: 'desc'
+    }
+  });
+
+  return items;
+}
+
 module.exports = {
   createPurchaseOrder,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
   getPurchaseOrder,
   getPurchaseOrders,
+  checkAndUpdateDeliveryStatus,
+  getPurchaseOrderItems,
   STATUS_TRANSITIONS
 };
