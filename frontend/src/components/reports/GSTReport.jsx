@@ -58,7 +58,7 @@ const GSTReport = () => {
     {
       key: '5',
       description: 'Total Output Tax',
-      amount: data?.sales?.totalGST || 0,
+      amount: data?.sales?.totalTax || 0,
       isSubtotal: true
     },
     {
@@ -68,49 +68,35 @@ const GSTReport = () => {
     },
     {
       key: '7',
-      description: 'CGST Paid',
-      amount: data?.purchases?.cgstPaid || 0
+      description: 'Total Purchase Tax Paid',
+      amount: data?.purchases?.totalTaxPaid || 0,
+      note: data?.purchases?.note
     },
     {
       key: '8',
-      description: 'SGST Paid',
-      amount: data?.purchases?.sgstPaid || 0
-    },
-    {
-      key: '9',
-      description: 'IGST Paid',
-      amount: data?.purchases?.igstPaid || 0
-    },
-    {
-      key: '10',
       description: 'Total Input Credit',
-      amount: data?.purchases?.totalGST || 0,
+      amount: data?.purchases?.totalTaxPaid || 0,
       isSubtotal: true
     },
     {
-      key: '11',
-      section: 'NET GST LIABILITY',
+      key: '9',
+      section: 'NET TAX POSITION',
       isHeader: true
     },
     {
+      key: '10',
+      description: 'Sales Tax Collected',
+      amount: data?.netTax?.salesTax || 0
+    },
+    {
+      key: '11',
+      description: 'Purchase Tax Paid',
+      amount: data?.netTax?.purchaseTax || 0
+    },
+    {
       key: '12',
-      description: 'Net CGST Payable',
-      amount: data?.netGST?.cgst || 0
-    },
-    {
-      key: '13',
-      description: 'Net SGST Payable',
-      amount: data?.netGST?.sgst || 0
-    },
-    {
-      key: '14',
-      description: 'Net IGST Payable',
-      amount: data?.netGST?.igst || 0
-    },
-    {
-      key: '15',
-      description: 'TOTAL GST PAYABLE',
-      amount: data?.netGST?.total || 0,
+      description: 'NET TAX PAYABLE',
+      amount: data?.netTax?.netPayable || 0,
       isTotal: true
     }
   ];
@@ -180,31 +166,42 @@ const GSTReport = () => {
         <Col span={8}>
           <Card>
             <Statistic
-              title="Total GST Collected"
-              value={data?.sales?.totalGST || 0}
+              title="Sales Tax Collected"
+              value={data?.sales?.totalTax || 0}
               prefix="PKR"
               valueStyle={{ color: '#52c41a' }}
             />
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+              CGST: {formatCurrency(data?.sales?.cgstCollected || 0)} |
+              SGST: {formatCurrency(data?.sales?.sgstCollected || 0)} |
+              IGST: {formatCurrency(data?.sales?.igstCollected || 0)}
+            </div>
           </Card>
         </Col>
         <Col span={8}>
           <Card>
             <Statistic
-              title="Total Input Credit"
-              value={data?.purchases?.totalGST || 0}
+              title="Purchase Tax Paid"
+              value={data?.purchases?.totalTaxPaid || 0}
               prefix="PKR"
               valueStyle={{ color: '#1890ff' }}
             />
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#888', fontStyle: 'italic' }}>
+              {data?.purchases?.note || 'Total tax only (no breakdown)'}
+            </div>
           </Card>
         </Col>
         <Col span={8}>
           <Card>
             <Statistic
-              title="Net GST Payable"
-              value={data?.netGST?.total || 0}
+              title="Net Tax Payable"
+              value={data?.netTax?.netPayable || 0}
               prefix="PKR"
               valueStyle={{ color: '#ff4d4f' }}
             />
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#666' }}>
+              Sales - Purchase Tax
+            </div>
           </Card>
         </Col>
       </Row>

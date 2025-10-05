@@ -24,7 +24,9 @@ const DEFAULT_SETTINGS = {
     enableInstallments: true,
     taxRate: 0,
     invoicePrefix: 'INV',
-    invoiceStartNumber: 1000
+    invoiceStartNumber: 1000,
+    openingCashBalance: 0,
+    fiscalYearStart: '2025-01-01'
   },
   notifications: {
     lowStockAlerts: true,
@@ -179,6 +181,12 @@ class SettingsService {
         if (value.taxRate < 0 || value.taxRate > 100) {
           throw new Error('Tax rate must be between 0 and 100');
         }
+        if (value.openingCashBalance !== undefined && value.openingCashBalance < 0) {
+          throw new Error('Opening cash balance cannot be negative');
+        }
+        if (value.fiscalYearStart && !this.isValidDate(value.fiscalYearStart)) {
+          throw new Error('Invalid fiscal year start date format (use YYYY-MM-DD)');
+        }
         break;
 
       case 'backup':
@@ -205,6 +213,17 @@ class SettingsService {
   isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
+  }
+
+  /**
+   * Date validation helper (YYYY-MM-DD format)
+   */
+  isValidDate(dateString) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateString)) return false;
+
+    const date = new Date(dateString);
+    return date instanceof Date && !isNaN(date);
   }
 
   /**

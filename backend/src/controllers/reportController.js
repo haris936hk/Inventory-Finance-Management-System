@@ -240,6 +240,20 @@ const exportReport = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Generate Vendor Bills Aging Report
+// @route   GET /api/reports/vendor-bills-aging
+// @access  Private
+const getVendorBillsAging = asyncHandler(async (req, res) => {
+  const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
+
+  const report = await financialReportsService.generateVendorBillsAging(new Date(asOfDate));
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
 module.exports = {
   getDashboard,
   getInventoryReport,
@@ -253,5 +267,6 @@ module.exports = {
   getCashFlowStatement,
   getAccountsReceivableAging,
   getGSTReport,
-  getFinancialDashboard
+  getFinancialDashboard,
+  getVendorBillsAging
 };
