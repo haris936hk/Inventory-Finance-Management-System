@@ -264,9 +264,9 @@ const Invoices = () => {
           },
           {
             key: 'print',
-            label: 'Print PDF',
+            label: 'Print Invoice',
             icon: <FilePdfOutlined />,
-            onClick: () => handlePrintInvoice(record)
+            onClick: () => window.open(`/print/invoices/${record.id}`, '_blank')
           },
           {
             key: 'send',

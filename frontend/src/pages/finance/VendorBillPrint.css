@@ -1,0 +1,431 @@
+/* Vendor Bill Print Styles - Professional Design */
+
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Screen View Styles */
+.bill-print-page {
+  background-color: #e8e8e8;
+  min-height: 100vh;
+  padding: 30px 20px;
+  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+}
+
+.bill-print-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: white;
+}
+
+.bill-print-controls {
+  position: fixed;
+  top: 30px;
+  right: 30px;
+  z-index: 1000;
+  display: flex;
+  gap: 12px;
+  background: white;
+  padding: 15px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.bill-print-container {
+  max-width: 210mm; /* A4 width */
+  min-height: 297mm; /* A4 height */
+  margin: 0 auto;
+  background: white;
+  padding: 20mm 18mm;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+  font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+  color: #000;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+
+/* Company Header */
+.company-header {
+  margin-bottom: 25px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #000;
+}
+
+.company-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.company-name {
+  font-size: 20pt;
+  font-weight: bold;
+  margin: 0 0 8px 0;
+  color: #000;
+  letter-spacing: 0.5px;
+}
+
+.company-details {
+  font-size: 10pt;
+  line-height: 1.5;
+  color: #000;
+}
+
+.company-details div {
+  margin: 2px 0;
+}
+
+/* Bill Title */
+.bill-title {
+  text-align: center;
+  margin: 25px 0 30px 0;
+}
+
+.bill-title h2 {
+  font-size: 24pt;
+  font-weight: bold;
+  margin: 0;
+  color: #000;
+  letter-spacing: 1px;
+}
+
+/* Vendor and Bill Details Section */
+.bill-details-section {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  gap: 30px;
+}
+
+.vendor-section {
+  flex: 1;
+  max-width: 50%;
+}
+
+.section-label {
+  font-size: 10pt;
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #000;
+  letter-spacing: 0.5px;
+}
+
+.vendor-info {
+  font-size: 10pt;
+  line-height: 1.5;
+}
+
+.vendor-name {
+  font-weight: bold;
+  font-size: 11pt;
+  margin-bottom: 4px;
+}
+
+.vendor-info div {
+  margin: 2px 0;
+}
+
+.bill-info-section {
+  flex: 0 0 auto;
+  min-width: 200px;
+}
+
+.bill-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+
+.bill-info-table td {
+  padding: 6px 12px;
+  border: 1px solid #000;
+  vertical-align: middle;
+}
+
+.bill-info-table .label {
+  font-weight: bold;
+  background-color: #f5f5f5;
+  width: 80px;
+  text-align: left;
+}
+
+.bill-info-table .value {
+  font-weight: normal;
+  text-align: left;
+  min-width: 120px;
+}
+
+/* Line Items Table */
+.line-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 25px;
+  font-size: 10pt;
+}
+
+.line-items-table th {
+  background-color: #000;
+  color: white;
+  padding: 10px 8px;
+  text-align: left;
+  font-weight: bold;
+  font-size: 9pt;
+  letter-spacing: 0.3px;
+}
+
+.line-items-table td {
+  padding: 8px;
+  border: 1px solid #ccc;
+  vertical-align: top;
+}
+
+.line-items-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Column widths */
+.col-description {
+  width: 50%;
+}
+
+.col-qty {
+  width: 10%;
+  text-align: center;
+}
+
+.col-rate {
+  width: 20%;
+  text-align: right;
+}
+
+.col-amount {
+  width: 20%;
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+/* Footer Section */
+.footer-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-top: 30px;
+  gap: 30px;
+}
+
+.payment-terms {
+  flex: 1;
+  max-width: 60%;
+}
+
+.terms-label {
+  font-weight: bold;
+  font-size: 10pt;
+  margin-bottom: 6px;
+}
+
+.terms-text {
+  font-size: 9pt;
+  line-height: 1.4;
+  color: #333;
+}
+
+.totals-section {
+  flex: 0 0 auto;
+  min-width: 250px;
+}
+
+.totals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11pt;
+}
+
+.totals-table td {
+  padding: 8px 12px;
+  border: 1px solid #000;
+}
+
+.totals-label {
+  font-weight: bold;
+  text-align: right;
+  background-color: #f5f5f5;
+  width: 120px;
+}
+
+.totals-value {
+  text-align: right;
+  font-weight: normal;
+  min-width: 130px;
+}
+
+.total-row {
+  background-color: #000;
+  color: white;
+}
+
+.total-row .totals-label,
+.total-row .totals-value {
+  background-color: #000;
+  color: white;
+  font-weight: bold;
+  font-size: 12pt;
+}
+
+/* Signature Section */
+.signature-section {
+  margin-top: 50px;
+  display: flex;
+  justify-content: space-between;
+  gap: 50px;
+}
+
+.signature-line {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.signature-label {
+  font-size: 10pt;
+  font-weight: bold;
+  margin-bottom: 30px;
+}
+
+.signature-box {
+  width: 200px;
+  height: 1px;
+  border-bottom: 2px solid #000;
+}
+
+/* Page Footer */
+.page-footer {
+  position: absolute;
+  bottom: 15mm;
+  right: 18mm;
+  font-size: 9pt;
+  color: #666;
+}
+
+.page-number {
+  text-align: right;
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .bill-print-page {
+    background: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .bill-print-container {
+    max-width: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+    background: white;
+  }
+
+  .no-print,
+  .bill-print-controls {
+    display: none !important;
+  }
+
+  /* Ensure proper page breaks */
+  .company-header,
+  .bill-title,
+  .bill-details-section,
+  .line-items-table,
+  .footer-section,
+  .signature-section {
+    page-break-inside: avoid;
+  }
+
+  /* Force exact colors and borders for print */
+  .line-items-table th {
+    background-color: #000 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .total-row .totals-label,
+  .total-row .totals-value {
+    background-color: #000 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .company-header {
+    border-bottom: 3px solid #000 !important;
+  }
+
+  .bill-info-table td,
+  .totals-table td,
+  .line-items-table td {
+    border: 1px solid #000 !important;
+  }
+
+  .signature-box {
+    border-bottom: 2px solid #000 !important;
+  }
+
+  /* Adjust font sizes for print */
+  .company-name {
+    font-size: 18pt;
+  }
+
+  .bill-title h2 {
+    font-size: 22pt;
+  }
+
+  .line-items-table {
+    font-size: 9pt;
+  }
+
+  .totals-table {
+    font-size: 10pt;
+  }
+}
+
+/* High DPI Print Adjustments */
+@media print and (min-resolution: 150dpi) {
+  .bill-print-page {
+    font-size: 10pt;
+  }
+
+  .bill-print-container {
+    padding: 15mm 12mm;
+  }
+
+  .bill-print-controls {
+    display: none;
+  }
+}

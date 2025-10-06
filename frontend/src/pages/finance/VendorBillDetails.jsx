@@ -304,7 +304,7 @@ const VendorBillDetails = () => {
                 Record Payment
               </Button>
             )}
-            <Button icon={<PrinterOutlined />} onClick={() => message.info('Print functionality coming soon')}>
+            <Button icon={<PrinterOutlined />} onClick={() => window.open(`/print/vendor-bills/${vendorBill.id}`, '_blank')}>
               Print
             </Button>
           </Space>

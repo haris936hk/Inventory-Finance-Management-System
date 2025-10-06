@@ -446,7 +446,7 @@ const VendorBills = () => {
             key: 'print',
             icon: <PrinterOutlined />,
             label: 'Print',
-            onClick: () => message.info('Print functionality coming soon')
+            onClick: () => window.open(`/print/vendor-bills/${record.id}`, '_blank')
           }
         ];
 

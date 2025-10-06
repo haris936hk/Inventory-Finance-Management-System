@@ -231,7 +231,10 @@ const InvoiceDetails = () => {
             >
               {invoice.status}
             </Tag>
-            <Button icon={<PrinterOutlined />}>
+            <Button 
+              icon={<PrinterOutlined />}
+              onClick={() => window.open(`/print/invoices/${id}`, '_blank')}
+            >
               Print
             </Button>
             <Button icon={<FilePdfOutlined />}>
@@ -493,8 +496,9 @@ const InvoiceDetails = () => {
                 <Button
                   block
                   icon={<FilePdfOutlined />}
+                  onClick={() => window.open(`/print/invoices/${id}`, '_blank')}
                 >
-                  Download PDF
+                  Print Invoice
                 </Button>
                 <Button
                   block
