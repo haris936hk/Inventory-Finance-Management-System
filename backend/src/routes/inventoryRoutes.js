@@ -67,6 +67,12 @@ router.post('/items/bulk',
   inventoryController.bulkCreateItems
 );
 
+// Check serial number availability (must come BEFORE parameterized routes)
+router.get('/items/check-serial/:serialNumber',
+  hasPermission(['inventory.view']),
+  inventoryController.checkSerialNumber
+);
+
 // Parameterized routes must come AFTER specific routes
 router.route('/items/:serialNumber')
   .get(hasPermission(['inventory.view']), inventoryController.getItem);

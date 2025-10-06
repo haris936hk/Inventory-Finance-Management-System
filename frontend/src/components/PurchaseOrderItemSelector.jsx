@@ -72,8 +72,18 @@ const PurchaseOrderItemSelector = ({ selectedItems, onItemsChange, onTotalChange
     const updatedItems = [...selectedItems, newItem];
     onItemsChange(updatedItems);
     calculateTotals(updatedItems);
-    message.success(`Added ${productModel.company.name} ${productModel.name} to purchase order`);
+
     setModalVisible(false);
+
+    // If category has spec template, immediately open specifications modal
+    if (productModel.category?.specTemplate && Object.keys(productModel.category.specTemplate).length > 0) {
+      message.info(`Please fill in required specifications for ${productModel.company.name} ${productModel.name}`);
+      setTimeout(() => {
+        setEditingItemIndex(updatedItems.length - 1);
+      }, 100);
+    } else {
+      message.success(`Added ${productModel.company.name} ${productModel.name} to purchase order`);
+    }
   };
 
   const removeItem = (itemId) => {
@@ -106,6 +116,20 @@ const PurchaseOrderItemSelector = ({ selectedItems, onItemsChange, onTotalChange
     onTotalChange(total);
   };
 
+  // Check if item has all required specifications filled
+  const hasRequiredSpecs = (item) => {
+    const template = item.category?.specTemplate || {};
+    const specs = item.specifications || {};
+
+    // Check each required field in template
+    for (const [key, field] of Object.entries(template)) {
+      if (field.required && (!specs[key] || specs[key] === '')) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   const editSpecifications = (itemIndex) => {
     setEditingItemIndex(itemIndex);
   };
@@ -127,27 +151,36 @@ const PurchaseOrderItemSelector = ({ selectedItems, onItemsChange, onTotalChange
     {
       title: 'Product',
       key: 'product',
-      render: (_, record) => (
-        <div>
-          <Text strong>{record.description}</Text>
-          <br />
-          <Space size={4}>
-            <Tag color="blue">{record.categoryName}</Tag>
-            {Object.keys(record.specifications || {}).length > 0 && (
-              <Tooltip title={JSON.stringify(record.specifications, null, 2)}>
-                <Tag color="green">Has Specs</Tag>
-              </Tooltip>
+      render: (_, record) => {
+        const hasTemplate = record.category?.specTemplate && Object.keys(record.category.specTemplate).length > 0;
+        const specsComplete = hasRequiredSpecs(record);
+
+        return (
+          <div>
+            <Text strong>{record.description}</Text>
+            <br />
+            <Space size={4}>
+              <Tag color="blue">{record.categoryName}</Tag>
+              {hasTemplate && (
+                specsComplete ? (
+                  <Tooltip title={JSON.stringify(record.specifications, null, 2)}>
+                    <Tag color="green">Specs Complete</Tag>
+                  </Tooltip>
+                ) : (
+                  <Tag color="red">Specs Required</Tag>
+                )
+              )}
+            </Space>
+            {record.notes && (
+              <div style={{ marginTop: 4 }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  {record.notes.length > 50 ? `${record.notes.substring(0, 50)}...` : record.notes}
+                </Text>
+              </div>
             )}
-          </Space>
-          {record.notes && (
-            <div style={{ marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {record.notes.length > 50 ? `${record.notes.substring(0, 50)}...` : record.notes}
-              </Text>
-            </div>
-          )}
-        </div>
-      )
+          </div>
+        );
+      }
     },
     {
       title: 'Quantity',

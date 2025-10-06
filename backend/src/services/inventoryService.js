@@ -1005,6 +1005,20 @@ class InventoryService {
       }
     });
   }
+
+  /**
+   * Check if a serial number already exists
+   * @param {string} serialNumber - Serial number to check
+   * @returns {Promise<boolean>} - True if exists, false otherwise
+   */
+  async checkSerialNumberExists(serialNumber) {
+    const item = await db.prisma.item.findUnique({
+      where: { serialNumber: serialNumber.trim() },
+      select: { id: true }
+    });
+
+    return !!item;
+  }
 }
 
 module.exports = new InventoryService();

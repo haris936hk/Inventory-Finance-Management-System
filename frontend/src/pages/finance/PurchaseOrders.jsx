@@ -477,7 +477,7 @@ const PurchaseOrders = () => {
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => setModalVisible(true)}
+              onClick={() => navigate('/app/finance/purchase-orders/create')}
               disabled={!hasPermission('finance.create')}
             >
               New Purchase Order

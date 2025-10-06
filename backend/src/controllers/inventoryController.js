@@ -409,6 +409,21 @@ const getItemMovements = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Check if serial number exists
+// @route   GET /api/inventory/items/check-serial/:serialNumber
+// @access  Private
+const checkSerialNumber = asyncHandler(async (req, res) => {
+  const { serialNumber } = req.params;
+
+  const exists = await inventoryService.checkSerialNumberExists(serialNumber);
+
+  res.json({
+    success: true,
+    exists,
+    serialNumber
+  });
+});
+
 module.exports = {
   // Categories
   getCategories,
@@ -435,6 +450,7 @@ module.exports = {
   deleteItem,
   updateItemStatus,
   getStockSummary,
+  checkSerialNumber,
   // Vendors
   getVendors,
   getVendor,

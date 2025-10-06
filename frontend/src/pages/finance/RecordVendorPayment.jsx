@@ -106,7 +106,7 @@ const RecordVendorPayment = () => {
   const handleSubmit = (values) => {
     const paymentData = {
       ...values,
-      paymentDate: values.paymentDate.format('YYYY-MM-DD'),
+      paymentDate: values.paymentDate.toISOString(),
       amount: parseFloat(values.amount)
     };
     paymentMutation.mutate(paymentData);

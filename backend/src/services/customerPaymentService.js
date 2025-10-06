@@ -22,6 +22,7 @@ const {
 } = require('../utils/transactionWrapper');
 const { generatePaymentNumber } = require('../utils/generateId');
 const { calculateInvoiceStatus } = require('./invoiceService');
+const inventoryLifecycleService = require('./inventoryLifecycleService');
 
 /**
  * Record a customer payment against an invoice
@@ -38,7 +39,11 @@ const { calculateInvoiceStatus } = require('./invoiceService');
  * @returns {Promise<Object>} Created payment
  */
 async function recordPayment(data, userId) {
-  return withTransaction(async (tx) => {
+  let wasFullyPaid = false;
+  let invoiceNumber = null;
+  let invoiceId = null;
+
+  const payment = await withTransaction(async (tx) => {
     // 1. Lock the invoice (critical for concurrency)
     const invoice = await lockForUpdate(tx, 'Invoice', data.invoiceId);
 
@@ -81,7 +86,7 @@ async function recordPayment(data, userId) {
     const paymentNumber = await generatePaymentNumber();
 
     // 7. Create the payment
-    const payment = await tx.payment.create({
+    const createdPayment = await tx.payment.create({
       data: {
         paymentNumber,
         paymentDate: data.paymentDate || new Date(),
@@ -115,6 +120,9 @@ async function recordPayment(data, userId) {
     });
 
     const newStatus = calculateInvoiceStatus(updatedInvoice);
+    wasFullyPaid = newStatus === 'Paid' && invoice.status !== 'Paid';
+    invoiceNumber = invoice.invoiceNumber;
+    invoiceId = data.invoiceId;
 
     if (newStatus !== invoice.status) {
       await tx.invoice.update({
@@ -175,14 +183,28 @@ async function recordPayment(data, userId) {
     });
 
     logger.info(`Payment recorded: ${paymentNumber}`, {
-      paymentId: payment.id,
+      paymentId: createdPayment.id,
       invoiceNumber: invoice.invoiceNumber,
       amount: amount,
       invoiceStatus: `${invoice.status} → ${newStatus}`
     });
 
-    return payment;
+    return createdPayment;
   });
+
+  // 10. AFTER transaction commits, mark items as sold if invoice is fully paid
+  if (wasFullyPaid) {
+    try {
+      const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId);
+      logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold`);
+    } catch (error) {
+      logger.error(`Failed to mark items as sold for Invoice ${invoiceNumber}:`, error);
+      // Don't fail the payment - just log the error
+      // Items can be manually marked as sold later
+    }
+  }
+
+  return payment;
 }
 
 /**

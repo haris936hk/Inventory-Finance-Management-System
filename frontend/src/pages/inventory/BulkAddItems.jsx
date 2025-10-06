@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card, Form, Input, Select, InputNumber, DatePicker, Button,
-  Row, Col, Space, message, Steps, Divider, Switch, Table, Tag
+  Row, Col, Space, message, Steps, Divider, Switch, Table, Tag, Typography
 } from 'antd';
 import {
   SaveOutlined, ArrowLeftOutlined, ScanOutlined
@@ -15,6 +15,7 @@ import { formatPKR } from '../../config/constants';
 
 const { Step } = Steps;
 const { TextArea } = Input;
+const { Text } = Typography;
 
 const BulkAddItems = () => {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ const BulkAddItems = () => {
   const [selectedPO, setSelectedPO] = useState(null);
   const [selectedPOLineItem, setSelectedPOLineItem] = useState(null);
   const [usePO, setUsePO] = useState(false);
+  const [serialValidationErrors, setSerialValidationErrors] = useState({});
   const poIdFromUrl = searchParams.get('poId');
 
   // Fetch categories
@@ -176,10 +178,34 @@ const BulkAddItems = () => {
       serialNumber: value
     };
     setSerialNumbers(newSerialNumbers);
+
+    // Clear any existing validation errors for this field when user starts typing
+    if (serialValidationErrors[index]) {
+      setSerialValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[index];
+        return newErrors;
+      });
+    }
+
+    // Check for duplicates within the list (instant, no delay)
+    const duplicateIndex = newSerialNumbers.findIndex(
+      (item, idx) => idx !== index && item.serialNumber.trim() === value.trim() && value.trim() !== ''
+    );
+
+    if (duplicateIndex !== -1 && value.trim()) {
+      setSerialValidationErrors(prev => ({
+        ...prev,
+        [index]: 'Duplicate serial number in list'
+      }));
+    }
   };
 
   const getSpecificationFields = () => {
     if (!selectedCategory?.specTemplate) return null;
+
+    // Disable specification fields if receiving from PO line item
+    const isDisabled = !!selectedPOLineItem;
 
     return Object.entries(selectedCategory.specTemplate).map(([key, spec]) => {
       const fieldName = ['specifications', key];
@@ -193,7 +219,7 @@ const BulkAddItems = () => {
                 name={fieldName}
                 rules={[{ required: spec.required }]}
               >
-                <Select placeholder={`Select ${key}`}>
+                <Select placeholder={`Select ${key}`} disabled={isDisabled}>
                   {spec.options.map(option => (
                     <Select.Option key={option} value={option}>
                       {option}
@@ -217,6 +243,7 @@ const BulkAddItems = () => {
                   max={spec.max}
                   style={{ width: '100%' }}
                   placeholder={`Enter ${key}`}
+                  disabled={isDisabled}
                 />
               </Form.Item>
             </Col>
@@ -234,6 +261,7 @@ const BulkAddItems = () => {
                 <Switch
                   checkedChildren="Yes"
                   unCheckedChildren="No"
+                  disabled={isDisabled}
                 />
               </Form.Item>
             </Col>
@@ -247,7 +275,7 @@ const BulkAddItems = () => {
                 name={fieldName}
                 rules={[{ required: spec.required }]}
               >
-                <Input placeholder={`Enter ${key}`} />
+                <Input placeholder={`Enter ${key}`} disabled={isDisabled} />
               </Form.Item>
             </Col>
           );
@@ -281,26 +309,80 @@ const BulkAddItems = () => {
     }
   };
 
-  const validateSerialNumbers = () => {
+  const validateSerialNumbers = async () => {
+    // Check for empty serials
     const emptySerials = serialNumbers.filter(item => !item.serialNumber.trim());
     if (emptySerials.length > 0) {
       message.error('Please enter all serial numbers');
       return false;
     }
 
+    // Check for duplicates within the list
     const uniqueSerials = new Set(serialNumbers.map(item => item.serialNumber.trim()));
     if (uniqueSerials.size !== serialNumbers.length) {
-      message.error('Serial numbers must be unique');
+      message.error('Serial numbers must be unique within the list');
       return false;
     }
 
-    return true;
+    // Check each serial number against the database
+    message.loading({ content: 'Validating serial numbers...', key: 'validating' });
+
+    try {
+      const validationPromises = serialNumbers.map(async (item, index) => {
+        const serialNumber = item.serialNumber.trim();
+        try {
+          const response = await axios.get(`/inventory/items/check-serial/${encodeURIComponent(serialNumber)}`);
+          if (response.data.exists) {
+            return {
+              index,
+              serialNumber,
+              error: 'Serial number already exists in database'
+            };
+          }
+          return null;
+        } catch (error) {
+          console.error('Error checking serial:', serialNumber, error);
+          return {
+            index,
+            serialNumber,
+            error: 'Error validating serial number'
+          };
+        }
+      });
+
+      const validationResults = await Promise.all(validationPromises);
+      const errors = validationResults.filter(result => result !== null);
+
+      if (errors.length > 0) {
+        message.error({
+          content: `Found ${errors.length} invalid serial number(s). Please check and fix them.`,
+          key: 'validating',
+          duration: 5
+        });
+
+        // Update validation errors state
+        const newErrors = {};
+        errors.forEach(err => {
+          newErrors[err.index] = err.error;
+        });
+        setSerialValidationErrors(newErrors);
+
+        return false;
+      }
+
+      message.success({ content: 'All serial numbers are valid', key: 'validating' });
+      return true;
+    } catch (error) {
+      message.error({ content: 'Error validating serial numbers', key: 'validating' });
+      return false;
+    }
   };
 
-  const onFinish = (values) => {
+  const onFinish = async (values) => {
     console.log('Form values being submitted:', values);
 
-    if (!validateSerialNumbers()) {
+    const isValid = await validateSerialNumbers();
+    if (!isValid) {
       return;
     }
 
@@ -344,14 +426,25 @@ const BulkAddItems = () => {
       title: 'Serial Number',
       dataIndex: 'serialNumber',
       key: 'serialNumber',
-      render: (text, record, index) => (
-        <Input
-          value={text}
-          onChange={(e) => handleSerialNumberChange(index, e.target.value)}
-          placeholder={`Enter serial number ${index + 1}`}
-          status={!text.trim() ? 'error' : ''}
-        />
-      )
+      render: (text, record, index) => {
+        const hasError = serialValidationErrors[index];
+
+        return (
+          <div>
+            <Input
+              value={text}
+              onChange={(e) => handleSerialNumberChange(index, e.target.value)}
+              placeholder={`Enter serial number ${index + 1}`}
+              status={!text.trim() || hasError ? 'error' : ''}
+            />
+            {hasError && (
+              <Text type="danger" style={{ fontSize: '12px' }}>
+                {hasError}
+              </Text>
+            )}
+          </div>
+        );
+      }
     }
   ];
 

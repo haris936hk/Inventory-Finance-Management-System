@@ -33,9 +33,11 @@ import InvoiceDetails from './pages/finance/InvoiceDetails';
 import Payments from './pages/finance/Payments';
 import RecordPayment from './pages/finance/RecordPayment';
 import PurchaseOrders from './pages/finance/PurchaseOrders';
+import CreatePurchaseOrder from './pages/finance/CreatePurchaseOrder';
 import PurchaseOrderDetails from './pages/finance/PurchaseOrderDetails';
 import PurchaseOrderPrint from './pages/finance/PurchaseOrderPrint';
 import VendorBills from './pages/finance/VendorBills';
+import CreateVendorBill from './pages/finance/CreateVendorBill';
 import VendorBillDetails from './pages/finance/VendorBillDetails';
 import VendorPayments from './pages/finance/VendorPayments';
 import RecordVendorPayment from './pages/finance/RecordVendorPayment';
@@ -155,8 +157,10 @@ function App() {
                 <Route path="payments" element={<Payments />} />
                 <Route path="payments/record" element={<RecordPayment />} />
                 <Route path="purchase-orders" element={<PurchaseOrders />} />
+                <Route path="purchase-orders/create" element={<CreatePurchaseOrder />} />
                 <Route path="purchase-orders/:id" element={<PurchaseOrderDetails />} />
                 <Route path="vendor-bills" element={<VendorBills />} />
+                <Route path="vendor-bills/create" element={<CreateVendorBill />} />
                 <Route path="vendor-bills/:id" element={<VendorBillDetails />} />
                 <Route path="vendor-payments" element={<VendorPayments />} />
                 <Route path="vendor-payments/record" element={<RecordVendorPayment />} />

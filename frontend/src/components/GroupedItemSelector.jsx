@@ -492,12 +492,6 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
               />
             </div>
 
-            <div>
-              <Text strong>Assignment Method:</Text>
-              <div style={{ marginTop: 8, padding: 8, backgroundColor: '#f6f6f6', borderRadius: 4 }}>
-                <Text type="secondary">Items will be automatically assigned using FIFO (First In, First Out) method</Text>
-              </div>
-            </div>
           </Space>
         </Modal>
       )}

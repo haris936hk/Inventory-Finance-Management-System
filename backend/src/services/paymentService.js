@@ -137,7 +137,7 @@ async function recordPayment(data, userId) {
     await tx.vendorLedger.create({
       data: {
         vendorId: data.vendorId,
-        entryDate: data.paymentDate || new Date(),
+        entryDate: data.paymentDate ? new Date(data.paymentDate) : new Date(),
         description: `Payment ${paymentNumber} for Bill ${bill.billNumber}`,
         debit: 0,
         credit: paymentAmount,

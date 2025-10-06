@@ -541,7 +541,7 @@ const VendorBills = () => {
             <Button
               type="primary"
               icon={<PlusOutlined />}
-              onClick={() => setModalVisible(true)}
+              onClick={() => navigate('/app/finance/vendor-bills/create')}
               disabled={!hasPermission('finance.create')}
             >
               New Bill

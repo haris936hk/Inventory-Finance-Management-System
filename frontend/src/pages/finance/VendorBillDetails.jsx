@@ -290,7 +290,7 @@ const VendorBillDetails = () => {
             </Space>
           </div>
           <Space>
-            {hasPermission('finance.edit') && vendorBill.status !== 'Paid' && (
+            {hasPermission('finance.edit') && vendorBill.status === 'Unpaid' && (
               <Button icon={<EditOutlined />} onClick={handleEdit}>
                 Edit
               </Button>

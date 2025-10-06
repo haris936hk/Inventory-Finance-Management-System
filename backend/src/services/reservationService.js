@@ -80,6 +80,7 @@ class ReservationService {
   async getGroupedAvailableItems(filters = {}) {
     const where = {
       status: 'In Store',
+      inventoryStatus: 'Available', // CRITICAL: Only show truly available items (not Reserved or Sold)
       deletedAt: null
     };
 
