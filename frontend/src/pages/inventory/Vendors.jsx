@@ -1,25 +1,22 @@
 // ========== src/pages/inventory/Vendors.jsx ==========
 import React, { useState } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Input, Switch, message, Space, Tag,
-  Drawer, Descriptions, Statistic, Row, Col, Tabs
+  Card, Table, Button, Modal, Form, Input, Switch, message, Space, Tag
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, PhoneOutlined, MailOutlined,
-  EyeOutlined, FileTextOutlined, CreditCardOutlined, ReconciliationOutlined,
-  ShopOutlined
+  EyeOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import LedgerView from '../../components/LedgerView';
 import { formatPKR } from '../../config/constants';
 
 const Vendors = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingVendor, setEditingVendor] = useState(null);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedVendor, setSelectedVendor] = useState(null);
   const [form] = Form.useForm();
 
   const { data: vendors, isLoading } = useQuery('vendors', async () => {
@@ -69,16 +66,8 @@ const Vendors = () => {
     form.resetFields();
   };
 
-  const handleView = async (record) => {
-    setSelectedVendor(record);
-    // Fetch detailed vendor data including related records
-    try {
-      const response = await axios.get(`/inventory/vendors/${record.id}`);
-      setSelectedVendor(response.data.data);
-      setDrawerVisible(true);
-    } catch (error) {
-      message.error('Failed to load vendor details');
-    }
+  const handleView = (record) => {
+    navigate(`/app/inventory/vendors/${record.id}`);
   };
 
   const columns = [
@@ -297,234 +286,6 @@ const Vendors = () => {
           </div>
         </Form>
       </Modal>
-
-      {/* Vendor Details Drawer */}
-      <Drawer
-        title="Vendor Details"
-        placement="right"
-        width={700}
-        onClose={() => setDrawerVisible(false)}
-        open={drawerVisible}
-      >
-        {selectedVendor && (
-          <Tabs defaultActiveKey="1">
-            <Tabs.TabPane tab="Overview" key="1">
-              <Descriptions bordered column={1}>
-                <Descriptions.Item label="Name">{selectedVendor.name}</Descriptions.Item>
-                <Descriptions.Item label="Code">{selectedVendor.code}</Descriptions.Item>
-                <Descriptions.Item label="Contact Person">{selectedVendor.contactPerson || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Phone">{selectedVendor.phone || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Email">{selectedVendor.email || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Address">{selectedVendor.address || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Tax Number">{selectedVendor.taxNumber || '-'}</Descriptions.Item>
-                <Descriptions.Item label="Payment Terms">{selectedVendor.paymentTerms || '-'}</Descriptions.Item>
-              </Descriptions>
-
-              <Row gutter={16} style={{ marginTop: 24 }}>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Current Balance"
-                      value={selectedVendor.currentBalance}
-                      prefix="PKR"
-                      valueStyle={{
-                        color: selectedVendor.currentBalance > 0 ? '#f5222d' : '#52c41a'
-                      }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Purchase Orders"
-                      value={selectedVendor._count?.purchaseOrders || 0}
-                      prefix={<ReconciliationOutlined />}
-                    />
-                  </Card>
-                </Col>
-                <Col span={8}>
-                  <Card>
-                    <Statistic
-                      title="Items Supplied"
-                      value={selectedVendor._count?.items || 0}
-                      prefix={<ShopOutlined />}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-            </Tabs.TabPane>
-
-            <Tabs.TabPane tab="Purchase Orders" key="2">
-              <Table
-                dataSource={selectedVendor.purchaseOrders}
-                columns={[
-                  { title: 'PO #', dataIndex: 'poNumber', key: 'poNumber' },
-                  {
-                    title: 'Date',
-                    dataIndex: 'orderDate',
-                    key: 'orderDate',
-                    render: (date) => new Date(date).toLocaleDateString()
-                  },
-                  {
-                    title: 'Total',
-                    dataIndex: 'total',
-                    key: 'total',
-                    render: (amount) => formatPKR(parseFloat(amount))
-                  },
-                  {
-                    title: 'Billed',
-                    dataIndex: 'billedAmount',
-                    key: 'billedAmount',
-                    render: (amount) => formatPKR(parseFloat(amount || 0))
-                  },
-                  {
-                    title: 'Status',
-                    dataIndex: 'status',
-                    key: 'status',
-                    render: (status) => (
-                      <Tag color={
-                        status === 'Draft' ? 'default' :
-                        status === 'Sent' ? 'blue' :
-                        status === 'Partial' ? 'orange' :
-                        status === 'Completed' ? 'green' :
-                        status === 'Cancelled' ? 'red' : 'default'
-                      }>
-                        {status}
-                      </Tag>
-                    )
-                  }
-                ]}
-                pagination={false}
-              />
-            </Tabs.TabPane>
-
-            <Tabs.TabPane tab="Bills" key="3">
-              <Table
-                dataSource={selectedVendor.bills}
-                columns={[
-                  {
-                    title: 'Bill #',
-                    dataIndex: 'billNumber',
-                    key: 'billNumber',
-                    render: (text, record) => (
-                      <Space direction="vertical" size="small">
-                        <span style={{ color: record.cancelledAt ? '#999' : 'inherit' }}>
-                          {text}
-                        </span>
-                        {record.cancelledAt && <Tag color="red" size="small">CANCELLED</Tag>}
-                      </Space>
-                    )
-                  },
-                  {
-                    title: 'Date',
-                    dataIndex: 'billDate',
-                    key: 'billDate',
-                    render: (date) => new Date(date).toLocaleDateString()
-                  },
-                  {
-                    title: 'Total',
-                    dataIndex: 'total',
-                    key: 'total',
-                    render: (amount, record) => (
-                      <span style={{
-                        color: record.cancelledAt ? '#999' : 'inherit',
-                        textDecoration: record.cancelledAt ? 'line-through' : 'none'
-                      }}>
-                        {formatPKR(parseFloat(amount))}
-                      </span>
-                    )
-                  },
-                  {
-                    title: 'Paid',
-                    dataIndex: 'paidAmount',
-                    key: 'paidAmount',
-                    render: (amount) => formatPKR(parseFloat(amount || 0))
-                  },
-                  {
-                    title: 'Status',
-                    dataIndex: 'status',
-                    key: 'status',
-                    render: (status, record) => {
-                      if (record.cancelledAt) {
-                        return <Tag color="red">Cancelled</Tag>;
-                      }
-                      return (
-                        <Tag color={
-                          status === 'Paid' ? 'green' :
-                          status === 'Partial' ? 'orange' :
-                          status === 'Unpaid' ? 'blue' : 'default'
-                        }>
-                          {status}
-                        </Tag>
-                      );
-                    }
-                  }
-                ]}
-                pagination={false}
-              />
-            </Tabs.TabPane>
-
-            <Tabs.TabPane tab="Payments" key="4">
-              <Table
-                dataSource={selectedVendor.payments}
-                columns={[
-                  {
-                    title: 'Payment #',
-                    dataIndex: 'paymentNumber',
-                    key: 'paymentNumber',
-                    render: (text, record) => (
-                      <Space direction="vertical" size="small">
-                        <span style={{ color: record.voidedAt ? '#999' : 'inherit' }}>
-                          {text}
-                        </span>
-                        {record.voidedAt && <Tag color="red" size="small">VOIDED</Tag>}
-                      </Space>
-                    )
-                  },
-                  {
-                    title: 'Date',
-                    dataIndex: 'paymentDate',
-                    key: 'paymentDate',
-                    render: (date) => new Date(date).toLocaleDateString()
-                  },
-                  {
-                    title: 'Amount',
-                    dataIndex: 'amount',
-                    key: 'amount',
-                    render: (amount, record) => (
-                      <span style={{
-                        color: record.voidedAt ? '#999' : 'inherit',
-                        textDecoration: record.voidedAt ? 'line-through' : 'none'
-                      }}>
-                        {formatPKR(parseFloat(amount))}
-                      </span>
-                    )
-                  },
-                  {
-                    title: 'Method',
-                    dataIndex: 'method',
-                    key: 'method',
-                    render: (method, record) => (
-                      <span style={{ color: record.voidedAt ? '#999' : 'inherit' }}>
-                        {method}
-                      </span>
-                    )
-                  }
-                ]}
-                pagination={false}
-              />
-            </Tabs.TabPane>
-
-            <Tabs.TabPane tab="Ledger" key="5">
-              <LedgerView
-                entityId={selectedVendor.id}
-                entityType="vendor"
-                title="Vendor Ledger"
-              />
-            </Tabs.TabPane>
-          </Tabs>
-        )}
-      </Drawer>
     </Card>
   );
 };

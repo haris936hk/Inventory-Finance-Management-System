@@ -403,7 +403,7 @@ model PurchaseOrder {
   billedAmount Decimal @default(0) @db.Decimal(18, 4)
 
   // NEW: Track received quantities per line item for inventory delivery
-  receivedQuantities Json?  // { lineItemId: receivedCount, ... }
+  receivedQuantities Json? // { lineItemId: receivedCount, ... }
 
   // NEW: Lock mechanism for concurrent bill creation
   lockedAt DateTime?

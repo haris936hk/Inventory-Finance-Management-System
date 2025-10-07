@@ -24,9 +24,11 @@ import Categories from './pages/inventory/Categories';
 import Companies from './pages/inventory/Companies';
 import Models from './pages/inventory/Models';
 import Vendors from './pages/inventory/Vendors';
+import VendorDetails from './pages/inventory/VendorDetails';
 
 // Finance Pages
 import Customers from './pages/finance/Customers';
+import CustomerDetails from './pages/finance/CustomerDetails';
 import Invoices from './pages/finance/Invoices';
 import CreateInvoice from './pages/finance/CreateInvoice';
 import InvoiceDetails from './pages/finance/InvoiceDetails';
@@ -147,12 +149,14 @@ function App() {
                 <Route path="companies" element={<Companies />} />
                 <Route path="models" element={<Models />} />
                 <Route path="vendors" element={<Vendors />} />
+                <Route path="vendors/:id" element={<VendorDetails />} />
               </Route>
 
               {/* Finance Routes */}
               <Route path="finance">
                 <Route index element={<Navigate to="/app/finance/invoices" />} />
                 <Route path="customers" element={<Customers />} />
+                <Route path="customers/:id" element={<CustomerDetails />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="invoices/create" element={<CreateInvoice />} />
                 <Route path="invoices/:id" element={<InvoiceDetails />} />

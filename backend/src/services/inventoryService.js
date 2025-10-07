@@ -758,14 +758,20 @@ class InventoryService {
           orderBy: { createdAt: 'desc' }
         },
         purchaseOrders: {
-          take: 10,
           orderBy: { orderDate: 'desc' }
+        },
+        bills: {
+          orderBy: { billDate: 'desc' }
+        },
+        payments: {
+          orderBy: { paymentDate: 'desc' }
         },
         _count: {
           select: {
             items: true,
             purchaseOrders: true,
-            bills: true
+            bills: true,
+            payments: true
           }
         }
       }

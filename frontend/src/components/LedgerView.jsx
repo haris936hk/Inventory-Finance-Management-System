@@ -137,7 +137,7 @@ const LedgerView = ({
     if (entityType === 'customer') {
       return ['Invoice', 'Payment', 'Opening Balance'];
     } else {
-      return ['Purchase Order', 'Bill', 'Payment', 'Opening Balance'];
+      return ['Bill', 'Payment', 'Opening Balance'];
     }
   };
 

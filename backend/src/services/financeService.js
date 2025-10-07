@@ -69,16 +69,20 @@ class FinanceService {
       where: { id },
       include: {
         invoices: {
-          orderBy: { invoiceDate: 'desc' },
-          take: 10
+          orderBy: { invoiceDate: 'desc' }
         },
         payments: {
-          orderBy: { paymentDate: 'desc' },
-          take: 10
+          orderBy: { paymentDate: 'desc' }
         },
         ledgerEntries: {
           orderBy: { entryDate: 'desc' },
           take: 20
+        },
+        _count: {
+          select: {
+            invoices: true,
+            payments: true
+          }
         }
       }
     });
@@ -723,13 +727,21 @@ class FinanceService {
       where: { id: customerId }
     });
 
+    // Convert Decimals to floats for all entries
+    const convertedEntries = ledgerEntries.map(entry => ({
+      ...entry,
+      debit: parseFloat(entry.debit),
+      credit: parseFloat(entry.credit),
+      balance: parseFloat(entry.balance)
+    }));
+
     return {
       customer,
-      entries: ledgerEntries,
-      openingBalance: customer.openingBalance,
-      closingBalance: customer.currentBalance,
-      totalDebits: ledgerEntries.reduce((sum, e) => sum + parseFloat(e.debit), 0),
-      totalCredits: ledgerEntries.reduce((sum, e) => sum + parseFloat(e.credit), 0)
+      entries: convertedEntries,
+      openingBalance: parseFloat(customer.openingBalance) || 0,
+      closingBalance: parseFloat(customer.currentBalance) || 0,
+      totalDebits: convertedEntries.reduce((sum, e) => sum + e.debit, 0),
+      totalCredits: convertedEntries.reduce((sum, e) => sum + e.credit, 0)
     };
   }
 
@@ -872,42 +884,46 @@ class FinanceService {
     // Get all financial transactions for this customer
     const ledgerEntries = [];
 
-    // Get invoices
+    // Get invoices (exclude cancelled ones)
     const invoices = await db.prisma.invoice.findMany({
       where: {
         customerId,
-        deletedAt: null
+        deletedAt: null,
+        cancelledAt: null  // Exclude cancelled invoices
       },
       orderBy: { createdAt: 'asc' }
     });
 
     for (const invoice of invoices) {
       ledgerEntries.push({
+        id: `invoice-${invoice.id}`,
         date: invoice.createdAt,
         type: 'Invoice',
         reference: invoice.invoiceNumber,
         description: `Invoice ${invoice.invoiceNumber}`,
-        amount: invoice.totalAmount,
+        amount: parseFloat(invoice.total),
         balance: 0 // Will be calculated below
       });
     }
 
-    // Get payments
+    // Get payments (exclude voided ones)
     const payments = await db.prisma.payment.findMany({
       where: {
         customerId,
-        deletedAt: null
+        deletedAt: null,
+        voidedAt: null  // Exclude voided payments
       },
       orderBy: { paymentDate: 'asc' }
     });
 
     for (const payment of payments) {
       ledgerEntries.push({
+        id: `payment-${payment.id}`,
         date: payment.paymentDate,
         type: 'Payment',
         reference: payment.paymentNumber,
         description: `Payment ${payment.paymentMethod}`,
-        amount: -payment.amount, // Negative for payments
+        amount: -parseFloat(payment.amount), // Negative for payments
         balance: 0 // Will be calculated below
       });
     }
@@ -915,17 +931,18 @@ class FinanceService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = customer.openingBalance || 0;
+    let runningBalance = parseFloat(customer.openingBalance) || 0;
 
     // Add opening balance entry if it exists
     if (customer.openingBalance && customer.openingBalance !== 0) {
       ledgerEntries.unshift({
+        id: 'opening-balance',
         date: customer.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: customer.openingBalance,
-        balance: customer.openingBalance
+        amount: parseFloat(customer.openingBalance),
+        balance: parseFloat(customer.openingBalance)
       });
     }
 
@@ -954,27 +971,7 @@ class FinanceService {
     // Get all financial transactions for this vendor
     const ledgerEntries = [];
 
-    // Get purchase orders
-    const purchaseOrders = await db.prisma.purchaseOrder.findMany({
-      where: {
-        vendorId,
-        deletedAt: null
-      },
-      orderBy: { createdAt: 'asc' }
-    });
-
-    for (const po of purchaseOrders) {
-      ledgerEntries.push({
-        date: po.createdAt,
-        type: 'Purchase Order',
-        reference: po.poNumber,
-        description: `Purchase Order ${po.poNumber}`,
-        amount: po.total,
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Get vendor bills
+    // Get vendor bills (not POs - bills represent the actual financial obligation)
     const bills = await db.prisma.bill.findMany({
       where: {
         vendorId,
@@ -989,7 +986,7 @@ class FinanceService {
         type: 'Bill',
         reference: bill.billNumber,
         description: `Bill ${bill.billNumber}`,
-        amount: bill.total,
+        amount: parseFloat(bill.total),
         balance: 0 // Will be calculated below
       });
     }
@@ -1009,7 +1006,7 @@ class FinanceService {
         type: 'Payment',
         reference: payment.paymentNumber,
         description: `Payment ${payment.method}`,
-        amount: -payment.amount, // Negative for payments (reduces what we owe)
+        amount: -parseFloat(payment.amount), // Negative for payments (reduces what we owe)
         balance: 0 // Will be calculated below
       });
     }
@@ -1017,7 +1014,7 @@ class FinanceService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = vendor.openingBalance || 0;
+    let runningBalance = parseFloat(vendor.openingBalance) || 0;
 
     // Add opening balance entry if it exists
     if (vendor.openingBalance && vendor.openingBalance !== 0) {
@@ -1026,8 +1023,8 @@ class FinanceService {
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: vendor.openingBalance,
-        balance: vendor.openingBalance
+        amount: parseFloat(vendor.openingBalance),
+        balance: parseFloat(vendor.openingBalance)
       });
     }
 
