@@ -22,17 +22,55 @@ async function main() {
     }
   });
 
-  const adminRole = await prisma.role.upsert({
+  const operatorRole = await prisma.role.upsert({
     where: { name: 'Financial + Inventory Operator' },
     update: {},
     create: {
       name: 'Financial + Inventory Operator',
-      description: 'Full access to all modules',
+      description: 'Full access to inventory and finance modules',
       permissions: [
         'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
         'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
+        'reports.view', 'reports.export'
+      ]
+    }
+  });
+
+  // Create Admin role with full system access
+  const adminRole = await prisma.role.upsert({
+    where: { name: 'Admin' },
+    update: {
+      permissions: [
+        // Inventory permissions
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
+        // Finance permissions
+        'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
+        // Reports permissions
         'reports.view', 'reports.export',
-        'users.view', 'users.create', 'users.edit', 'users.delete'
+        // User management permissions
+        'users.view', 'users.create', 'users.edit', 'users.delete',
+        // Role management permissions
+        'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
+        // Settings management permissions
+        'settings.view', 'settings.edit'
+      ]
+    },
+    create: {
+      name: 'Admin',
+      description: 'Administrator with full system access including user management, roles, and settings',
+      permissions: [
+        // Inventory permissions
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
+        // Finance permissions
+        'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
+        // Reports permissions
+        'reports.view', 'reports.export',
+        // User management permissions
+        'users.view', 'users.create', 'users.edit', 'users.delete',
+        // Role management permissions
+        'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
+        // Settings management permissions
+        'settings.view', 'settings.edit'
       ]
     }
   });

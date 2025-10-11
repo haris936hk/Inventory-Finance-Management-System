@@ -22,21 +22,12 @@ const DEFAULT_SETTINGS = {
   finance: {
     defaultPaymentTerms: 30,
     taxRate: 0,
-    invoicePrefix: 'INV',
-    invoiceStartNumber: 1000,
-    openingCashBalance: 0,
-    fiscalYearStart: '2025-01-01'
+    openingCashBalance: 0
   },
   notifications: {
     lowStockAlerts: true,
     paymentReminders: true,
-    systemUpdates: true,
-    emailNotifications: true
-  },
-  backup: {
-    autoBackup: true,
-    backupFrequency: 'daily',
-    retentionDays: 30
+    systemUpdates: true
   }
 };
 
@@ -168,32 +159,14 @@ class SettingsService {
         break;
 
       case 'finance':
-        if (!value.defaultPaymentTerms || value.defaultPaymentTerms < 0 || value.defaultPaymentTerms > 365) {
+        if (value.defaultPaymentTerms === undefined || value.defaultPaymentTerms < 0 || value.defaultPaymentTerms > 365) {
           throw new Error('Default payment terms must be between 0 and 365 days');
         }
-        if (!value.invoicePrefix || value.invoicePrefix.trim() === '') {
-          throw new Error('Invoice prefix is required');
-        }
-        if (!value.invoiceStartNumber || value.invoiceStartNumber < 1) {
-          throw new Error('Invoice start number must be at least 1');
-        }
-        if (value.taxRate < 0 || value.taxRate > 100) {
+        if (value.taxRate === undefined || value.taxRate < 0 || value.taxRate > 100) {
           throw new Error('Tax rate must be between 0 and 100');
         }
         if (value.openingCashBalance !== undefined && value.openingCashBalance < 0) {
           throw new Error('Opening cash balance cannot be negative');
-        }
-        if (value.fiscalYearStart && !this.isValidDate(value.fiscalYearStart)) {
-          throw new Error('Invalid fiscal year start date format (use YYYY-MM-DD)');
-        }
-        break;
-
-      case 'backup':
-        if (!['daily', 'weekly', 'monthly'].includes(value.backupFrequency)) {
-          throw new Error('Invalid backup frequency');
-        }
-        if (value.retentionDays < 1 || value.retentionDays > 365) {
-          throw new Error('Retention days must be between 1 and 365');
         }
         break;
 

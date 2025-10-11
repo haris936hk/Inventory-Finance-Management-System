@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Card, Tabs, Form, Input, Switch, Button, Select,
-  message, Space, Divider, InputNumber, Upload,
+  message, Space, Divider, InputNumber,
   Row, Col, Typography, Alert, Descriptions, Tag
 } from 'antd';
 import {
@@ -9,7 +9,6 @@ import {
   DatabaseOutlined,
   BellOutlined,
   SecurityScanOutlined,
-  UploadOutlined,
   SaveOutlined,
   ReloadOutlined,
   EditOutlined,
@@ -48,22 +47,13 @@ const Settings = () => {
         finance: {
           defaultPaymentTerms: 30,
           taxRate: 0,
-          invoicePrefix: 'INV',
-          invoiceStartNumber: 1000,
-          openingCashBalance: 0,
-          fiscalYearStart: '2025-01-01'
+          openingCashBalance: 0
         },
         notifications: {
           lowStockAlerts: true,
           paymentReminders: true,
-          systemUpdates: true,
-          emailNotifications: true
+          systemUpdates: true
         },
-        backup: {
-          autoBackup: true,
-          backupFrequency: 'daily',
-          retentionDays: 30
-        }
       };
     }
   });
@@ -100,25 +90,6 @@ const Settings = () => {
     setIsEditMode(false);
     form.setFieldsValue(settings);
     message.info('Changes cancelled');
-  };
-
-  const handleExportSettings = async () => {
-    try {
-      const response = await axios.get('/settings/export', {
-        responseType: 'blob'
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `settings-${new Date().toISOString().split('T')[0]}.json`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      message.success('Settings exported successfully');
-    } catch (error) {
-      message.error('Failed to export settings');
-    }
   };
 
   const getLanguageLabel = (lang) => {
@@ -310,25 +281,6 @@ const Settings = () => {
             >
               <InputNumber min={0} max={100} step={0.1} style={{ width: '100%' }} />
             </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item
-              label="Invoice Prefix"
-              name={['finance', 'invoicePrefix']}
-              rules={[{ required: true, message: 'Invoice prefix is required' }]}
-            >
-              <Input placeholder="e.g., INV" />
-            </Form.Item>
-
-            <Form.Item
-              label="Invoice Start Number"
-              name={['finance', 'invoiceStartNumber']}
-              rules={[{ required: true, message: 'Invoice start number is required' }]}
-            >
-              <InputNumber min={1} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Divider />
 
             <Form.Item
               label="Opening Cash Balance (PKR)"
@@ -344,18 +296,18 @@ const Settings = () => {
                 parser={value => value.replace(/PKR\s?|(,*)/g, '')}
               />
             </Form.Item>
-
-            <Form.Item
-              label="Fiscal Year Start Date"
-              name={['finance', 'fiscalYearStart']}
-            >
-              <Input type="date" style={{ width: '100%' }} />
-            </Form.Item>
-
+          </Col>
+          <Col span={12}>
             <Alert
               message="Finance Settings"
               description="Configure default financial settings for invoicing and payment processing."
               type="info"
+              showIcon
+            />
+            <Alert
+              message="Fiscal Year Information"
+              description="The fiscal year starts on July 1st every year. This is a fixed setting and cannot be changed."
+              type="warning"
               showIcon
               style={{ marginTop: 16 }}
             />
@@ -371,17 +323,11 @@ const Settings = () => {
               <Descriptions.Item label="Default Tax Rate">
                 <Text strong>{settings?.finance?.taxRate}%</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Invoice Prefix">
-                <Text strong>{settings?.finance?.invoicePrefix}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Invoice Start Number">
-                <Text strong>{settings?.finance?.invoiceStartNumber}</Text>
-              </Descriptions.Item>
               <Descriptions.Item label="Opening Cash Balance">
                 <Text strong>PKR {(settings?.finance?.openingCashBalance || 0).toLocaleString()}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Fiscal Year Start">
-                <Text strong>{settings?.finance?.fiscalYearStart || '2025-01-01'}</Text>
+                <Text strong>July 1st (Fixed)</Text>
               </Descriptions.Item>
             </Descriptions>
           </Col>
@@ -393,8 +339,8 @@ const Settings = () => {
               showIcon
             />
             <Alert
-              message="Opening Cash Balance"
-              description="This represents the cash your business had before using this system. Leave as 0 if you started from zero, or set it to your actual starting cash balance."
+              message="Fiscal Year Information"
+              description="The fiscal year starts on July 1st every year. This is a fixed setting and cannot be changed."
               type="warning"
               showIcon
               style={{ marginTop: 16 }}
@@ -429,8 +375,7 @@ const Settings = () => {
             >
               <Switch />
             </Form.Item>
-          </Col>
-          <Col span={12}>
+
             <Form.Item
               label="System Updates"
               name={['notifications', 'systemUpdates']}
@@ -438,14 +383,8 @@ const Settings = () => {
             >
               <Switch />
             </Form.Item>
-
-            <Form.Item
-              label="Email Notifications"
-              name={['notifications', 'emailNotifications']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
+          </Col>
+          <Col span={12}>
           </Col>
         </Row>
       ) : (
@@ -467,129 +406,7 @@ const Settings = () => {
                   {settings?.notifications?.systemUpdates ? 'Enabled' : 'Disabled'}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Email Notifications">
-                <Tag color={settings?.notifications?.emailNotifications ? 'green' : 'red'}>
-                  {settings?.notifications?.emailNotifications ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
             </Descriptions>
-          </Col>
-        </Row>
-      )
-    },
-    {
-      key: 'backup',
-      label: (
-        <span>
-          <UploadOutlined />
-          Backup
-        </span>
-      ),
-      children: isEditMode ? (
-        <Row gutter={24}>
-          <Col span={12}>
-            <Form.Item
-              label="Auto Backup"
-              name={['backup', 'autoBackup']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item
-              label="Backup Frequency"
-              name={['backup', 'backupFrequency']}
-            >
-              <Select placeholder="Select frequency">
-                <Select.Option value="daily">Daily</Select.Option>
-                <Select.Option value="weekly">Weekly</Select.Option>
-                <Select.Option value="monthly">Monthly</Select.Option>
-              </Select>
-            </Form.Item>
-
-            <Form.Item
-              label="Retention Period (Days)"
-              name={['backup', 'retentionDays']}
-            >
-              <InputNumber min={1} max={365} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Button
-                type="default"
-                icon={<UploadOutlined />}
-                onClick={handleExportSettings}
-              >
-                Export Settings
-              </Button>
-
-              <Upload
-                accept=".json"
-                showUploadList={false}
-                beforeUpload={(file) => {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                    try {
-                      const importedSettings = JSON.parse(e.target.result);
-                      form.setFieldsValue(importedSettings);
-                      message.success('Settings imported successfully');
-                    } catch (error) {
-                      message.error('Invalid settings file');
-                    }
-                  };
-                  reader.readAsText(file);
-                  return false;
-                }}
-              >
-                <Button icon={<UploadOutlined />}>
-                  Import Settings
-                </Button>
-              </Upload>
-
-              <Alert
-                message="Backup & Restore"
-                description="Configure automatic backups and manage settings import/export."
-                type="warning"
-                showIcon
-              />
-            </Space>
-          </Col>
-        </Row>
-      ) : (
-        <Row gutter={24}>
-          <Col span={12}>
-            <Descriptions column={1} bordered>
-              <Descriptions.Item label="Auto Backup">
-                <Tag color={settings?.backup?.autoBackup ? 'green' : 'red'}>
-                  {settings?.backup?.autoBackup ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Backup Frequency">
-                <Text strong>{settings?.backup?.backupFrequency?.charAt(0).toUpperCase() + settings?.backup?.backupFrequency?.slice(1)}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Retention Period">
-                <Text strong>{settings?.backup?.retentionDays} Days</Text>
-              </Descriptions.Item>
-            </Descriptions>
-          </Col>
-          <Col span={12}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Button
-                type="default"
-                icon={<UploadOutlined />}
-                onClick={handleExportSettings}
-              >
-                Export Settings
-              </Button>
-
-              <Alert
-                message="Backup & Restore"
-                description="Configure automatic backups and manage settings import/export."
-                type="warning"
-                showIcon
-              />
-            </Space>
           </Col>
         </Row>
       )
