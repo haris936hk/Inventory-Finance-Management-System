@@ -1,18 +1,11 @@
 // ========== src/components/ProfileModal.jsx ==========
 import React from 'react';
 import { Modal, Descriptions, Avatar, Button, Space, Tag } from 'antd';
-import { UserOutlined, EditOutlined, MailOutlined, PhoneOutlined, SafetyOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { UserOutlined, MailOutlined, PhoneOutlined, SafetyOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 
 const ProfileModal = ({ visible, onClose }) => {
-  const navigate = useNavigate();
   const { user } = useAuthStore();
-
-  const handleEditProfile = () => {
-    onClose();
-    navigate('/app/profile');
-  };
 
   const getRoleBadgeColor = (role) => {
     const colors = {
@@ -41,15 +34,7 @@ const ProfileModal = ({ visible, onClose }) => {
       footer={[
         <Button key="close" onClick={onClose}>
           Close
-        </Button>,
-        <Button
-          key="edit"
-          type="primary"
-          icon={<EditOutlined />}
-          onClick={handleEditProfile}
-        >
-          Edit Profile
-        </Button>,
+        </Button>
       ]}
       width={600}
     >

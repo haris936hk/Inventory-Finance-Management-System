@@ -9,27 +9,27 @@ const {
   importSettings,
   resetSettings
 } = require('../controllers/settingsController');
-const { protect } = require('../middleware/auth');
+const { protect, hasPermission } = require('../middleware/auth');
 
 // All settings routes require authentication
 router.use(protect);
 
-// Get all settings
-router.get('/', getSettings);
+// Get all settings (anyone can view)
+router.get('/', hasPermission(['settings.view']), getSettings);
 
 // Get settings by key
-router.get('/:key', getSettingsByKey);
+router.get('/:key', hasPermission(['settings.view']), getSettingsByKey);
 
-// Update settings
-router.put('/', updateSettings);
+// Update settings (admin only)
+router.put('/', hasPermission(['settings.edit']), updateSettings);
 
-// Export settings
-router.get('/export', exportSettings);
+// Export settings (admin only)
+router.get('/export', hasPermission(['settings.view']), exportSettings);
 
-// Import settings
-router.post('/import', importSettings);
+// Import settings (admin only)
+router.post('/import', hasPermission(['settings.edit']), importSettings);
 
-// Reset settings to defaults
-router.post('/reset', resetSettings);
+// Reset settings to defaults (admin only)
+router.post('/reset', hasPermission(['settings.edit']), resetSettings);
 
 module.exports = router;

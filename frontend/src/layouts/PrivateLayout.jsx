@@ -157,24 +157,31 @@ const PrivateLayout = () => {
       });
     }
 
-    // Settings (Admin only)
-    if (hasPermission('users.view')) {
+    // Settings
+    if (hasPermission('settings.view')) {
+      const settingsChildren = [];
+
+      // Users submenu (Admin only)
+      if (hasPermission('users.view')) {
+        settingsChildren.push({
+          key: '/app/settings/users',
+          icon: <UserOutlined />,
+          label: 'Users',
+        });
+      }
+
+      // General settings (all authenticated users can view)
+      settingsChildren.push({
+        key: '/app/settings',
+        icon: <SettingOutlined />,
+        label: 'General',
+      });
+
       items.push({
         key: 'settings',
         icon: <SettingOutlined />,
         label: 'Settings',
-        children: [
-          {
-            key: '/app/settings/users',
-            icon: <UserOutlined />,
-            label: 'Users',
-          },
-          {
-            key: '/app/settings',
-            icon: <SettingOutlined />,
-            label: 'General',
-          },
-        ],
+        children: settingsChildren,
       });
     }
 

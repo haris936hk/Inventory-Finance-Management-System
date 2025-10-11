@@ -52,6 +52,12 @@ const PurchaseOrders = () => {
     return response.data.data;
   });
 
+  // Fetch settings for default tax rate
+  const { data: settings } = useQuery('settings', async () => {
+    const response = await axios.get('/settings');
+    return response.data.data;
+  });
+
   // Calculate statistics
   const statistics = React.useMemo(() => {
     if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
@@ -588,7 +594,7 @@ const PurchaseOrders = () => {
           initialValues={{
             orderDate: dayjs(),
             status: 'Draft',
-            taxRate: 0
+            taxRate: settings?.finance?.taxRate || 0
           }}
         >
           <Form.Item

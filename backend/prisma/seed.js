@@ -9,7 +9,15 @@ async function main() {
   // Create roles
   const inventoryRole = await prisma.role.upsert({
     where: { name: 'Inventory Operator' },
-    update: {},
+    update: {
+      permissions: [
+        'inventory.view',
+        'inventory.create',
+        'inventory.edit',
+        'reports.view',
+        'settings.view'  // Can only view settings, not edit
+      ]
+    },
     create: {
       name: 'Inventory Operator',
       description: 'Access to inventory module only',
@@ -17,21 +25,30 @@ async function main() {
         'inventory.view',
         'inventory.create',
         'inventory.edit',
-        'reports.view'
+        'reports.view',
+        'settings.view'  // Can only view settings, not edit
       ]
     }
   });
 
   const operatorRole = await prisma.role.upsert({
     where: { name: 'Financial + Inventory Operator' },
-    update: {},
+    update: {
+      permissions: [
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
+        'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
+        'reports.view', 'reports.export',
+        'settings.view'  // Can only view settings, not edit
+      ]
+    },
     create: {
       name: 'Financial + Inventory Operator',
       description: 'Full access to inventory and finance modules',
       permissions: [
         'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
         'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
-        'reports.view', 'reports.export'
+        'reports.view', 'reports.export',
+        'settings.view'  // Can only view settings, not edit
       ]
     }
   });
@@ -77,10 +94,12 @@ async function main() {
 
   // Create admin user
   const hashedPassword = await bcrypt.hash('admin123', 10);
-  
+
   const adminUser = await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
+    update: {
+      roleId: adminRole.id  // Update to Admin role if exists
+    },
     create: {
       username: 'admin',
       password: hashedPassword,
@@ -89,6 +108,10 @@ async function main() {
       roleId: adminRole.id
     }
   });
+
+  console.log('✅ Admin user created with Admin role');
+  console.log('   Username: admin');
+  console.log('   Password: admin123');
 
   // Create product categories
   const categories = [

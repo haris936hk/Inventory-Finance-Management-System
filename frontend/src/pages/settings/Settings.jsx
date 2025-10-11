@@ -17,6 +17,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import { useAuthStore } from '../../stores/authStore';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -26,6 +27,7 @@ const Settings = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const { hasPermission } = useAuthStore();
 
   const { data: settings, isLoading } = useQuery('settings', async () => {
     try {
@@ -428,34 +430,36 @@ const Settings = () => {
         </Space>
       }
       extra={
-        <Space>
-          {isEditMode ? (
-            <>
-              <Button
-                icon={<CloseOutlined />}
-                onClick={handleCancel}
-              >
-                Cancel
-              </Button>
+        hasPermission('settings.edit') && (
+          <Space>
+            {isEditMode ? (
+              <>
+                <Button
+                  icon={<CloseOutlined />}
+                  onClick={handleCancel}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  loading={loading}
+                  onClick={() => form.submit()}
+                >
+                  Save Settings
+                </Button>
+              </>
+            ) : (
               <Button
                 type="primary"
-                icon={<SaveOutlined />}
-                loading={loading}
-                onClick={() => form.submit()}
+                icon={<EditOutlined />}
+                onClick={handleEdit}
               >
-                Save Settings
+                Edit Settings
               </Button>
-            </>
-          ) : (
-            <Button
-              type="primary"
-              icon={<EditOutlined />}
-              onClick={handleEdit}
-            >
-              Edit Settings
-            </Button>
-          )}
-        </Space>
+            )}
+          </Space>
+        )
       }
     >
       <Form

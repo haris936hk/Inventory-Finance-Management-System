@@ -46,6 +46,12 @@ const CreateInvoice = () => {
     return response.data.data;
   });
 
+  // Fetch settings for default tax rate
+  const { data: settings } = useQuery('settings', async () => {
+    const response = await axios.get('/settings');
+    return response.data.data;
+  });
+
   // Create invoice mutation
   const createInvoiceMutation = useMutation(
     (data) => axios.post('/finance/invoices', data),
@@ -154,7 +160,7 @@ const CreateInvoice = () => {
           initialValues={{
             invoiceDate: dayjs(),
             dueDate: dayjs().add(30, 'days'),
-            taxRate: 0,
+            taxRate: settings?.finance?.taxRate || 0,
             discountValue: 0
           }}
         >
