@@ -71,6 +71,16 @@ router.get('/vendor-bills-aging',
   reportController.getVendorBillsAging
 );
 
+router.get('/inventory-turnover',
+  hasPermission(['reports.view']),
+  reportController.getInventoryTurnover
+);
+
+router.get('/gross-profit-margin',
+  hasPermission(['reports.view']),
+  reportController.getGrossProfitMargin
+);
+
 // Export
 router.post('/export',
   hasPermission(['reports.export']),

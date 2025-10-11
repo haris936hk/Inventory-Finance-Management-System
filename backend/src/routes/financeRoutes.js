@@ -51,6 +51,12 @@ router.post('/invoices/:id/cancel',
   financeController.cancelInvoice
 );
 
+// Generate invoice PDF
+router.get('/invoices/:id/pdf',
+  hasPermission(['finance.view']),
+  financeController.generateInvoicePDF
+);
+
 // Payment routes
 router.route('/payments')
   .get(hasPermission(['finance.view']), financeController.getPayments)
@@ -86,6 +92,12 @@ router.get('/purchase-orders/:id/items',
   financeController.getPurchaseOrderItems
 );
 
+// Generate purchase order PDF
+router.get('/purchase-orders/:id/pdf',
+  hasPermission(['finance.view']),
+  financeController.generatePurchaseOrderPDF
+);
+
 // Vendor Bills routes
 router.route('/vendor-bills')
   .get(hasPermission(['finance.view']), financeController.getVendorBills)
@@ -113,6 +125,12 @@ router.put('/vendor-bills/:id/status',
   financeController.updateVendorBillStatus
 );
 
+// Generate vendor bill PDF
+router.get('/vendor-bills/:id/pdf',
+  hasPermission(['finance.view']),
+  financeController.generateVendorBillPDF
+);
+
 // Vendor Payments routes
 router.route('/vendor-payments')
   .get(hasPermission(['finance.view']), financeController.getVendorPayments)
@@ -122,12 +140,6 @@ router.route('/vendor-payments')
 router.post('/vendor-payments/:id/void',
   hasPermission(['finance.edit']),
   financeController.voidVendorPayment);
-
-// Installment Plan routes
-router.post('/installment-plans',
-  hasPermission(['finance.create']),
-  financeController.createInstallmentPlan
-);
 
 // Report routes
 router.get('/reports/aging',

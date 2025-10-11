@@ -6,6 +6,7 @@ const billService = require('../services/billService');
 const paymentService = require('../services/paymentService');
 const invoiceService = require('../services/invoiceService');
 const customerPaymentService = require('../services/customerPaymentService');
+const pdfService = require('../services/pdfService');
 const { ValidationError } = require('../utils/transactionWrapper');
 
 // ============= CUSTOMERS =============
@@ -614,87 +615,6 @@ const voidVendorPayment = asyncHandler(async (req, res) => {
 // @desc    Create installment plan
 // @route   POST /api/finance/installment-plans
 // @access  Private
-const createInstallmentPlan = asyncHandler(async (req, res) => {
-  const db = require('../config/database');
-
-  const {
-    invoiceId,
-    downPayment,
-    numberOfInstallments,
-    intervalType
-  } = req.body;
-
-  // Get invoice
-  const invoice = await db.prisma.invoice.findUnique({
-    where: { id: invoiceId }
-  });
-
-  if (!invoice) {
-    res.status(404);
-    throw new Error('Invoice not found');
-  }
-
-  const totalAmount = parseFloat(invoice.total);
-  const remainingAmount = totalAmount - (downPayment || 0);
-  const installmentAmount = remainingAmount / numberOfInstallments;
-
-  // Calculate installment dates
-  const installments = [];
-  const startDate = new Date();
-
-  for (let i = 0; i < numberOfInstallments; i++) {
-    const dueDate = new Date(startDate);
-
-    switch (intervalType) {
-      case 'Monthly':
-        dueDate.setMonth(dueDate.getMonth() + (i + 1));
-        break;
-      case 'Weekly':
-        dueDate.setDate(dueDate.getDate() + ((i + 1) * 7));
-        break;
-      case 'Quarterly':
-        dueDate.setMonth(dueDate.getMonth() + ((i + 1) * 3));
-        break;
-    }
-
-    installments.push({
-      installmentNumber: i + 1,
-      dueDate,
-      amount: installmentAmount,
-      status: 'Pending'
-    });
-  }
-
-  const plan = await db.prisma.installmentPlan.create({
-    data: {
-      totalAmount,
-      downPayment: downPayment || 0,
-      numberOfInstallments,
-      intervalType,
-      startDate,
-      invoiceId,
-      installments: {
-        create: installments
-      }
-    },
-    include: {
-      installments: {
-        orderBy: { installmentNumber: 'asc' }
-      }
-    }
-  });
-
-  // Update invoice
-  await db.prisma.invoice.update({
-    where: { id: invoiceId },
-    data: { hasInstallment: true }
-  });
-
-  res.status(201).json({
-    success: true,
-    data: plan
-  });
-});
 
 // ============= STATEMENTS & REPORTS =============
 
@@ -724,6 +644,62 @@ const getAgingReport = asyncHandler(async (req, res) => {
     success: true,
     data: report
   });
+});
+
+// ============= PDF GENERATION =============
+
+// @desc    Generate invoice PDF
+// @route   GET /api/finance/invoices/:id/pdf
+// @access  Private
+const generateInvoicePDF = asyncHandler(async (req, res) => {
+  const invoice = await invoiceService.getInvoiceById(req.params.id);
+
+  if (!invoice) {
+    res.status(404);
+    throw new Error('Invoice not found');
+  }
+
+  const { buffer } = await pdfService.generateInvoice(invoice);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="invoice_${invoice.invoiceNumber}.pdf"`);
+  res.send(buffer);
+});
+
+// @desc    Generate purchase order PDF
+// @route   GET /api/finance/purchase-orders/:id/pdf
+// @access  Private
+const generatePurchaseOrderPDF = asyncHandler(async (req, res) => {
+  const purchaseOrder = await purchaseOrderService.getPurchaseOrderById(req.params.id);
+
+  if (!purchaseOrder) {
+    res.status(404);
+    throw new Error('Purchase order not found');
+  }
+
+  const { buffer } = await pdfService.generatePurchaseOrder(purchaseOrder);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="purchase_order_${purchaseOrder.poNumber}.pdf"`);
+  res.send(buffer);
+});
+
+// @desc    Generate vendor bill PDF
+// @route   GET /api/finance/vendor-bills/:id/pdf
+// @access  Private
+const generateVendorBillPDF = asyncHandler(async (req, res) => {
+  const bill = await billService.getBillById(req.params.id);
+
+  if (!bill) {
+    res.status(404);
+    throw new Error('Vendor bill not found');
+  }
+
+  const { buffer } = await pdfService.generateVendorBill(bill);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="vendor_bill_${bill.billNumber}.pdf"`);
+  res.send(buffer);
 });
 
 module.exports = {
@@ -767,9 +743,11 @@ module.exports = {
   getVendorPayments,
   recordVendorPayment,
   voidVendorPayment,
-  // Installments
-  createInstallmentPlan,
   // Reports
   getCustomerStatement,
-  getAgingReport
+  getAgingReport,
+  // PDF Generation
+  generateInvoicePDF,
+  generatePurchaseOrderPDF,
+  generateVendorBillPDF
 };

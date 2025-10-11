@@ -21,7 +21,6 @@ const DEFAULT_SETTINGS = {
   },
   finance: {
     defaultPaymentTerms: 30,
-    enableInstallments: true,
     taxRate: 0,
     invoicePrefix: 'INV',
     invoiceStartNumber: 1000,

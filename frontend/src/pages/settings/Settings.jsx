@@ -47,7 +47,6 @@ const Settings = () => {
         },
         finance: {
           defaultPaymentTerms: 30,
-          enableInstallments: true,
           taxRate: 0,
           invoicePrefix: 'INV',
           invoiceStartNumber: 1000,
@@ -306,14 +305,6 @@ const Settings = () => {
             </Form.Item>
 
             <Form.Item
-              label="Enable Installments"
-              name={['finance', 'enableInstallments']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item
               label="Default Tax Rate (%)"
               name={['finance', 'taxRate']}
             >
@@ -376,11 +367,6 @@ const Settings = () => {
             <Descriptions column={1} bordered>
               <Descriptions.Item label="Default Payment Terms">
                 <Text strong>{settings?.finance?.defaultPaymentTerms} Days</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Enable Installments">
-                <Tag color={settings?.finance?.enableInstallments ? 'green' : 'red'}>
-                  {settings?.finance?.enableInstallments ? 'Enabled' : 'Disabled'}
-                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Default Tax Rate">
                 <Text strong>{settings?.finance?.taxRate}%</Text>

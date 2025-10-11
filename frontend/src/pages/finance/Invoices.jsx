@@ -7,9 +7,9 @@ import {
 } from 'antd';
 const { TextArea } = Input;
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
+  PlusOutlined, SearchOutlined, FilterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, DollarOutlined,
-  MailOutlined, FilePdfOutlined, MoreOutlined
+  FilePdfOutlined, MoreOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -103,10 +103,6 @@ const Invoices = () => {
     } catch (error) {
       message.error('Failed to generate PDF');
     }
-  };
-
-  const handleSendInvoice = (invoice) => {
-    message.info('Email functionality not configured');
   };
 
   const handleCancelInvoice = (record) => {
@@ -263,17 +259,28 @@ const Invoices = () => {
             disabled: record.status === 'Paid'
           },
           {
-            key: 'print',
-            label: 'Print Invoice',
+            key: 'download-pdf',
+            label: 'Download PDF',
             icon: <FilePdfOutlined />,
-            onClick: () => window.open(`/print/invoices/${record.id}`, '_blank')
-          },
-          {
-            key: 'send',
-            label: 'Send Email',
-            icon: <MailOutlined />,
-            onClick: () => handleSendInvoice(record),
-            disabled: record.status === 'Draft'
+            onClick: async () => {
+              try {
+                message.loading({ content: 'Generating PDF...', key: 'pdf' });
+                const response = await axios.get(`/finance/invoices/${record.id}/pdf`, {
+                  responseType: 'blob'
+                });
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `invoice_${record.invoiceNumber}.pdf`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+                message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+              } catch (error) {
+                message.error({ content: 'Failed to download PDF', key: 'pdf' });
+              }
+            }
           },
           { type: 'divider' },
           {

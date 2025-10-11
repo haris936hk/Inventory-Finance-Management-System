@@ -1,11 +1,16 @@
 // ========== src/services/pdfService.js ==========
 const PDFDocument = require('pdfkit');
 const supabaseStorage = require('../config/supabase');
+const settingsService = require('./settingsService');
 
 class PDFService {
   async generateInvoice(invoice) {
     return new Promise(async (resolve, reject) => {
       try {
+        // Fetch company settings
+        const settings = await settingsService.getSettings();
+        const companyInfo = settings.general || {};
+
         const doc = new PDFDocument({ margin: 50 });
         const chunks = [];
 
@@ -13,7 +18,7 @@ class PDFService {
         doc.on('data', chunk => chunks.push(chunk));
         doc.on('end', async () => {
           const pdfBuffer = Buffer.concat(chunks);
-          
+
           // Upload to Supabase
           const filename = `invoice_${invoice.invoiceNumber}.pdf`;
           await supabaseStorage.upload(
@@ -34,11 +39,16 @@ class PDFService {
 
         // Company header
         doc.fontSize(20)
-           .text('YOUR COMPANY NAME', { align: 'center' })
+           .text(companyInfo.companyName || 'YOUR COMPANY NAME', { align: 'center' })
            .fontSize(10)
-           .text('Address: Your Company Address', { align: 'center' })
-           .text('Phone: +92-XXX-XXXXXXX | Email: info@company.com', { align: 'center' })
-           .moveDown(2);
+           .text(companyInfo.companyAddress ? `Address: ${companyInfo.companyAddress}` : 'Address: Your Company Address', { align: 'center' })
+           .text(`Phone: ${companyInfo.companyPhone || '+92-XXX-XXXXXXX'} | Email: ${companyInfo.companyEmail || 'info@company.com'}`, { align: 'center' });
+
+        if (companyInfo.companyFBR) {
+          doc.text(`FBR: ${companyInfo.companyFBR}`, { align: 'center' });
+        }
+
+        doc.moveDown(2);
 
         // Invoice title
         doc.fontSize(16)
@@ -300,7 +310,7 @@ class PDFService {
         doc.on('data', chunk => chunks.push(chunk));
         doc.on('end', async () => {
           const pdfBuffer = Buffer.concat(chunks);
-          
+
           const filename = `handover_${item.serialNumber}_${Date.now()}.pdf`;
           await supabaseStorage.upload(
             supabaseStorage.buckets.receipts,
@@ -336,7 +346,7 @@ class PDFService {
         doc.text(`Serial Number: ${item.serialNumber}`);
         doc.text(`Category: ${item.category.name}`);
         doc.text(`Model: ${item.model.company.name} ${item.model.name}`);
-        
+
         if (item.specifications) {
           doc.text(`Specifications: ${JSON.stringify(item.specifications)}`);
         }
@@ -346,7 +356,7 @@ class PDFService {
         doc.text('Handover Details:', { underline: true });
         doc.text(`Handed Over To: ${item.handoverTo}`);
         doc.text(`Handed Over By: ${item.handoverByUser.fullName}`);
-        
+
         if (item.handoverDetails) {
           doc.text(`Details: ${item.handoverDetails}`);
         }
@@ -367,12 +377,373 @@ class PDFService {
         // Signatures
         doc.moveDown(3);
         const signatureY = doc.y;
-        
+
         doc.text('_____________________', 30, signatureY);
         doc.text('Handed Over By', 30, signatureY + 15);
-        
+
         doc.text('_____________________', 250, signatureY);
         doc.text('Received By', 250, signatureY + 15);
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async generatePurchaseOrder(purchaseOrder) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Fetch company settings
+        const settings = await settingsService.getSettings();
+        const companyInfo = settings.general || {};
+
+        const doc = new PDFDocument({ margin: 50 });
+        const chunks = [];
+
+        // Collect PDF data
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', async () => {
+          const pdfBuffer = Buffer.concat(chunks);
+
+          // Upload to Supabase
+          const filename = `purchase_order_${purchaseOrder.poNumber}.pdf`;
+          await supabaseStorage.upload(
+            supabaseStorage.buckets.purchaseOrders,
+            filename,
+            pdfBuffer,
+            { contentType: 'application/pdf' }
+          );
+
+          const url = await supabaseStorage.createSignedUrl(
+            supabaseStorage.buckets.purchaseOrders,
+            filename,
+            3600
+          );
+
+          resolve({ filename, url, buffer: pdfBuffer });
+        });
+
+        // Company header
+        doc.fontSize(20)
+           .text(companyInfo.companyName || 'YOUR COMPANY NAME', { align: 'center' })
+           .fontSize(10)
+           .text(companyInfo.companyAddress ? `Address: ${companyInfo.companyAddress}` : 'Address: Your Company Address', { align: 'center' })
+           .text(`Phone: ${companyInfo.companyPhone || '+92-XXX-XXXXXXX'} | Email: ${companyInfo.companyEmail || 'info@company.com'}`, { align: 'center' });
+
+        if (companyInfo.companyFBR) {
+          doc.text(`FBR: ${companyInfo.companyFBR}`, { align: 'center' });
+        }
+
+        doc.moveDown(2);
+
+        // PO title
+        doc.fontSize(16)
+           .text('PURCHASE ORDER', { align: 'center', underline: true })
+           .moveDown();
+
+        // PO details
+        doc.fontSize(10);
+        const startY = doc.y;
+
+        // Left column - PO info
+        doc.text(`P.O. #: ${purchaseOrder.poNumber}`, 50, startY);
+        doc.text(`Date: ${new Date(purchaseOrder.orderDate).toLocaleDateString()}`, 50, startY + 15);
+        doc.text(`Status: ${purchaseOrder.status}`, 50, startY + 30);
+
+        // Right column - Vendor info
+        doc.text('Vendor:', 300, startY, { underline: true });
+        doc.text(purchaseOrder.vendor.name, 300, startY + 15);
+        if (purchaseOrder.vendor.contactPerson) {
+          doc.text(`Contact: ${purchaseOrder.vendor.contactPerson}`, 300, startY + 30);
+        }
+        doc.text(purchaseOrder.vendor.phone, 300, startY + 45);
+        if (purchaseOrder.vendor.address) {
+          doc.text(purchaseOrder.vendor.address, 300, startY + 60, { width: 200 });
+        }
+
+        doc.moveDown(4);
+
+        // Items table header
+        const tableTop = doc.y;
+        doc.rect(50, tableTop, 500, 20).fill('#f0f0f0').stroke();
+        doc.fillColor('black');
+
+        doc.fontSize(10)
+           .text('S.No', 55, tableTop + 5)
+           .text('Product/Service', 90, tableTop + 5)
+           .text('Description', 220, tableTop + 5)
+           .text('Qty', 350, tableTop + 5)
+           .text('Rate', 390, tableTop + 5)
+           .text('Amount', 450, tableTop + 5);
+
+        // Items
+        let currentY = tableTop + 25;
+        purchaseOrder.lineItems.forEach((item, index) => {
+          // Draw row background for alternating rows
+          if (index % 2 === 0) {
+            doc.rect(50, currentY - 5, 500, 20).fill('#fafafa').stroke();
+            doc.fillColor('black');
+          }
+
+          const productName = item.productModel
+            ? `${item.productModel.company?.name || ''} ${item.productModel.name}`
+            : 'Product';
+
+          doc.fontSize(9)
+             .text(index + 1, 55, currentY)
+             .text(productName, 90, currentY, { width: 120 })
+             .text(item.description || '-', 220, currentY, { width: 120 })
+             .text(item.quantity, 350, currentY)
+             .text(`PKR ${item.unitPrice}`, 390, currentY)
+             .text(`PKR ${item.totalPrice}`, 450, currentY);
+
+          currentY += 25;
+        });
+
+        // Draw bottom line
+        doc.moveTo(50, currentY).lineTo(550, currentY).stroke();
+        currentY += 10;
+
+        // Totals
+        doc.fontSize(10);
+        const totalsX = 400;
+
+        doc.text('Subtotal:', totalsX, currentY)
+           .text(`PKR ${purchaseOrder.subtotal}`, totalsX + 80, currentY);
+        currentY += 15;
+
+        if (purchaseOrder.taxAmount > 0) {
+          doc.text(`Tax (${purchaseOrder.taxRate}%):`, totalsX, currentY)
+             .text(`PKR ${purchaseOrder.taxAmount}`, totalsX + 80, currentY);
+          currentY += 15;
+        }
+
+        // Total
+        doc.fontSize(12)
+           .fillColor('#000')
+           .text('Total:', totalsX, currentY, { underline: true })
+           .text(`PKR ${purchaseOrder.total}`, totalsX + 80, currentY, { underline: true });
+        currentY += 20;
+
+        if (purchaseOrder.billedAmount > 0) {
+          doc.fontSize(10)
+             .text('Billed:', totalsX, currentY)
+             .text(`PKR ${purchaseOrder.billedAmount}`, totalsX + 80, currentY);
+          currentY += 15;
+
+          const remaining = purchaseOrder.total - purchaseOrder.billedAmount;
+          doc.text('Remaining:', totalsX, currentY)
+             .text(`PKR ${remaining}`, totalsX + 80, currentY);
+        }
+
+        // Notes
+        if (purchaseOrder.notes) {
+          doc.moveDown(2);
+          doc.fontSize(10)
+             .text('Notes:', 50, doc.y, { underline: true })
+             .fontSize(9)
+             .text(purchaseOrder.notes, 50, doc.y + 15, { width: 500 });
+        }
+
+        // Signature section
+        doc.moveDown(3);
+        const signatureY = doc.y;
+
+        doc.fontSize(10)
+           .text('_____________________', 50, signatureY)
+           .text('Authorized Signature', 50, signatureY + 20);
+
+        doc.text('_____________________', 350, signatureY)
+           .text('Date', 350, signatureY + 20);
+
+        // Footer
+        doc.fontSize(8)
+           .fillColor('#666')
+           .text('Thank you for your business!', 50, doc.page.height - 50, {
+             align: 'center',
+             width: 500
+           });
+
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async generateVendorBill(bill) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Fetch company settings
+        const settings = await settingsService.getSettings();
+        const companyInfo = settings.general || {};
+
+        const doc = new PDFDocument({ margin: 50 });
+        const chunks = [];
+
+        // Collect PDF data
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', async () => {
+          const pdfBuffer = Buffer.concat(chunks);
+
+          // Upload to Supabase
+          const filename = `vendor_bill_${bill.billNumber}.pdf`;
+          await supabaseStorage.upload(
+            supabaseStorage.buckets.bills,
+            filename,
+            pdfBuffer,
+            { contentType: 'application/pdf' }
+          );
+
+          const url = await supabaseStorage.createSignedUrl(
+            supabaseStorage.buckets.bills,
+            filename,
+            3600
+          );
+
+          resolve({ filename, url, buffer: pdfBuffer });
+        });
+
+        // Company header
+        doc.fontSize(20)
+           .text(companyInfo.companyName || 'YOUR COMPANY NAME', { align: 'center' })
+           .fontSize(10)
+           .text(companyInfo.companyAddress ? `Address: ${companyInfo.companyAddress}` : 'Address: Your Company Address', { align: 'center' })
+           .text(`Phone: ${companyInfo.companyPhone || '+92-XXX-XXXXXXX'} | Email: ${companyInfo.companyEmail || 'info@company.com'}`, { align: 'center' });
+
+        if (companyInfo.companyFBR) {
+          doc.text(`FBR: ${companyInfo.companyFBR}`, { align: 'center' });
+        }
+
+        doc.moveDown(2);
+
+        // Bill title
+        doc.fontSize(16)
+           .text('VENDOR BILL', { align: 'center', underline: true })
+           .moveDown();
+
+        // Bill details
+        doc.fontSize(10);
+        const startY = doc.y;
+
+        // Left column - Bill info
+        doc.text(`Bill #: ${bill.billNumber}`, 50, startY);
+        doc.text(`Date: ${new Date(bill.billDate).toLocaleDateString()}`, 50, startY + 15);
+        if (bill.dueDate) {
+          doc.text(`Due Date: ${new Date(bill.dueDate).toLocaleDateString()}`, 50, startY + 30);
+        }
+        doc.text(`Status: ${bill.status}`, 50, startY + 45);
+
+        // Right column - Vendor info
+        doc.text('Vendor:', 300, startY, { underline: true });
+        doc.text(bill.vendor.name, 300, startY + 15);
+        if (bill.vendor.contactPerson) {
+          doc.text(`Contact: ${bill.vendor.contactPerson}`, 300, startY + 30);
+        }
+        if (bill.vendor.phone) {
+          doc.text(bill.vendor.phone, 300, startY + 45);
+        }
+        if (bill.vendor.address) {
+          doc.text(bill.vendor.address, 300, startY + 60, { width: 200 });
+        }
+
+        doc.moveDown(4);
+
+        // Items table header
+        const tableTop = doc.y;
+        doc.rect(50, tableTop, 500, 20).fill('#f0f0f0').stroke();
+        doc.fillColor('black');
+
+        doc.fontSize(10)
+           .text('S.No', 55, tableTop + 5)
+           .text('Description', 90, tableTop + 5)
+           .text('Qty', 350, tableTop + 5)
+           .text('Rate', 390, tableTop + 5)
+           .text('Amount', 450, tableTop + 5);
+
+        // Items
+        let currentY = tableTop + 25;
+        bill.lineItems.forEach((item, index) => {
+          // Draw row background for alternating rows
+          if (index % 2 === 0) {
+            doc.rect(50, currentY - 5, 500, 20).fill('#fafafa').stroke();
+            doc.fillColor('black');
+          }
+
+          doc.fontSize(9)
+             .text(index + 1, 55, currentY)
+             .text(item.description || '-', 90, currentY, { width: 250 })
+             .text(item.quantity, 350, currentY)
+             .text(`PKR ${item.unitPrice}`, 390, currentY)
+             .text(`PKR ${item.totalPrice}`, 450, currentY);
+
+          currentY += 25;
+        });
+
+        // Draw bottom line
+        doc.moveTo(50, currentY).lineTo(550, currentY).stroke();
+        currentY += 10;
+
+        // Totals
+        doc.fontSize(10);
+        const totalsX = 400;
+
+        doc.text('Subtotal:', totalsX, currentY)
+           .text(`PKR ${bill.subtotal}`, totalsX + 80, currentY);
+        currentY += 15;
+
+        if (bill.taxAmount > 0) {
+          doc.text(`Tax (${bill.taxRate}%):`, totalsX, currentY)
+             .text(`PKR ${bill.taxAmount}`, totalsX + 80, currentY);
+          currentY += 15;
+        }
+
+        // Total
+        doc.fontSize(12)
+           .fillColor('#000')
+           .text('Total:', totalsX, currentY, { underline: true })
+           .text(`PKR ${bill.total}`, totalsX + 80, currentY, { underline: true });
+        currentY += 20;
+
+        if (bill.paidAmount > 0) {
+          doc.fontSize(10)
+             .text('Paid:', totalsX, currentY)
+             .text(`PKR ${bill.paidAmount}`, totalsX + 80, currentY);
+          currentY += 15;
+
+          const remaining = bill.total - bill.paidAmount;
+          doc.text('Remaining:', totalsX, currentY)
+             .text(`PKR ${remaining}`, totalsX + 80, currentY);
+        }
+
+        // Notes
+        if (bill.notes) {
+          doc.moveDown(2);
+          doc.fontSize(10)
+             .text('Notes:', 50, doc.y, { underline: true })
+             .fontSize(9)
+             .text(bill.notes, 50, doc.y + 15, { width: 500 });
+        }
+
+        // Signature section
+        doc.moveDown(3);
+        const signatureY = doc.y;
+
+        doc.fontSize(10)
+           .text('_____________________', 50, signatureY)
+           .text('Authorized Signature', 50, signatureY + 20);
+
+        doc.text('_____________________', 350, signatureY)
+           .text('Date', 350, signatureY + 20);
+
+        // Footer
+        doc.fontSize(8)
+           .fillColor('#666')
+           .text('Thank you for your business!', 50, doc.page.height - 50, {
+             align: 'center',
+             width: 500
+           });
 
         doc.end();
       } catch (error) {

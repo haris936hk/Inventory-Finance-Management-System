@@ -6,8 +6,8 @@ import {
   Select, DatePicker, InputNumber
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, PrinterOutlined, ShopOutlined,
-  CalendarOutlined, FileTextOutlined, DollarOutlined
+  ArrowLeftOutlined, EditOutlined, ShopOutlined,
+  CalendarOutlined, FileTextOutlined, DollarOutlined, FilePdfOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -133,6 +133,28 @@ const PurchaseOrderDetails = () => {
     }
 
     setModalVisible(true);
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      message.loading({ content: 'Generating PDF...', key: 'pdf' });
+      const response = await axios.get(`/finance/purchase-orders/${id}/pdf`, {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `purchase_order_${purchaseOrder.poNumber}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+    } catch (error) {
+      message.error({ content: 'Failed to generate PDF', key: 'pdf' });
+    }
   };
 
   const handleFormSubmit = (values) => {
@@ -354,8 +376,8 @@ const PurchaseOrderDetails = () => {
                 Receive Items
               </Button>
             )}
-            <Button icon={<PrinterOutlined />} onClick={() => window.open(`/print/purchase-orders/${id}`, '_blank')}>
-              Print
+            <Button icon={<FilePdfOutlined />} onClick={handleDownloadPDF}>
+              Download PDF
             </Button>
           </Space>
         </div>

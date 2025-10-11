@@ -4,7 +4,7 @@ import {
   Typography, Space, message, Spin
 } from 'antd';
 import {
-  DownloadOutlined, PrinterOutlined, ReloadOutlined
+  DownloadOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
@@ -250,9 +250,6 @@ const ProfitLossStatement = () => {
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport}>
               Export
-            </Button>
-            <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
-              Print
             </Button>
           </Space>
         }

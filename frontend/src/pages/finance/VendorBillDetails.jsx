@@ -6,9 +6,10 @@ import {
   Modal, Form, Select, DatePicker, InputNumber
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, PrinterOutlined, ShopOutlined,
+  ArrowLeftOutlined, EditOutlined, ShopOutlined,
   CalendarOutlined, FileTextOutlined, DollarOutlined, ExclamationCircleOutlined,
-  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined, InfoCircleOutlined
+  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined, InfoCircleOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -154,6 +155,28 @@ const VendorBillDetails = () => {
       total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
     };
     updateMutation.mutate(processedValues);
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      message.loading({ content: 'Generating PDF...', key: 'pdf' });
+      const response = await axios.get(`/finance/vendor-bills/${id}/pdf`, {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `vendor_bill_${vendorBill.billNumber}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+    } catch (error) {
+      message.error({ content: 'Failed to download PDF', key: 'pdf' });
+    }
   };
 
   if (isLoading) {
@@ -304,8 +327,8 @@ const VendorBillDetails = () => {
                 Record Payment
               </Button>
             )}
-            <Button icon={<PrinterOutlined />} onClick={() => window.open(`/print/vendor-bills/${vendorBill.id}`, '_blank')}>
-              Print
+            <Button icon={<FilePdfOutlined />} onClick={handleDownloadPDF}>
+              Download PDF
             </Button>
           </Space>
         </div>

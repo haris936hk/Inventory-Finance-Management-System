@@ -6,8 +6,8 @@ import {
   Divider, Statistic, Alert, Modal, message, Tabs, Timeline
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, DeleteOutlined, PrinterOutlined,
-  FilePdfOutlined, MailOutlined, DollarOutlined, CreditCardOutlined,
+  ArrowLeftOutlined, EditOutlined, DeleteOutlined,
+  FilePdfOutlined, DollarOutlined, CreditCardOutlined,
   CalendarOutlined, UserOutlined, PhoneOutlined, EnvironmentOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
@@ -124,6 +124,28 @@ const InvoiceDetails = () => {
     });
   };
 
+  const handleDownloadPDF = async () => {
+    try {
+      message.loading({ content: 'Generating PDF...', key: 'pdf' });
+      const response = await axios.get(`/finance/invoices/${id}/pdf`, {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `invoice_${invoice.invoiceNumber}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+    } catch (error) {
+      message.error({ content: 'Failed to generate PDF', key: 'pdf' });
+    }
+  };
+
   const lineItemColumns = [
     {
       title: 'Item',
@@ -231,17 +253,11 @@ const InvoiceDetails = () => {
             >
               {invoice.status}
             </Tag>
-            <Button 
-              icon={<PrinterOutlined />}
-              onClick={() => window.open(`/print/invoices/${id}`, '_blank')}
+            <Button
+              icon={<FilePdfOutlined />}
+              onClick={handleDownloadPDF}
             >
-              Print
-            </Button>
-            <Button icon={<FilePdfOutlined />}>
-              PDF
-            </Button>
-            <Button icon={<MailOutlined />}>
-              Email
+              Download PDF
             </Button>
             {hasPermission('finance.update') && invoice.status !== 'Paid' && (
               <Button
@@ -496,15 +512,9 @@ const InvoiceDetails = () => {
                 <Button
                   block
                   icon={<FilePdfOutlined />}
-                  onClick={() => window.open(`/print/invoices/${id}`, '_blank')}
+                  onClick={handleDownloadPDF}
                 >
-                  Print Invoice
-                </Button>
-                <Button
-                  block
-                  icon={<MailOutlined />}
-                >
-                  Send to Customer
+                  Download PDF
                 </Button>
                 <Button
                   block

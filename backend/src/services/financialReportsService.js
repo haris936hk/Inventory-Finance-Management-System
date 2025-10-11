@@ -869,6 +869,287 @@ class FinancialReportsService {
       }
     };
   }
+
+  // ===================== INVENTORY TURNOVER REPORT =====================
+  async generateInventoryTurnoverReport(startDate, endDate) {
+    try {
+      // Calculate COGS for the period
+      const cogs = await this.calculateCOGS(startDate, endDate);
+
+      // Calculate average inventory value
+      const beginningInventory = await this.getInventoryValueAsOf(startDate);
+      const endingInventory = await this.getInventoryValueAsOf(endDate);
+      const averageInventory = (beginningInventory + endingInventory) / 2;
+
+      // Calculate inventory turnover ratio
+      const inventoryTurnoverRatio = averageInventory > 0 ? cogs / averageInventory : 0;
+
+      // Calculate days sales in inventory
+      const daysSalesInInventory = inventoryTurnoverRatio > 0 ? 365 / inventoryTurnoverRatio : 0;
+
+      // Get category-wise turnover
+      const categoryTurnover = await this.getCategoryWiseTurnover(startDate, endDate);
+
+      return {
+        period: { startDate, endDate },
+        summary: {
+          costOfGoodsSold: parseFloat(cogs),
+          beginningInventory: parseFloat(beginningInventory),
+          endingInventory: parseFloat(endingInventory),
+          averageInventory: parseFloat(averageInventory),
+          inventoryTurnoverRatio: parseFloat(inventoryTurnoverRatio.toFixed(2)),
+          daysSalesInInventory: parseFloat(daysSalesInInventory.toFixed(0))
+        },
+        categoryBreakdown: categoryTurnover
+      };
+    } catch (error) {
+      throw new Error(`Failed to generate inventory turnover report: ${error.message}`);
+    }
+  }
+
+  async getInventoryValueAsOf(date) {
+    // Get all items that were in inventory at the specified date
+    // Logic: Items that existed (inboundDate <= date) and were NOT sold yet (outboundDate > date OR null)
+    const targetDate = new Date(date);
+
+    const inventory = await prisma.item.aggregate({
+      where: {
+        inboundDate: { lte: targetDate },
+        deletedAt: null,
+        OR: [
+          { outboundDate: null },
+          { outboundDate: { gt: targetDate } }
+        ]
+      },
+      _sum: {
+        purchasePrice: true
+      }
+    });
+
+    return inventory._sum.purchasePrice || 0;
+  }
+
+  async getCategoryWiseTurnover(startDate, endDate) {
+    // Get sold items grouped by itemId
+    const soldItemsByCategory = await prisma.invoiceItem.groupBy({
+      by: ['itemId'],
+      where: {
+        invoice: {
+          invoiceDate: {
+            gte: new Date(startDate),
+            lte: new Date(endDate)
+          },
+          status: { in: ['Sent', 'Paid', 'Partial'] },
+          deletedAt: null
+        }
+      },
+      _sum: {
+        quantity: true
+      }
+    });
+
+    // Get item details with categories
+    const itemsWithCategories = await prisma.item.findMany({
+      where: {
+        id: { in: soldItemsByCategory.map(si => si.itemId) }
+      },
+      include: {
+        category: true
+      }
+    });
+
+    // Group by category
+    const categoryMap = new Map();
+    itemsWithCategories.forEach(item => {
+      const categoryName = item.category.name;
+      const soldQty = soldItemsByCategory.find(si => si.itemId === item.id)?._sum.quantity || 0;
+      const cost = parseFloat(item.purchasePrice || 0) * soldQty;
+
+      if (!categoryMap.has(categoryName)) {
+        categoryMap.set(categoryName, {
+          category: categoryName,
+          unitsSold: 0,
+          cogs: 0
+        });
+      }
+
+      const categoryData = categoryMap.get(categoryName);
+      categoryData.unitsSold += soldQty;
+      categoryData.cogs += cost;
+    });
+
+    return Array.from(categoryMap.values());
+  }
+
+  // ===================== GROSS PROFIT MARGIN REPORT =====================
+  async generateGrossProfitMarginReport(startDate, endDate) {
+    try {
+      // Get overall revenue and COGS
+      const revenue = await prisma.invoice.aggregate({
+        where: {
+          invoiceDate: {
+            gte: new Date(startDate),
+            lte: new Date(endDate)
+          },
+          status: { in: ['Sent', 'Paid', 'Partial'] },
+          deletedAt: null
+        },
+        _sum: {
+          total: true
+        }
+      });
+
+      const cogs = await this.calculateCOGS(startDate, endDate);
+      const grossRevenue = revenue._sum.total || 0;
+      const grossProfit = grossRevenue - cogs;
+      const grossProfitMargin = grossRevenue > 0 ? (grossProfit / grossRevenue * 100) : 0;
+
+      // Get category-wise margins
+      const categoryMargins = await this.getCategoryWiseMargins(startDate, endDate);
+
+      // Get product-wise margins (top performers)
+      const productMargins = await this.getProductWiseMargins(startDate, endDate);
+
+      return {
+        period: { startDate, endDate },
+        summary: {
+          grossRevenue: parseFloat(grossRevenue),
+          costOfGoodsSold: parseFloat(cogs),
+          grossProfit: parseFloat(grossProfit),
+          grossProfitMargin: parseFloat(grossProfitMargin.toFixed(2))
+        },
+        categoryBreakdown: categoryMargins,
+        topProducts: productMargins.slice(0, 10) // Top 10 products
+      };
+    } catch (error) {
+      throw new Error(`Failed to generate gross profit margin report: ${error.message}`);
+    }
+  }
+
+  async getCategoryWiseMargins(startDate, endDate) {
+    // Get all invoices with items in the period
+    const invoices = await prisma.invoice.findMany({
+      where: {
+        invoiceDate: {
+          gte: new Date(startDate),
+          lte: new Date(endDate)
+        },
+        status: { in: ['Sent', 'Paid', 'Partial'] },
+        deletedAt: null
+      },
+      include: {
+        items: {
+          include: {
+            item: {
+              include: {
+                category: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Group by category
+    const categoryMap = new Map();
+
+    invoices.forEach(invoice => {
+      invoice.items.forEach(invoiceItem => {
+        const category = invoiceItem.item.category.name;
+        const revenue = parseFloat(invoiceItem.unitPrice) * invoiceItem.quantity;
+        const cost = parseFloat(invoiceItem.item.purchasePrice || 0) * invoiceItem.quantity;
+        const profit = revenue - cost;
+
+        if (!categoryMap.has(category)) {
+          categoryMap.set(category, {
+            category,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+            margin: 0,
+            unitsSold: 0
+          });
+        }
+
+        const categoryData = categoryMap.get(category);
+        categoryData.revenue += revenue;
+        categoryData.cost += cost;
+        categoryData.profit += profit;
+        categoryData.unitsSold += invoiceItem.quantity;
+      });
+    });
+
+    // Calculate margins
+    categoryMap.forEach((data, category) => {
+      data.margin = data.revenue > 0 ? (data.profit / data.revenue * 100) : 0;
+      data.margin = parseFloat(data.margin.toFixed(2));
+    });
+
+    return Array.from(categoryMap.values()).sort((a, b) => b.margin - a.margin);
+  }
+
+  async getProductWiseMargins(startDate, endDate) {
+    // Get all invoice items with product details
+    const invoiceItems = await prisma.invoiceItem.findMany({
+      where: {
+        invoice: {
+          invoiceDate: {
+            gte: new Date(startDate),
+            lte: new Date(endDate)
+          },
+          status: { in: ['Sent', 'Paid', 'Partial'] },
+          deletedAt: null
+        }
+      },
+      include: {
+        item: {
+          include: {
+            model: {
+              include: {
+                company: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Group by product model
+    const productMap = new Map();
+
+    invoiceItems.forEach(invoiceItem => {
+      const productId = invoiceItem.item.modelId;
+      const productName = `${invoiceItem.item.model.company.name} ${invoiceItem.item.model.name}`;
+      const revenue = parseFloat(invoiceItem.unitPrice) * invoiceItem.quantity;
+      const cost = parseFloat(invoiceItem.item.purchasePrice || 0) * invoiceItem.quantity;
+      const profit = revenue - cost;
+
+      if (!productMap.has(productId)) {
+        productMap.set(productId, {
+          product: productName,
+          revenue: 0,
+          cost: 0,
+          profit: 0,
+          margin: 0,
+          unitsSold: 0
+        });
+      }
+
+      const productData = productMap.get(productId);
+      productData.revenue += revenue;
+      productData.cost += cost;
+      productData.profit += profit;
+      productData.unitsSold += invoiceItem.quantity;
+    });
+
+    // Calculate margins
+    productMap.forEach((data) => {
+      data.margin = data.revenue > 0 ? (data.profit / data.revenue * 100) : 0;
+      data.margin = parseFloat(data.margin.toFixed(2));
+    });
+
+    return Array.from(productMap.values()).sort((a, b) => b.margin - a.margin);
+  }
 }
 
 module.exports = new FinancialReportsService();

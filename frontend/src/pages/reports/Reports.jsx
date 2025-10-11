@@ -2,14 +2,14 @@
 import React, { useState } from 'react';
 import {
   Card, Tabs, DatePicker, Button, Table, Row, Col,
-  Statistic, Select, Space, Spin, message
+  Statistic, Select, Space, Spin, message, Typography
 } from 'antd';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import {
-  DownloadOutlined, ReloadOutlined, PrinterOutlined
+  DownloadOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
@@ -20,11 +20,12 @@ import ProfitLossStatement from '../../components/reports/ProfitLossStatement';
 import BalanceSheet from '../../components/reports/BalanceSheet';
 import CashFlowReport from '../../components/reports/CashFlowReport';
 import ARAgingReport from '../../components/reports/ARAgingReport';
-import GSTReport from '../../components/reports/GSTReport';
-import VendorBillsAgingReport from '../../components/reports/VendorBillsAgingReport';
+import InventoryTurnoverReport from '../../components/reports/InventoryTurnoverReport';
+import GrossProfitMarginReport from '../../components/reports/GrossProfitMarginReport';
 
 const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
+const { Text } = Typography;
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
@@ -150,133 +151,6 @@ const Reports = () => {
     );
   };
 
-  const renderFinancialReport = () => {
-    if (!reportData?.data?.data) return null;
-    const data = reportData.data.data;
-
-    return (
-      <>
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col span={6}>
-            <Card>
-              <Statistic 
-                title="Total Revenue" 
-                value={data.income?.invoiced || 0} 
-                prefix="PKR"
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Statistic 
-                title="Received" 
-                value={data.income?.received || 0} 
-                prefix="PKR"
-              />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Statistic 
-                title="Outstanding" 
-                value={data.income?.outstanding || 0} 
-                prefix="PKR"
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-          <Col span={6}>
-            <Card>
-              <Statistic 
-                title="Net Profit" 
-                value={data.profitLoss?.netProfit || 0} 
-                prefix="PKR"
-                valueStyle={{ 
-                  color: data.profitLoss?.netProfit > 0 ? '#52c41a' : '#ff4d4f' 
-                }}
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        <Card title="Cash Flow">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart
-              data={[
-                { name: 'Inflow', value: data.cashFlow?.inflow || 0 },
-                { name: 'Outflow', value: data.cashFlow?.outflow || 0 },
-                { name: 'Net', value: data.cashFlow?.net || 0 }
-              ]}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="value" stroke="#1890ff" />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-      </>
-    );
-  };
-
-  const renderSalesReport = () => {
-    if (!reportData?.data?.data) return null;
-    const data = reportData.data.data;
-
-    const chartData = Object.entries(data.data || {}).map(([period, metrics]) => ({
-      period,
-      ...metrics
-    }));
-
-    return (
-      <>
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          <Col span={8}>
-            <Card>
-              <Statistic 
-                title="Total Invoices" 
-                value={data.totals?.invoices || 0}
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card>
-              <Statistic 
-                title="Total Revenue" 
-                value={data.totals?.revenue || 0} 
-                prefix="PKR"
-              />
-            </Card>
-          </Col>
-          <Col span={8}>
-            <Card>
-              <Statistic 
-                title="Average Invoice" 
-                value={data.totals?.averageInvoiceValue || 0} 
-                prefix="PKR"
-              />
-            </Card>
-          </Col>
-        </Row>
-
-        <Card title="Sales Trend">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="period" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="total" stroke="#1890ff" name="Revenue" />
-              <Line type="monotone" dataKey="invoices" stroke="#52c41a" name="Invoices" />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-      </>
-    );
-  };
 
   const renderStockValuation = () => {
     if (!reportData?.data?.data) return null;
@@ -373,9 +247,6 @@ const Reports = () => {
           <Button icon={<DownloadOutlined />} onClick={handleExport}>
             Export
           </Button>
-          <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
-            Print
-          </Button>
         </Space>
       }
     >
@@ -385,11 +256,11 @@ const Reports = () => {
         </div>
       ) : (
         <Tabs activeKey={reportType} onChange={setReportType}>
-          <TabPane tab="Inventory" key="inventory">
+          <TabPane tab="Real-time Stock Levels" key="inventory">
             {renderInventoryReport()}
           </TabPane>
-          <TabPane tab="Financial Summary" key="financial">
-            {renderFinancialReport()}
+          <TabPane tab="Stock Valuation" key="valuation">
+            {renderStockValuation()}
           </TabPane>
           <TabPane tab="Profit & Loss" key="profit-loss">
             <ProfitLossStatement />
@@ -397,23 +268,17 @@ const Reports = () => {
           <TabPane tab="Balance Sheet" key="balance-sheet">
             <BalanceSheet />
           </TabPane>
-          <TabPane tab="Sales Analysis" key="sales">
-            {renderSalesReport()}
-          </TabPane>
-          <TabPane tab="Stock Valuation" key="valuation">
-            {renderStockValuation()}
-          </TabPane>
-          <TabPane tab="Cash Flow" key="cash-flow">
+          <TabPane tab="Cash Flow Statement" key="cash-flow">
             <CashFlowReport />
           </TabPane>
-          <TabPane tab="AR Aging" key="ar-aging">
+          <TabPane tab="Inventory Turnover" key="inventory-turnover">
+            <InventoryTurnoverReport />
+          </TabPane>
+          <TabPane tab="Gross Profit Margin" key="gross-profit-margin">
+            <GrossProfitMarginReport />
+          </TabPane>
+          <TabPane tab="Accounts Receivable Aging" key="ar-aging">
             <ARAgingReport />
-          </TabPane>
-          <TabPane tab="GST Report" key="gst">
-            <GSTReport />
-          </TabPane>
-          <TabPane tab="Vendor Bills Aging" key="vendor-bills-aging">
-            <VendorBillsAgingReport />
           </TabPane>
         </Tabs>
       )}

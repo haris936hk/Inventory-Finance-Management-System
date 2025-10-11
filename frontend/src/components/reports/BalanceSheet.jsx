@@ -4,7 +4,7 @@ import {
   Typography, Alert, Space, message, Spin, Tooltip, Collapse
 } from 'antd';
 import {
-  DownloadOutlined, PrinterOutlined, ReloadOutlined,
+  DownloadOutlined, ReloadOutlined,
   CheckCircleOutlined, WarningOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
@@ -349,9 +349,6 @@ const BalanceSheet = () => {
             </Button>
             <Button icon={<DownloadOutlined />} onClick={handleExport}>
               Export
-            </Button>
-            <Button icon={<PrinterOutlined />} onClick={() => window.print()}>
-              Print
             </Button>
           </Space>
         }

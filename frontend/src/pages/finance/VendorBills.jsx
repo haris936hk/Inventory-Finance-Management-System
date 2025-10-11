@@ -7,9 +7,9 @@ import {
   Divider, InputNumber, Progress, Alert
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
+  PlusOutlined, SearchOutlined, FilterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined,
-  MailOutlined, FilePdfOutlined, MoreOutlined, CheckOutlined,
+  FilePdfOutlined, MoreOutlined, CheckOutlined,
   SendOutlined, StopOutlined, DollarCircleOutlined, FileTextOutlined,
   ExclamationCircleOutlined, ClockCircleOutlined, InfoCircleOutlined
 } from '@ant-design/icons';
@@ -443,10 +443,28 @@ const VendorBills = () => {
           },
           { type: 'divider' },
           {
-            key: 'print',
-            icon: <PrinterOutlined />,
-            label: 'Print',
-            onClick: () => window.open(`/print/vendor-bills/${record.id}`, '_blank')
+            key: 'download-pdf',
+            icon: <FilePdfOutlined />,
+            label: 'Download PDF',
+            onClick: async () => {
+              try {
+                message.loading({ content: 'Generating PDF...', key: 'pdf' });
+                const response = await axios.get(`/finance/vendor-bills/${record.id}/pdf`, {
+                  responseType: 'blob'
+                });
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `vendor_bill_${record.billNumber}.pdf`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+                message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+              } catch (error) {
+                message.error({ content: 'Failed to download PDF', key: 'pdf' });
+              }
+            }
           }
         ];
 

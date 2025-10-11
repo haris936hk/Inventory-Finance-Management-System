@@ -155,9 +155,6 @@ async function createInvoice(data, userId) {
         terms: data.terms || null,
         notes: data.notes || null,
 
-        // Installment
-        hasInstallment: data.hasInstallment || false,
-
         customerId: data.customerId,
         createdById: userId,
 

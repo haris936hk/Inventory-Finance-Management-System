@@ -254,6 +254,44 @@ const getVendorBillsAging = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Generate Inventory Turnover Report
+// @route   GET /api/reports/inventory-turnover
+// @access  Private
+const getInventoryTurnover = asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    res.status(400);
+    throw new Error('Start date and end date are required');
+  }
+
+  const report = await financialReportsService.generateInventoryTurnoverReport(startDate, endDate);
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
+// @desc    Generate Gross Profit Margin Report
+// @route   GET /api/reports/gross-profit-margin
+// @access  Private
+const getGrossProfitMargin = asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    res.status(400);
+    throw new Error('Start date and end date are required');
+  }
+
+  const report = await financialReportsService.generateGrossProfitMarginReport(startDate, endDate);
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
 module.exports = {
   getDashboard,
   getInventoryReport,
@@ -268,5 +306,7 @@ module.exports = {
   getAccountsReceivableAging,
   getGSTReport,
   getFinancialDashboard,
-  getVendorBillsAging
+  getVendorBillsAging,
+  getInventoryTurnover,
+  getGrossProfitMargin
 };

@@ -7,9 +7,9 @@ import {
   Divider, InputNumber
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined, PrinterOutlined,
+  PlusOutlined, SearchOutlined, FilterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined,
-  MailOutlined, FilePdfOutlined, MoreOutlined, CheckOutlined,
+  FilePdfOutlined, MoreOutlined, CheckOutlined,
   SendOutlined, StopOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -352,10 +352,28 @@ const PurchaseOrders = () => {
           ...statusActions,
           { type: 'divider' },
           {
-            key: 'print',
-            icon: <PrinterOutlined />,
-            label: 'Print',
-            onClick: () => window.open(`/print/purchase-orders/${record.id}`, '_blank')
+            key: 'download-pdf',
+            icon: <FilePdfOutlined />,
+            label: 'Download PDF',
+            onClick: async () => {
+              try {
+                message.loading({ content: 'Generating PDF...', key: 'pdf' });
+                const response = await axios.get(`/finance/purchase-orders/${record.id}/pdf`, {
+                  responseType: 'blob'
+                });
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `purchase_order_${record.poNumber}.pdf`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+                message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
+              } catch (error) {
+                message.error({ content: 'Failed to download PDF', key: 'pdf' });
+              }
+            }
           }
         ];
 
