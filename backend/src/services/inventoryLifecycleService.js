@@ -119,7 +119,7 @@ class InventoryLifecycleService {
             itemId: data.itemId,
             fromStatus: data.fromStatus,
             toStatus: data.toStatus,
-            changeReason: this.CHANGE_REASONS.INVOICE_CREATED,
+            changeReason: InventoryLifecycleService.CHANGE_REASONS.INVOICE_CREATED,
             referenceType: 'Invoice',
             referenceId: invoiceId,
             changedBy: userId,
@@ -193,7 +193,7 @@ class InventoryLifecycleService {
             itemId: item.id,
             fromStatus: 'Reserved',
             toStatus: 'Available',
-            changeReason: this.CHANGE_REASONS.INVOICE_CANCELLED,
+            changeReason: InventoryLifecycleService.CHANGE_REASONS.INVOICE_CANCELLED,
             referenceType: 'Invoice',
             referenceId: invoiceId,
             changedBy: userId,
@@ -264,7 +264,7 @@ class InventoryLifecycleService {
             itemId: item.id,
             fromStatus: 'Reserved',
             toStatus: 'Sold',
-            changeReason: this.CHANGE_REASONS.INVOICE_PAID,
+            changeReason: InventoryLifecycleService.CHANGE_REASONS.INVOICE_PAID,
             referenceType: 'Invoice',
             referenceId: invoiceId,
             changedBy: userId,
@@ -336,7 +336,7 @@ class InventoryLifecycleService {
             itemId: item.id,
             fromStatus: 'Sold',
             toStatus: 'Delivered',
-            changeReason: this.CHANGE_REASONS.INVOICE_DELIVERED,
+            changeReason: InventoryLifecycleService.CHANGE_REASONS.INVOICE_DELIVERED,
             referenceType: 'Invoice',
             referenceId: invoiceId,
             changedBy: userId,
@@ -451,7 +451,7 @@ class InventoryLifecycleService {
             itemId: item.id,
             fromStatus: 'Reserved',
             toStatus: 'Available',
-            changeReason: this.CHANGE_REASONS.SYSTEM_CLEANUP,
+            changeReason: InventoryLifecycleService.CHANGE_REASONS.SYSTEM_CLEANUP,
             changedBy: 'system',
             notes: `Expired reservation cleanup`
           }
@@ -476,7 +476,7 @@ class InventoryLifecycleService {
    * @throws {Error} If transition is invalid
    */
   validateStatusTransition(fromStatus, toStatus) {
-    const validNextStates = this.VALID_TRANSITIONS[fromStatus];
+    const validNextStates = InventoryLifecycleService.VALID_TRANSITIONS[fromStatus];
     if (!validNextStates || !validNextStates.includes(toStatus)) {
       throw new Error(`Invalid inventory status transition: ${fromStatus} → ${toStatus}`);
     }

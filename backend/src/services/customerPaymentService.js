@@ -163,7 +163,7 @@ async function recordPayment(data, userId) {
       data: {
         invoiceId: data.invoiceId,
         action: 'PAYMENT_RECORDED',
-        paymentId: payment.id,
+        paymentId: createdPayment.id,
         beforeState: {
           invoiceStatus: invoice.status,
           paidAmount: invoice.paidAmount
