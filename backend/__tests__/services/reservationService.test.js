@@ -15,7 +15,14 @@ const db = require('../../src/config/database');
 
 describe('ReservationService - Reserve Items', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should reserve items with session ID and expiry', async () => {
@@ -472,7 +479,14 @@ describe('ReservationService - Auto-Assign Items', () => {
   };
 
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should auto-assign items using FIFO strategy', async () => {
@@ -807,7 +821,14 @@ describe('ReservationService - Extend Reservation', () => {
 
 describe('ReservationService - Edge Cases and Error Handling', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should handle concurrent reservation attempts', async () => {
@@ -835,7 +856,14 @@ describe('ReservationService - Edge Cases and Error Handling', () => {
   });
 
   it('should handle empty item IDs array', async () => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
 
     prismaMock.itemReservation.findMany.mockResolvedValue([]);
     prismaMock.item.findMany.mockResolvedValue([]);
@@ -893,11 +921,13 @@ describe('ReservationService - Edge Cases and Error Handling', () => {
     // First reservation succeeds, second fails
     prismaMock.itemReservation.create.mockRejectedValue(new Error('Create failed'));
 
-    db.transaction = jest.fn((callback) => {
-      return callback(prismaMock).catch(err => {
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      try {
+        return await callback(prismaMock);
+      } catch (err) {
         // Simulate transaction rollback
         throw err;
-      });
+      }
     });
 
     await expect(reservationService.reserveItems(itemIds, 'user-id'))
@@ -910,7 +940,14 @@ describe('ReservationService - Performance and Scalability', () => {
   it('should handle large number of items efficiently', async () => {
     const itemIds = Array.from({ length: 100 }, (_, i) => `item-${i + 1}`);
 
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
 
     prismaMock.itemReservation.findMany.mockResolvedValue([]);
     prismaMock.item.findMany.mockResolvedValue(

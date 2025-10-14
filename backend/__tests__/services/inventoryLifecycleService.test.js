@@ -44,7 +44,14 @@ describe('InventoryLifecycleService - State Machine Validation', () => {
 describe('InventoryLifecycleService - Reserve Items for Invoice', () => {
   beforeEach(() => {
     // Mock db.transaction to execute callback immediately with prismaMock
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should reserve multiple items successfully', async () => {
@@ -188,7 +195,14 @@ describe('InventoryLifecycleService - Reserve Items for Invoice', () => {
 
 describe('InventoryLifecycleService - Release Items (Cancel Invoice)', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should release reserved items when invoice cancelled', async () => {
@@ -284,7 +298,14 @@ describe('InventoryLifecycleService - Release Items (Cancel Invoice)', () => {
 
 describe('InventoryLifecycleService - Mark Items as Sold', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should mark reserved items as sold when invoice paid', async () => {
@@ -374,7 +395,14 @@ describe('InventoryLifecycleService - Mark Items as Sold', () => {
 
 describe('InventoryLifecycleService - Mark Items as Delivered', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should mark sold items as delivered', async () => {
@@ -474,7 +502,14 @@ describe('InventoryLifecycleService - Mark Items as Delivered', () => {
 
 describe('InventoryLifecycleService - Cleanup Expired Reservations', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should cleanup expired reservations', async () => {
@@ -681,7 +716,14 @@ describe('InventoryLifecycleService - Get Item Status History', () => {
 
 describe('InventoryLifecycleService - Edge Cases and Error Handling', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should handle concurrent reservation attempts (race condition)', async () => {
@@ -698,7 +740,7 @@ describe('InventoryLifecycleService - Edge Cases and Error Handling', () => {
   });
 
   it('should handle database transaction failures', async () => {
-    db.transaction = jest.fn(() => Promise.reject(new Error('Transaction failed')));
+    prismaMock.item.findMany.mockRejectedValue(new Error('Transaction failed'));
 
     await expect(inventoryLifecycleService.reserveItemsForInvoice(['item-1'], 'invoice-id', 'user-id'))
       .rejects
@@ -736,7 +778,14 @@ describe('InventoryLifecycleService - Edge Cases and Error Handling', () => {
 
 describe('InventoryLifecycleService - Integration Scenarios', () => {
   beforeEach(() => {
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
   });
 
   it('should handle full lifecycle: Reserve → Sold → Delivered', async () => {

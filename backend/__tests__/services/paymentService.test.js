@@ -11,6 +11,10 @@
  * - Decimal precision
  */
 
+// Mock dependencies FIRST (before any requires)
+jest.mock('../../src/utils/generateId');
+jest.mock('../../src/services/billService');
+
 const db = require('../../src/config/database');
 const paymentService = require('../../src/services/paymentService');
 const {
@@ -20,28 +24,24 @@ const {
   formatAmount
 } = require('../../src/utils/transactionWrapper');
 const { generatePaymentNumber } = require('../../src/utils/generateId');
+const billService = require('../../src/services/billService');
 
 // Get the mock from setup
 const prismaMock = global.prismaMock;
-
-// Mock dependencies
-jest.mock('../../src/utils/generateId', () => ({
-  generatePaymentNumber: jest.fn()
-}));
-
-jest.mock('../../src/services/billService', () => ({
-  updateBillStatus: jest.fn()
-}));
-
-const billService = require('../../src/services/billService');
 
 describe('VendorPaymentService - Payables', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock transaction wrapper
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
 
     // Mock default return values
     generatePaymentNumber.mockResolvedValue('VPAY-202501-0001');
@@ -573,7 +573,8 @@ describe('VendorPaymentService - Payables', () => {
       await paymentService.recordPayment(mockPaymentData, 'user-id');
 
       // Assert
-      expect(db.transaction).toHaveBeenCalled();
+      // Service uses withTransaction which calls db.prisma.$transaction
+      expect(db.prisma.$transaction).toHaveBeenCalled();
     });
   });
 
@@ -1152,18 +1153,32 @@ describe('VendorPaymentService - Payables', () => {
 
   describe('getBillPayments (Alias)', () => {
 
-    it('should call getPaymentsForBill', async () => {
+    it('should work as alias for getPaymentsForBill', async () => {
       // Arrange
-      prismaMock.vendorPayment.findMany.mockResolvedValue([]);
-
-      // Spy on getPaymentsForBill
-      const spy = jest.spyOn(paymentService, 'getPaymentsForBill');
+      const mockPayments = [
+        {
+          id: 'payment-1',
+          paymentNumber: 'VPAY-202501-0001',
+          amount: 20000,
+          voidedAt: null,
+          vendor: {},
+          createdByUser: {}
+        }
+      ];
+      prismaMock.vendorPayment.findMany.mockResolvedValue(mockPayments);
 
       // Act
-      await paymentService.getBillPayments('bill-id');
+      const result = await paymentService.getBillPayments('bill-id');
 
       // Assert
-      expect(spy).toHaveBeenCalledWith('bill-id');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toHaveProperty('isVoided', false);
+      expect(result[0]).toHaveProperty('effectiveAmount', 20000);
+      expect(prismaMock.vendorPayment.findMany).toHaveBeenCalledWith({
+        where: { billId: 'bill-id', deletedAt: null },
+        include: expect.any(Object),
+        orderBy: { paymentDate: 'desc' }
+      });
     });
   });
 

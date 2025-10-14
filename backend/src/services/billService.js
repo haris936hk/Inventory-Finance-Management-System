@@ -433,11 +433,14 @@ async function getBills(filters = {}) {
   });
 
   // Add computed fields
-  return bills.map(bill => ({
-    ...bill,
-    remainingAmount: formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount)),
-    canBePaid: bill.remainingAmount > 0
-  }));
+  return bills.map(bill => {
+    const remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
+    return {
+      ...bill,
+      remainingAmount,
+      canBePaid: remainingAmount > 0
+    };
+  });
 }
 
 /**

@@ -308,7 +308,14 @@ describe('FinanceService', () => {
       ];
 
       beforeEach(() => {
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both db.transaction wrapper AND db.prisma.$transaction
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
       });
 
       it('should create invoice with items and reserve inventory atomically', async () => {
@@ -713,7 +720,14 @@ describe('FinanceService', () => {
 
     describe('updateInvoiceStatus', () => {
       beforeEach(() => {
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both db.transaction wrapper AND db.prisma.$transaction
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
       });
 
       it('should update invoice status successfully', async () => {
@@ -827,7 +841,14 @@ describe('FinanceService', () => {
       };
 
       beforeEach(() => {
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both db.transaction wrapper AND db.prisma.$transaction
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
       });
 
       it('should record payment successfully', async () => {
@@ -1490,7 +1511,14 @@ describe('FinanceService', () => {
           }
         ];
 
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both patterns
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
         prismaMock.customer.findUnique.mockResolvedValue(mockCustomer);
         prismaMock.item.findMany.mockResolvedValue(mockItems);
         prismaMock.item.update.mockResolvedValue({});
@@ -1525,7 +1553,14 @@ describe('FinanceService', () => {
           taxRate: 0
         };
 
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both patterns
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
         prismaMock.customer.findUnique.mockResolvedValue({ id: 'customer-id', creditLimit: 0, currentBalance: 0 });
         prismaMock.item.findMany.mockResolvedValue([
           { id: 'item-1', inventoryStatus: 'Available' },
@@ -1560,7 +1595,14 @@ describe('FinanceService', () => {
           // No discount, tax, dates
         };
 
-        db.transaction = jest.fn((callback) => callback(prismaMock));
+        // Mock both patterns
+        db.transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        db.prisma.$transaction = jest.fn(async (callback) => {
+          return await callback(prismaMock);
+        });
+        prismaMock.$executeRaw = jest.fn();
         prismaMock.customer.findUnique.mockResolvedValue({ id: 'customer-id', creditLimit: 0, currentBalance: 0 });
         prismaMock.item.findMany.mockResolvedValue([{ id: 'item-1', inventoryStatus: 'Available' }]);
         prismaMock.item.update.mockResolvedValue({});

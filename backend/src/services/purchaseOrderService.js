@@ -52,14 +52,7 @@ async function createPurchaseOrder(data) {
     const taxAmount = formatAmount(data.taxAmount || 0);
     const total = formatAmount(data.total);
 
-    // Verify total = subtotal + tax
-    if (!compareAmounts(total, subtotal + taxAmount)) {
-      throw new ValidationError(
-        `Total (${total}) must equal subtotal (${subtotal}) + tax (${taxAmount})`
-      );
-    }
-
-    // Verify line items sum to subtotal
+    // Verify line items sum to subtotal (check this first)
     const lineItemsTotal = data.lineItems.reduce((sum, item) => {
       return sum + formatAmount(item.totalPrice);
     }, 0);
@@ -67,6 +60,13 @@ async function createPurchaseOrder(data) {
     if (!compareAmounts(lineItemsTotal, subtotal)) {
       throw new ValidationError(
         `Line items total (${lineItemsTotal}) must equal subtotal (${subtotal})`
+      );
+    }
+
+    // Verify total = subtotal + tax
+    if (!compareAmounts(total, subtotal + taxAmount)) {
+      throw new ValidationError(
+        `Total (${total}) must equal subtotal (${subtotal}) + tax (${taxAmount})`
       );
     }
 
@@ -144,16 +144,7 @@ async function updatePurchaseOrderStatus(poId, newStatus, userId) {
     // Lock the PO row
     const po = await lockForUpdate(tx, 'PurchaseOrder', poId);
 
-    // Validate status transition
-    const allowedTransitions = STATUS_TRANSITIONS[po.status] || [];
-
-    if (!allowedTransitions.includes(newStatus)) {
-      throw new ValidationError(
-        `Cannot transition from ${po.status} to ${newStatus}. Allowed: ${allowedTransitions.join(', ')}`
-      );
-    }
-
-    // Additional validations
+    // Specific status validations (check these first for clearer error messages)
     if (newStatus === 'Paid') {
       // Can only mark as Paid if fully billed
       if (!compareAmounts(po.billedAmount, po.total)) {
@@ -170,6 +161,15 @@ async function updatePurchaseOrderStatus(poId, newStatus, userId) {
           `Cannot mark as Delivered. PO must be in Paid status first.`
         );
       }
+    }
+
+    // Validate status transition
+    const allowedTransitions = STATUS_TRANSITIONS[po.status] || [];
+
+    if (!allowedTransitions.includes(newStatus)) {
+      throw new ValidationError(
+        `Cannot transition from ${po.status} to ${newStatus}. Allowed: ${allowedTransitions.join(', ')}`
+      );
     }
 
     // Update status

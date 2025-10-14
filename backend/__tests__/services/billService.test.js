@@ -10,6 +10,9 @@
  * - Concurrency control
  */
 
+// Mock dependencies FIRST
+jest.mock('../../src/utils/generateId');
+
 const db = require('../../src/config/database');
 const billService = require('../../src/services/billService');
 const {
@@ -23,18 +26,19 @@ const { generateBillNumber } = require('../../src/utils/generateId');
 // Get the mock from setup
 const prismaMock = global.prismaMock;
 
-// Mock dependencies
-jest.mock('../../src/utils/generateId', () => ({
-  generateBillNumber: jest.fn()
-}));
-
 describe('BillService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock transaction wrapper
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
 
     // Mock default return values
     generateBillNumber.mockResolvedValue('BILL-202501-0001');
@@ -213,7 +217,7 @@ describe('BillService', () => {
       const nearlyFullPO = { ...mockPO, billedAmount: 95000 };
       prismaMock.$queryRawUnsafe.mockResolvedValue([nearlyFullPO]);
 
-      const excessBill = { ...mockBillData, total: 10000 }; // 95000 + 10000 > 100000
+      const excessBill = { ...mockBillData, subtotal: 9000, taxAmount: 1000, total: 10000 }; // 95000 + 10000 > 100000
 
       // Act & Assert
       await expect(billService.createBill(excessBill, 'user-id'))
@@ -575,7 +579,8 @@ describe('BillService', () => {
       await billService.createBill(mockBillData, 'user-id');
 
       // Assert
-      expect(db.transaction).toHaveBeenCalled();
+      // Service uses withTransaction which calls db.prisma.$transaction
+      expect(db.prisma.$transaction).toHaveBeenCalled();
     });
   });
 
@@ -1466,7 +1471,7 @@ describe('BillService', () => {
       const nearlyFullPO = { ...mockPO, billedAmount: 95000 };
       prismaMock.$queryRawUnsafe.mockResolvedValue([nearlyFullPO]);
 
-      const excessBill = { ...mockBillData, total: 10000 };
+      const excessBill = { ...mockBillData, subtotal: 9000, taxAmount: 1000, total: 10000 };
 
       // Act & Assert
       await expect(billService.createBill(excessBill, 'user-id'))

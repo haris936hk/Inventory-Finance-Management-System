@@ -10,6 +10,9 @@
  * - Concurrency control
  */
 
+// Mock dependencies FIRST
+jest.mock('../../src/utils/generateId');
+
 const db = require('../../src/config/database');
 const purchaseOrderService = require('../../src/services/purchaseOrderService');
 const {
@@ -22,18 +25,19 @@ const { generatePONumber } = require('../../src/utils/generateId');
 // Get the mock from setup
 const prismaMock = global.prismaMock;
 
-// Mock dependencies
-jest.mock('../../src/utils/generateId', () => ({
-  generatePONumber: jest.fn()
-}));
-
 describe('PurchaseOrderService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Mock transaction wrapper
-    db.transaction = jest.fn((callback) => callback(prismaMock));
+    // Mock both db.transaction wrapper AND db.prisma.$transaction
+    db.transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    db.prisma.$transaction = jest.fn(async (callback) => {
+      return await callback(prismaMock);
+    });
+    prismaMock.$executeRaw = jest.fn();
 
     // Mock default return values
     generatePONumber.mockResolvedValue('PO-202501-0001');
@@ -400,7 +404,8 @@ describe('PurchaseOrderService', () => {
       await purchaseOrderService.createPurchaseOrder(mockPOData);
 
       // Assert
-      expect(db.transaction).toHaveBeenCalled();
+      // Service uses withTransaction which calls db.prisma.$transaction
+      expect(db.prisma.$transaction).toHaveBeenCalled();
     });
   });
 
@@ -1028,7 +1033,7 @@ describe('PurchaseOrderService', () => {
       // Act & Assert
       await expect(purchaseOrderService.checkAndUpdateDeliveryStatus('nonexistent-id', 'user-id'))
         .rejects
-        .toThrow('Purchase Order not found');
+        .toThrow('Record not found in PurchaseOrder');
     });
   });
 
