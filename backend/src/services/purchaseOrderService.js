@@ -492,8 +492,7 @@ async function getPurchaseOrderItems(poId) {
           company: true
         }
       },
-      vendor: true,
-      warehouse: true
+      vendor: true
     },
     orderBy: {
       createdAt: 'desc'

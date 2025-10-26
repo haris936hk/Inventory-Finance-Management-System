@@ -531,9 +531,6 @@ const InventoryList = () => {
               <Descriptions.Item label="Vendor">
                 {selectedItem.vendor?.name || '-'}
               </Descriptions.Item>
-              <Descriptions.Item label="Warehouse">
-                {selectedItem.warehouse?.name || '-'}
-              </Descriptions.Item>
               <Descriptions.Item label="Inbound Date">
                 {new Date(selectedItem.inboundDate).toLocaleDateString()}
               </Descriptions.Item>

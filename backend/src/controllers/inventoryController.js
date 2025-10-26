@@ -206,7 +206,6 @@ const getItems = asyncHandler(async (req, res) => {
     categoryId: req.query.categoryId,
     modelId: req.query.modelId,
     vendorId: req.query.vendorId,
-    warehouseId: req.query.warehouseId,
     clientPhone: req.query.clientPhone, // Keep for backward compatibility, maps to customer.phone
     clientName: req.query.clientName,   // Keep for backward compatibility, maps to customer.name
     inboundFrom: req.query.inboundFrom,

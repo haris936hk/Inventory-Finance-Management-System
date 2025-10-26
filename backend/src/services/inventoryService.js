@@ -361,15 +361,6 @@ class InventoryService {
       throw error;
     }
 
-    // Get warehouse (using default if not provided)
-    let warehouseId = itemData.warehouseId;
-    if (!warehouseId) {
-      const defaultWarehouse = await db.prisma.warehouse.findFirst({
-        where: { isActive: true }
-      });
-      warehouseId = defaultWarehouse?.id;
-    }
-
     // Create item with initial status
     try {
       const item = await db.prisma.item.create({
@@ -391,7 +382,6 @@ class InventoryService {
           categoryId: model.category.id,
           modelId: itemData.modelId,
           vendorId: itemData.vendorId,
-          warehouseId,
           purchaseOrderId: itemData.purchaseOrderId,
           createdById: userId
         },
@@ -402,8 +392,7 @@ class InventoryService {
               company: true
             }
           },
-          vendor: true,
-          warehouse: true
+          vendor: true
         }
       });
 
@@ -490,10 +479,6 @@ class InventoryService {
       where.vendorId = filters.vendorId;
     }
 
-    if (filters.warehouseId) {
-      where.warehouseId = filters.warehouseId;
-    }
-
     // Date range filters
     if (filters.inboundFrom || filters.inboundTo) {
       where.inboundDate = {};
@@ -530,7 +515,6 @@ class InventoryService {
           }
         },
         vendor: true,
-        warehouse: true,
         customer: true,
         handoverByUser: {
           select: {
@@ -556,7 +540,6 @@ class InventoryService {
           }
         },
         vendor: true,
-        warehouse: true,
         customer: true,
         invoiceItems: {
           include: {
@@ -637,7 +620,6 @@ class InventoryService {
           }
         },
         vendor: true,
-        warehouse: true,
         customer: true,
         handoverByUser: true
       }

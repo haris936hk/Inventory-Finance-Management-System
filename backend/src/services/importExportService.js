@@ -172,20 +172,6 @@ class ImportExportService {
       // Process Samhan specifications
       const specifications = this.extractSamhanSpecifications(row, categoryName);
 
-      // Get default warehouse
-      let warehouse = await db.prisma.warehouse.findFirst({
-        where: { code: 'MAIN' }
-      });
-
-      if (!warehouse) {
-        warehouse = await db.prisma.warehouse.create({
-          data: {
-            name: 'Main Warehouse',
-            code: 'MAIN'
-          }
-        });
-      }
-
       // Convert Excel date format
       const inboundDate = this.convertExcelDate(row['Inbound Date']) || new Date();
       const outboundDate = this.convertExcelDate(row['Outbound Date']);
@@ -199,7 +185,6 @@ class ImportExportService {
         inboundDate,
         categoryId: category.id,
         modelId: model?.id,
-        warehouseId: warehouse.id,
         createdById: userId,
         statusHistory: [{
           status: this.mapSamhanStatus(row.Status),
@@ -413,14 +398,6 @@ class ImportExportService {
         itemData.handoverDetails = row['Handover Details'] || row.HandoverDetails;
         itemData.handoverDate = this.parseDate(row['Handover Date'] || row.HandoverDate) || new Date();
       }
-    }
-
-    // Get default warehouse
-    if (!itemData.warehouseId) {
-      const defaultWarehouse = await db.prisma.warehouse.findFirst({
-        where: { code: 'MAIN' }
-      });
-      itemData.warehouseId = defaultWarehouse?.id;
     }
 
     // Create the item
@@ -659,8 +636,7 @@ class ImportExportService {
         db.prisma.item.count(),
         db.prisma.productCategory.count(),
         db.prisma.company.count(),
-        db.prisma.productModel.count(),
-        db.prisma.warehouse.count()
+        db.prisma.productModel.count()
       ]);
 
       const backup = {
@@ -671,8 +647,7 @@ class ImportExportService {
           items: counts[0],
           categories: counts[1],
           companies: counts[2],
-          models: counts[3],
-          warehouses: counts[4]
+          models: counts[3]
         }
       };
 

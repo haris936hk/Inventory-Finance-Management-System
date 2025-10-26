@@ -57,7 +57,7 @@ export const COMMON_UNITS = {
 export const RESERVED_FIELD_NAMES = [
   'id', 'name', 'code', 'serialNumber', 'status', 'specifications',
   'createdAt', 'updatedAt', 'deletedAt', 'modelId', 'categoryId',
-  'vendorId', 'warehouseId', 'inboundDate', 'outboundDate'
+  'vendorId', 'inboundDate', 'outboundDate'
 ];
 
 // Validation functions

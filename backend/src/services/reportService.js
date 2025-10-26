@@ -234,8 +234,7 @@ class ReportService {
             company: true
           }
         },
-        vendor: true,
-        warehouse: true
+        vendor: true
       }
     });
 

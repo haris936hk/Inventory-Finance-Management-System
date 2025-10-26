@@ -146,6 +146,12 @@ model Item {
   status          String // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover" (physical location)
   statusHistory   Json[] // Array of {status, date, userId, notes}
 
+  // Reservation tracking (when inventoryStatus = "Reserved")
+  reservedAt      DateTime? // When the item was reserved
+  reservedBy      String? // User ID who reserved the item
+  reservedForType String? // Type of document: "Invoice", "PurchaseOrder", etc.
+  reservedForId   String? // ID of the document the item is reserved for
+
   // Specifications (hybrid approach - JSON for flexibility)
   specifications Json? // {voltage: "48V", cells: 16, bms: "Supported", ...}
 
@@ -233,22 +239,6 @@ model InventoryStatusHistory {
   @@index([referenceType, referenceId])
   @@index([changeDate])
   @@index([toStatus])
-}
-
-model Warehouse {
-  id            String  @id @default(uuid())
-  name          String  @unique
-  code          String  @unique
-  address       String?
-  contactPerson String?
-  phone         String?
-  isActive      Boolean @default(true)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([deletedAt])
 }
 
 // ==================== VENDOR/SUPPLIER MANAGEMENT ====================
@@ -383,6 +373,9 @@ model PurchaseOrder {
   // Track billed amount to enforce SUM(bills) <= PO.total
   billedAmount Decimal @default(0) @db.Decimal(18, 4)
 
+  // Track received quantities per line item {lineItemId: count}
+  receivedQuantities Json @default("{}")
+
   // Relationships
   vendorId  String
   vendor    Vendor              @relation(fields: [vendorId], references: [id])
@@ -432,9 +425,12 @@ model Bill {
   id         String   @id @default(uuid())
   billNumber String   @unique
   billDate   DateTime
+  dueDate    DateTime? // Optional due date for bill payment
   status     String   @default("Unpaid") // "Unpaid", "Partial", "Paid"
 
   // Financial - Enhanced precision for consistency
+  subtotal   Decimal @db.Decimal(18, 4)
+  taxAmount  Decimal @default(0) @db.Decimal(18, 4)
   total      Decimal @db.Decimal(18, 4)
   paidAmount Decimal @default(0) @db.Decimal(18, 4)
 
