@@ -223,23 +223,6 @@ const getFinancialDashboard = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Export report to Excel
-// @route   POST /api/reports/export
-// @access  Private
-const exportReport = asyncHandler(async (req, res) => {
-  const { reportType, filters } = req.body;
-
-  const file = await reportService.exportToExcel(reportType, filters);
-
-  res.json({
-    success: true,
-    data: {
-      filename: file.filename,
-      url: file.url
-    }
-  });
-});
-
 // @desc    Generate Vendor Bills Aging Report
 // @route   GET /api/reports/vendor-bills-aging
 // @access  Private
@@ -298,7 +281,6 @@ module.exports = {
   getFinancialSummary,
   getSalesReport,
   getStockValuation,
-  exportReport,
   // New comprehensive financial reports
   getProfitLossStatement,
   getBalanceSheet,

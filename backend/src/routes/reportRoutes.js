@@ -81,10 +81,4 @@ router.get('/gross-profit-margin',
   reportController.getGrossProfitMargin
 );
 
-// Export
-router.post('/export',
-  hasPermission(['reports.export']),
-  reportController.exportReport
-);
-
 module.exports = router;

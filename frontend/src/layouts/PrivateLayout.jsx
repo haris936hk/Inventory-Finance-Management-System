@@ -25,12 +25,10 @@ import {
   CreditCardOutlined,
   BarChartOutlined,
   ImportOutlined,
-  ExportOutlined,
   ReconciliationOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../stores/authStore';
 import ImportModal from '../components/ImportModal';
-import ExportModal from '../components/ExportModal';
 import ProfileModal from '../components/ProfileModal';
 
 const { Header, Sider, Content, Footer } = Layout;
@@ -40,9 +38,8 @@ const PrivateLayout = () => {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
-  const [exportModalVisible, setExportModalVisible] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  
+
   const { isAuthenticated, user, logout, hasPermission } = useAuthStore();
 
   useEffect(() => {
@@ -50,10 +47,6 @@ const PrivateLayout = () => {
     if (window.electronAPI) {
       window.electronAPI.receive('menu-import', () => {
         setImportModalVisible(true);
-      });
-      
-      window.electronAPI.receive('menu-export', () => {
-        setExportModalVisible(true);
       });
     }
   }, []);
@@ -217,13 +210,6 @@ const PrivateLayout = () => {
       onClick: () => setImportModalVisible(true),
       permission: 'inventory.create',
     },
-    {
-      key: 'export',
-      icon: <ExportOutlined />,
-      label: 'Export',
-      onClick: () => setExportModalVisible(true),
-      permission: 'reports.export',
-    },
   ];
 
   return (
@@ -340,11 +326,6 @@ const PrivateLayout = () => {
       <ImportModal
         visible={importModalVisible}
         onClose={() => setImportModalVisible(false)}
-      />
-
-      <ExportModal
-        visible={exportModalVisible}
-        onClose={() => setExportModalVisible(false)}
       />
 
       <ProfileModal
