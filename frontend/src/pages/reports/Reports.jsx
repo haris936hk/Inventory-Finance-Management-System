@@ -113,10 +113,10 @@ const Reports = () => {
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic 
-                title="Available" 
-                value={data.items?.filter(i => 
-                  ['In Store', 'In Hand', 'In Lab'].includes(i.status)
+              <Statistic
+                title="Available"
+                value={data.items?.filter(i =>
+                  (i.status === 'In Store' || i.status === 'In Lab') && i.repaired !== 'Returned'
                 ).length || 0}
               />
             </Card>

@@ -46,7 +46,16 @@ const Categories = () => {
       onSuccess: () => {
         message.success(`Category ${editingCategory ? 'updated' : 'created'} successfully`);
         queryClient.invalidateQueries('categories');
-        handleCloseModal();
+        // Reset unsaved changes state before closing to prevent the confirmation popup
+        setUnsavedChanges(false);
+        // Close modal after a brief delay to ensure state is updated
+        setTimeout(() => {
+          setModalVisible(false);
+          setEditingCategory(null);
+          setSpecTemplate({});
+          setActiveTab('basic');
+          form.resetFields();
+        }, 0);
       },
       onError: (error) => {
         console.error('Category operation failed:', error);
@@ -339,7 +348,6 @@ const Categories = () => {
                         </Button>
                         <Button
                           onClick={() => setActiveTab('template')}
-                          disabled={!form.getFieldValue('name') || !form.getFieldValue('code')}
                         >
                           Configure Template →
                         </Button>

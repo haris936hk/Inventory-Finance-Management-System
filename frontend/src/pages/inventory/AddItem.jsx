@@ -349,21 +349,6 @@ const AddItem = () => {
                 </Select>
               </Form.Item>
             </Col>
-
-            <Col xs={24} sm={12}>
-              <Form.Item
-                label="Status"
-                name="status"
-                initialValue="In Store"
-                rules={[{ required: true }]}
-              >
-                <Select>
-                  <Select.Option value="In Store">In Store</Select.Option>
-                  <Select.Option value="In Hand">In Hand</Select.Option>
-                  <Select.Option value="In Lab">In Lab</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
           </Row>
 
           {selectedCategory && (

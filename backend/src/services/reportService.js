@@ -18,7 +18,12 @@ class ReportService {
       // Get inventory metrics
       console.log('Starting inventory metrics...');
       const totalItems = await db.prisma.item.count({
-        where: { deletedAt: null }
+        where: {
+          deletedAt: null,
+          NOT: {
+            repaired: 'Returned'
+          }
+        }
       });
       console.log('Total items:', totalItems);
 
@@ -27,6 +32,9 @@ class ReportService {
         deletedAt: null,
         status: {
           in: ['In Store', 'In Hand', 'In Lab']
+        },
+        NOT: {
+          repaired: 'Returned'
         }
       }
     });
@@ -215,7 +223,12 @@ class ReportService {
   }
 
   async getInventoryReport(filters = {}) {
-    const where = { deletedAt: null };
+    const where = {
+      deletedAt: null,
+      NOT: {
+        repaired: 'Returned'
+      }
+    };
 
     if (filters.categoryId) {
       where.categoryId = filters.categoryId;
@@ -458,6 +471,9 @@ class ReportService {
         deletedAt: null,
         status: {
           in: ['In Store', 'In Hand', 'In Lab']
+        },
+        NOT: {
+          repaired: 'Returned'
         }
       },
       include: {

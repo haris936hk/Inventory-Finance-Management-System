@@ -241,16 +241,25 @@ const FieldConfigurationModal = ({
                 onChange={handleTypeChange}
                 style={{ width: '100%' }}
                 size="large"
+                optionLabelProp="label"
               >
                 {Object.entries(FIELD_TYPES).map(([key, type]) => (
-                  <Option key={key} value={key}>
-                    <Space>
-                      <span style={{ fontSize: '16px' }}>{type.icon}</span>
-                      <div>
-                        <div><strong>{type.label}</strong></div>
-                        <div style={{ fontSize: '12px', color: '#666' }}>{type.description}</div>
+                  <Option key={key} value={key} label={`${type.icon} ${type.label}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '4px 0' }}>
+                      <span style={{ fontSize: '16px', marginRight: '8px' }}>{type.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 'bold' }}>{type.label}</div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#666',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {type.description}
+                        </div>
                       </div>
-                    </Space>
+                    </div>
                   </Option>
                 ))}
               </Select>

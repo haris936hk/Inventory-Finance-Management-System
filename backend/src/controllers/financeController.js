@@ -1,11 +1,13 @@
 // ========== src/controllers/financeController.js ==========
 const asyncHandler = require('express-async-handler');
-const financeService = require('../services/financeService');
+const customerService = require('../services/customerService');
+const ledgerService = require('../services/ledgerService');
 const purchaseOrderService = require('../services/purchaseOrderService');
 const billService = require('../services/billService');
 const paymentService = require('../services/paymentService');
 const invoiceService = require('../services/invoiceService');
 const customerPaymentService = require('../services/customerPaymentService');
+const financialReportsService = require('../services/financialReportsService');
 const pdfService = require('../services/pdfService');
 const { ValidationError } = require('../utils/transactionWrapper');
 
@@ -19,7 +21,7 @@ const getCustomers = asyncHandler(async (req, res) => {
     search: req.query.search
   };
 
-  const customers = await financeService.getCustomers(filters);
+  const customers = await customerService.getCustomers(filters);
 
   res.json({
     success: true,
@@ -32,7 +34,7 @@ const getCustomers = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/customers/:id
 // @access  Private
 const getCustomer = asyncHandler(async (req, res) => {
-  const customer = await financeService.getCustomerById(req.params.id);
+  const customer = await customerService.getCustomerById(req.params.id);
 
   if (!customer) {
     res.status(404);
@@ -49,7 +51,7 @@ const getCustomer = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/customers
 // @access  Private
 const createCustomer = asyncHandler(async (req, res) => {
-  const customer = await financeService.createCustomer(req.body);
+  const customer = await customerService.createCustomer(req.body);
 
   res.status(201).json({
     success: true,
@@ -61,7 +63,7 @@ const createCustomer = asyncHandler(async (req, res) => {
 // @route   PUT /api/finance/customers/:id
 // @access  Private
 const updateCustomer = asyncHandler(async (req, res) => {
-  const customer = await financeService.updateCustomer(req.params.id, req.body);
+  const customer = await customerService.updateCustomer(req.params.id, req.body);
 
   res.json({
     success: true,
@@ -73,7 +75,7 @@ const updateCustomer = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/customers/:id/ledger
 // @access  Private
 const getCustomerLedger = asyncHandler(async (req, res) => {
-  const ledger = await financeService.getCustomerLedger(req.params.id);
+  const ledger = await ledgerService.getCustomerLedger(req.params.id);
 
   res.json({
     success: true,
@@ -85,7 +87,7 @@ const getCustomerLedger = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/vendors/:id/ledger
 // @access  Private
 const getVendorLedger = asyncHandler(async (req, res) => {
-  const ledger = await financeService.getVendorLedger(req.params.id);
+  const ledger = await ledgerService.getVendorLedger(req.params.id);
 
   res.json({
     success: true,
@@ -106,7 +108,7 @@ const getInvoices = asyncHandler(async (req, res) => {
     dateTo: req.query.dateTo
   };
 
-  const invoices = await financeService.getInvoices(filters);
+  const invoices = await invoiceService.getInvoices(filters);
 
   res.json({
     success: true,
@@ -119,7 +121,7 @@ const getInvoices = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/invoices/:id
 // @access  Private
 const getInvoice = asyncHandler(async (req, res) => {
-  const invoice = await financeService.getInvoiceById(req.params.id);
+  const invoice = await invoiceService.getInvoice(req.params.id);
 
   if (!invoice) {
     res.status(404);
@@ -136,7 +138,7 @@ const getInvoice = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/invoices
 // @access  Private
 const createInvoice = asyncHandler(async (req, res) => {
-  const invoice = await financeService.createInvoice(req.body, req.user.id);
+  const invoice = await invoiceService.createInvoice(req.body, req.user.id);
 
   res.status(201).json({
     success: true,
@@ -155,7 +157,7 @@ const updateInvoiceStatus = asyncHandler(async (req, res) => {
     throw new Error('Status required');
   }
 
-  const invoice = await financeService.updateInvoiceStatus(
+  const invoice = await invoiceService.updateInvoiceStatus(
     req.params.id,
     status,
     req.user.id
@@ -197,7 +199,7 @@ const cancelInvoice = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/payments
 // @access  Private
 const recordPayment = asyncHandler(async (req, res) => {
-  const payment = await financeService.recordPayment(req.body, req.user.id);
+  const payment = await customerPaymentService.recordPayment(req.body, req.user.id);
 
   res.status(201).json({
     success: true,
@@ -302,32 +304,9 @@ const voidCustomerPayment = asyncHandler(async (req, res) => {
   });
 });
 
-// ============= CHART OF ACCOUNTS =============
-
-// @desc    Get accounts
-// @route   GET /api/finance/accounts
-// @access  Private
-const getAccounts = asyncHandler(async (req, res) => {
-  const accounts = await financeService.getAccounts();
-
-  res.json({
-    success: true,
-    count: accounts.length,
-    data: accounts
-  });
-});
-
-// @desc    Create account
-// @route   POST /api/finance/accounts
-// @access  Private
-const createAccount = asyncHandler(async (req, res) => {
-  const account = await financeService.createAccount(req.body);
-
-  res.status(201).json({
-    success: true,
-    data: account
-  });
-});
+// ============= CHART OF ACCOUNTS (REMOVED - Not Required) =============
+// Chart of Accounts functionality has been removed as it's not required for current business needs
+// If needed in future, implement in dedicated accountingController.js
 
 // ============= PURCHASE ORDERS =============
 
@@ -610,19 +589,13 @@ const voidVendorPayment = asyncHandler(async (req, res) => {
   });
 });
 
-// ============= INSTALLMENT PLANS =============
-
-// @desc    Create installment plan
-// @route   POST /api/finance/installment-plans
-// @access  Private
-
 // ============= STATEMENTS & REPORTS =============
 
 // @desc    Get customer statement
 // @route   GET /api/finance/customers/:id/statement
 // @access  Private
 const getCustomerStatement = asyncHandler(async (req, res) => {
-  const statement = await financeService.getCustomerStatement(
+  const statement = await ledgerService.getCustomerStatement(
     req.params.id,
     req.query.dateFrom,
     req.query.dateTo
@@ -634,11 +607,16 @@ const getCustomerStatement = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get aging report
+// @desc    Get aging report (Accounts Receivable Aging)
 // @route   GET /api/finance/reports/aging
 // @access  Private
 const getAgingReport = asyncHandler(async (req, res) => {
-  const report = await financeService.getAgingReport();
+  const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
+
+  // Use comprehensive financialReportsService instead of old financeService.getAgingReport()
+  const report = await financialReportsService.generateAccountsReceivableAging(
+    new Date(asOfDate)
+  );
 
   res.json({
     success: true,
@@ -652,7 +630,7 @@ const getAgingReport = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/invoices/:id/pdf
 // @access  Private
 const generateInvoicePDF = asyncHandler(async (req, res) => {
-  const invoice = await invoiceService.getInvoiceById(req.params.id);
+  const invoice = await invoiceService.getInvoice(req.params.id);
 
   if (!invoice) {
     res.status(404);
@@ -670,7 +648,7 @@ const generateInvoicePDF = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/purchase-orders/:id/pdf
 // @access  Private
 const generatePurchaseOrderPDF = asyncHandler(async (req, res) => {
-  const purchaseOrder = await purchaseOrderService.getPurchaseOrderById(req.params.id);
+  const purchaseOrder = await purchaseOrderService.getPurchaseOrder(req.params.id);
 
   if (!purchaseOrder) {
     res.status(404);
@@ -688,7 +666,7 @@ const generatePurchaseOrderPDF = asyncHandler(async (req, res) => {
 // @route   GET /api/finance/vendor-bills/:id/pdf
 // @access  Private
 const generateVendorBillPDF = asyncHandler(async (req, res) => {
-  const bill = await billService.getBillById(req.params.id);
+  const bill = await billService.getBill(req.params.id);
 
   if (!bill) {
     res.status(404);
@@ -721,9 +699,7 @@ module.exports = {
   recordPayment,
   getPayments,
   voidCustomerPayment,
-  // Accounts
-  getAccounts,
-  createAccount,
+  // Accounts (REMOVED - Not required)
   // Purchase Orders
   createPurchaseOrder,
   getPurchaseOrders,

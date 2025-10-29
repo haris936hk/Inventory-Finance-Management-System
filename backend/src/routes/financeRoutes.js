@@ -68,10 +68,8 @@ router.post('/payments/:id/void',
   financeController.voidCustomerPayment
 );
 
-// Account routes
-router.route('/accounts')
-  .get(hasPermission(['finance.view']), financeController.getAccounts)
-  .post(hasPermission(['finance.create']), financeController.createAccount);
+// Account routes (REMOVED - Chart of Accounts not required)
+// If needed in future, implement in dedicated /api/accounting routes
 
 // Purchase Order routes
 router.route('/purchase-orders')

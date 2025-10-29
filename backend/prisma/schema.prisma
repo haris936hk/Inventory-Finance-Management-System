@@ -142,9 +142,10 @@ model Item {
   condition    String @default("New") // "New", "Used"
 
   // Enhanced inventory status tracking
-  inventoryStatus String @default("Available") // "Available", "Reserved", "Sold", "Delivered"
-  status          String // "In Store", "In Hand", "In Lab", "Sold", "Delivered", "Handover" (physical location)
+  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered"
+  status          String // "In Store", "In Lab", "Handover" (physical location)
   statusHistory   Json[] // Array of {status, date, userId, notes}
+  repaired        String? // "No", "Yes", "Returned" (only for "In Lab" items)
 
   // Reservation tracking (when inventoryStatus = "Reserved")
   reservedAt      DateTime? // When the item was reserved

@@ -15,8 +15,8 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
-import UpdateStatusModal from '../../components/UpdateStatusModal';
-import DeliveryProcessModal from '../../components/DeliveryProcessModal';
+import HandoverModal from '../../components/HandoverModal';
+import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
 import InventoryMovementHistory from '../../components/InventoryMovementHistory';
 
 const { Title, Text } = Typography;
@@ -27,8 +27,8 @@ const ItemDetails = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
-  const [statusModalVisible, setStatusModalVisible] = useState(false);
-  const [deliveryModalVisible, setDeliveryModalVisible] = useState(false);
+  const [handoverModalVisible, setHandoverModalVisible] = useState(false);
+  const [repairedModalVisible, setRepairedModalVisible] = useState(false);
 
   // Fetch item details
   const { data: item, isLoading, error } = useQuery(
@@ -111,10 +111,7 @@ const ItemDetails = () => {
   const getPhysicalStatusColor = (status) => {
     const colors = {
       'In Store': 'green',
-      'In Hand': 'blue',
       'In Lab': 'purple',
-      'Sold': 'blue',
-      'Delivered': 'cyan',
       'Handover': 'orange'
     };
     return colors[status] || 'default';
@@ -133,10 +130,7 @@ const ItemDetails = () => {
   const getPhysicalStatusIcon = (status) => {
     const icons = {
       'In Store': <CheckCircleOutlined />,
-      'In Hand': <DollarOutlined />,
       'In Lab': <WarningOutlined />,
-      'Sold': <DollarOutlined />,
-      'Delivered': <TruckOutlined />,
       'Handover': <TruckOutlined />
     };
     return icons[status] || <CheckCircleOutlined />;
@@ -220,24 +214,24 @@ const ItemDetails = () => {
             <Button icon={<PrinterOutlined />}>
               Print Details
             </Button>
-            {hasPermission('inventory.update') && (
-              <Button
-                type="primary"
-                icon={<EditOutlined />}
-                onClick={() => setStatusModalVisible(true)}
-              >
-                Update Status
-              </Button>
-            )}
-            {item.inventoryStatus === 'Sold' && hasPermission('inventory.update') && (
-              <Button
-                type="primary"
-                icon={<TruckOutlined />}
-                onClick={() => setDeliveryModalVisible(true)}
-                style={{ backgroundColor: '#52c41a', borderColor: '#52c41a' }}
-              >
-                Process Delivery
-              </Button>
+            {hasPermission('inventory.update') && item?.repaired !== 'Returned' && (
+              <>
+                <Button
+                  type="primary"
+                  icon={<TruckOutlined />}
+                  onClick={() => setHandoverModalVisible(true)}
+                >
+                  Handover
+                </Button>
+                {item?.status === 'In Lab' && (
+                  <Button
+                    icon={<EditOutlined />}
+                    onClick={() => setRepairedModalVisible(true)}
+                  >
+                    Update Repaired Status
+                  </Button>
+                )}
+              </>
             )}
             {hasPermission('inventory.delete') && (
               <Button
@@ -543,10 +537,10 @@ const ItemDetails = () => {
         </Col>
       </Row>
 
-      {/* Update Status Modal */}
-      <UpdateStatusModal
-        visible={statusModalVisible}
-        onClose={() => setStatusModalVisible(false)}
+      {/* Handover Modal */}
+      <HandoverModal
+        visible={handoverModalVisible}
+        onClose={() => setHandoverModalVisible(false)}
         item={item}
         onSuccess={() => {
           queryClient.invalidateQueries(['item', serialNumber]);
@@ -555,13 +549,12 @@ const ItemDetails = () => {
         }}
       />
 
-      {/* Delivery Process Modal */}
-      <DeliveryProcessModal
-        visible={deliveryModalVisible}
+      {/* Update Repaired Status Modal */}
+      <UpdateRepairedStatusModal
+        visible={repairedModalVisible}
+        onClose={() => setRepairedModalVisible(false)}
         item={item}
-        onClose={() => setDeliveryModalVisible(false)}
         onSuccess={() => {
-          setDeliveryModalVisible(false);
           queryClient.invalidateQueries(['item', serialNumber]);
           queryClient.invalidateQueries(['item-history', serialNumber]);
           queryClient.invalidateQueries(['inventory-movements', serialNumber]);

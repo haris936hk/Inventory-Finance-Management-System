@@ -402,23 +402,53 @@ async function cancelInvoice(invoiceId, reason, userId) {
       );
     }
 
-    // Check if any items are linked (prevent cancelling invoices with inventory impact)
-    const linkedItems = await tx.item.count({
-      where: {
-        invoices: {
-          some: {
-            invoiceId: invoiceId
-          }
-        }
-      }
+    // Automatically release reserved items for Draft invoices
+    // Get all invoice items
+    const invoiceItems = await tx.invoiceItem.findMany({
+      where: { invoiceId: invoiceId },
+      include: { item: true }
     });
 
-    if (linkedItems > 0) {
-      throw new ValidationError(
-        `Cannot cancel invoice with ${linkedItems} linked inventory items. ` +
-        `Remove item associations first.`
-      );
+    // Release each reserved item back to Available status
+    for (const invoiceItem of invoiceItems) {
+      const item = invoiceItem.item;
+
+      // Only release if the item is currently Reserved for this invoice
+      if (item.inventoryStatus === 'Reserved' && item.reservedForId === invoiceId) {
+        await tx.item.update({
+          where: { id: item.id },
+          data: {
+            inventoryStatus: 'Available',
+            reservedAt: null,
+            reservedBy: null,
+            reservedForType: null,
+            reservedForId: null
+          }
+        });
+
+        // Create status history entry
+        await tx.inventoryStatusHistory.create({
+          data: {
+            itemId: item.id,
+            fromStatus: 'Reserved',
+            toStatus: 'Available',
+            changeReason: 'INVOICE_CANCELLED',
+            referenceType: 'Invoice',
+            referenceId: invoiceId,
+            changedBy: userId,
+            notes: `Released from cancelled Invoice ${invoice.invoiceNumber}`
+          }
+        });
+      }
     }
+
+    // Delete any item reservations for this invoice
+    await tx.itemReservation.deleteMany({
+      where: {
+        referenceType: 'Invoice',
+        referenceId: invoiceId
+      }
+    });
 
     // Soft-cancel the invoice
     const cancelled = await tx.invoice.update({
@@ -509,12 +539,33 @@ async function getInvoice(invoiceId) {
       customer: true,
       items: {
         include: {
-          item: true
+          item: {
+            include: {
+              category: true,
+              model: {
+                include: {
+                  company: true
+                }
+              }
+            }
+          }
         }
       },
       payments: {
         where: { deletedAt: null, voidedAt: null },
+        include: {
+          recordedBy: {
+            select: {
+              fullName: true
+            }
+          }
+        },
         orderBy: { paymentDate: 'desc' }
+      },
+      createdBy: {
+        select: {
+          fullName: true
+        }
       }
     }
   });
@@ -539,6 +590,61 @@ async function getInvoice(invoiceId) {
                             invoice.paidAmount === 0;
 
   return invoice;
+}
+
+/**
+ * Get all invoices with filters
+ *
+ * @param {Object} filters - Query filters
+ * @param {string} filters.status - Filter by status (comma-separated)
+ * @param {string} filters.customerId - Filter by customer
+ * @param {string} filters.dateFrom - Filter by date from
+ * @param {string} filters.dateTo - Filter by date to
+ * @returns {Promise<Array>} Invoices
+ */
+async function getInvoices(filters = {}) {
+  const where = { deletedAt: null };
+
+  if (filters.status) {
+    // Handle multiple status values separated by comma
+    const statuses = Array.isArray(filters.status)
+      ? filters.status
+      : filters.status.split(',').map(s => s.trim());
+
+    if (statuses.length === 1) {
+      where.status = statuses[0];
+    } else {
+      where.status = { in: statuses };
+    }
+  }
+
+  if (filters.customerId) {
+    where.customerId = filters.customerId;
+  }
+
+  if (filters.dateFrom || filters.dateTo) {
+    where.invoiceDate = {};
+    if (filters.dateFrom) {
+      where.invoiceDate.gte = new Date(filters.dateFrom);
+    }
+    if (filters.dateTo) {
+      where.invoiceDate.lte = new Date(filters.dateTo);
+    }
+  }
+
+  return await db.prisma.invoice.findMany({
+    where,
+    include: {
+      customer: true,
+      _count: {
+        select: {
+          items: true,
+          payments: true
+        }
+      }
+    },
+    orderBy: { invoiceDate: 'desc' }
+  });
 }
 
 /**
@@ -584,6 +690,7 @@ module.exports = {
   updateInvoiceStatus,
   cancelInvoice,
   getInvoice,
+  getInvoices,
   calculateInvoiceStatus,
   updateOverdueInvoices,
   STATUS_TRANSITIONS

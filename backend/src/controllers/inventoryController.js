@@ -295,6 +295,33 @@ const deleteItem = asyncHandler(async (req, res) => {
 // @route   PUT /api/inventory/items/:serialNumber/status
 // @access  Private
 const updateItemStatus = asyncHandler(async (req, res) => {
+  const { status, handoverTo, handoverToNIC, handoverToPhone } = req.body;
+
+  // Validate status is provided
+  if (!status) {
+    res.status(400);
+    throw new Error('Status is required');
+  }
+
+  // Validate status value (only "Handover" allowed - items cannot move between In Store/In Lab)
+  if (status !== 'Handover') {
+    res.status(400);
+    throw new Error('Only "Handover" status is allowed. Items cannot move between "In Store" and "In Lab".');
+  }
+
+  // Validate handover fields (always required since only Handover is allowed)
+  if (status === 'Handover') {
+    const missingFields = [];
+    if (!handoverTo) missingFields.push('handoverTo');
+    if (!handoverToNIC) missingFields.push('handoverToNIC');
+    if (!handoverToPhone) missingFields.push('handoverToPhone');
+
+    if (missingFields.length > 0) {
+      res.status(400);
+      throw new Error(`Handover requires the following fields: ${missingFields.join(', ')}`);
+    }
+  }
+
   const item = await inventoryService.updateItemStatus(
     req.params.serialNumber,
     req.body,
@@ -303,7 +330,40 @@ const updateItemStatus = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    data: item
+    data: item,
+    message: 'Item handed over successfully. Invoice marked as Delivered.'
+  });
+});
+
+// @desc    Update item repaired status
+// @route   PUT /api/inventory/items/:serialNumber/repaired
+// @access  Private
+const updateRepairedStatus = asyncHandler(async (req, res) => {
+  const { repaired } = req.body;
+
+  // Validate repaired status is provided
+  if (!repaired) {
+    res.status(400);
+    throw new Error('Repaired status is required');
+  }
+
+  // Validate repaired value (only "Yes" and "Returned" allowed)
+  const allowedStatuses = ['Yes', 'Returned'];
+  if (!allowedStatuses.includes(repaired)) {
+    res.status(400);
+    throw new Error('Invalid repaired status. Only "Yes" and "Returned" are allowed.');
+  }
+
+  const item = await inventoryService.updateRepairedStatus(
+    req.params.serialNumber,
+    repaired,
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    data: item,
+    message: `Item repaired status updated to "${repaired}"`
   });
 });
 
@@ -448,6 +508,7 @@ module.exports = {
   bulkCreateItems,
   deleteItem,
   updateItemStatus,
+  updateRepairedStatus,
   getStockSummary,
   checkSerialNumber,
   // Vendors

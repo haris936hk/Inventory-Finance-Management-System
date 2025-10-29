@@ -361,15 +361,23 @@ class InventoryService {
       throw error;
     }
 
+    // Automatically determine status based on condition
+    const condition = itemData.condition || 'New';
+    const autoStatus = condition === 'Used' ? 'In Lab' : 'In Store';
+
+    // Set repaired status for "In Lab" items
+    const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
+
     // Create item with initial status
     try {
       const item = await db.prisma.item.create({
         data: {
           serialNumber: itemData.serialNumber,
-          condition: itemData.condition || 'New',
-          status: itemData.status || 'In Store',
+          condition: condition,
+          status: autoStatus,
+          repaired: repairedStatus,
           statusHistory: [{
-            status: itemData.status || 'In Store',
+            status: autoStatus,
             date: new Date(),
             userId,
             notes: 'Initial entry'
@@ -454,6 +462,21 @@ class InventoryService {
 
   async getItems(filters = {}) {
     const where = { deletedAt: null };
+
+    // Exclude "Returned" items by default (unless explicitly filtering for them)
+    if (!filters.includeReturned) {
+      where.NOT = {
+        repaired: 'Returned'
+      };
+    }
+
+    // Filter for invoice-available items only
+    if (filters.availableForInvoice) {
+      where.OR = [
+        { status: 'In Store' },
+        { status: 'In Lab', repaired: 'Yes' }
+      ];
+    }
 
     // Apply filters
     if (filters.serialNumber) {
@@ -563,11 +586,30 @@ class InventoryService {
 
   async updateItemStatus(serialNumber, statusData, userId) {
     const item = await db.prisma.item.findUnique({
-      where: { serialNumber }
+      where: { serialNumber },
+      include: {
+        invoiceItems: {
+          include: {
+            invoice: true
+          }
+        }
+      }
     });
 
     if (!item) {
       throw new Error('Item not found');
+    }
+
+    // Validate: Only allow "Handover" (items cannot move between In Store/In Lab)
+    if (statusData.status !== 'Handover') {
+      throw new Error('Only "Handover" status is allowed. Items cannot move between "In Store" and "In Lab".');
+    }
+
+    // Validate handover fields when status is Handover
+    if (statusData.status === 'Handover') {
+      if (!statusData.handoverTo || !statusData.handoverToNIC || !statusData.handoverToPhone) {
+        throw new Error('Handover requires: handoverTo, handoverToNIC, and handoverToPhone');
+      }
     }
 
     // Build status history entry
@@ -584,29 +626,45 @@ class InventoryService {
       statusHistory: [...(item.statusHistory || []), historyEntry]
     };
 
-    // Handle handover/delivery specific fields
-    if (statusData.status === 'Handover' || statusData.status === 'Delivered') {
-      updateData.outboundDate = statusData.outboundDate || new Date();
-      updateData.handoverDate = statusData.handoverDate || new Date();
+    // Handle Handover status
+    if (statusData.status === 'Handover') {
+      updateData.outboundDate = new Date();
+      updateData.handoverDate = new Date();
       updateData.handoverTo = statusData.handoverTo;
+      updateData.handoverToNIC = statusData.handoverToNIC;
+      updateData.handoverToPhone = statusData.handoverToPhone;
       updateData.handoverById = userId;
-      updateData.handoverDetails = statusData.handoverDetails;
+      updateData.handoverDetails = statusData.handoverDetails || null;
 
-      // Customer relationship
-      if (statusData.customerId) {
-        updateData.customerId = statusData.customerId;
+      // Automatically update business status to Delivered
+      updateData.inventoryStatus = 'Delivered';
+
+      // Find related invoice and update to Delivered
+      const invoiceItem = item.invoiceItems && item.invoiceItems.length > 0
+        ? item.invoiceItems[0]
+        : null;
+
+      if (invoiceItem && invoiceItem.invoice) {
+        await db.prisma.invoice.update({
+          where: { id: invoiceItem.invoice.id },
+          data: { status: 'Delivered' }
+        });
+
+        logger.info(`Invoice ${invoiceItem.invoice.invoiceNumber} automatically marked as Delivered due to item handover`);
       }
-    }
 
-    // Handle sale status
-    if (statusData.status === 'Sold') {
-      updateData.outboundDate = statusData.outboundDate || new Date();
-      if (statusData.sellingPrice) updateData.sellingPrice = statusData.sellingPrice;
-
-      // Customer relationship
-      if (statusData.customerId) {
-        updateData.customerId = statusData.customerId;
-      }
+      // Create inventory movement record
+      await db.prisma.inventoryMovement.create({
+        data: {
+          itemId: item.id,
+          movementType: 'HANDOVER',
+          fromStatus: item.status,
+          toStatus: 'Handover',
+          userId: userId,
+          notes: statusData.handoverDetails || `Handover to ${statusData.handoverTo}`,
+          reference: invoiceItem?.invoice?.invoiceNumber || null
+        }
+      });
     }
 
     const updatedItem = await db.prisma.item.update({
@@ -626,6 +684,73 @@ class InventoryService {
     });
 
     logger.info(`Item ${serialNumber} status updated to ${statusData.status}`);
+    return updatedItem;
+  }
+
+  /**
+   * Update repaired status for "In Lab" items
+   */
+  async updateRepairedStatus(serialNumber, repairedStatus, userId) {
+    const item = await db.prisma.item.findUnique({
+      where: { serialNumber }
+    });
+
+    if (!item) {
+      throw new Error('Item not found');
+    }
+
+    // Validate: Item must be "In Lab"
+    if (item.status !== 'In Lab') {
+      throw new Error('Only items in "In Lab" status can have their repaired status updated');
+    }
+
+    // Validate: Only allow "Yes" and "Returned"
+    const allowedStatuses = ['Yes', 'Returned'];
+    if (!allowedStatuses.includes(repairedStatus)) {
+      throw new Error('Invalid repaired status. Only "Yes" and "Returned" are allowed.');
+    }
+
+    // Validate transitions: No→Yes, No→Returned, Yes→Returned
+    const currentRepaired = item.repaired || 'No';
+    const validTransitions = {
+      'No': ['Yes', 'Returned'],
+      'Yes': ['Returned'],
+      'Returned': [] // Cannot change from Returned
+    };
+
+    if (!validTransitions[currentRepaired].includes(repairedStatus)) {
+      throw new Error(`Cannot change repaired status from "${currentRepaired}" to "${repairedStatus}"`);
+    }
+
+    // Build status history entry
+    const historyEntry = {
+      status: item.status,
+      repaired: repairedStatus,
+      date: new Date(),
+      userId,
+      notes: `Repaired status changed from "${currentRepaired}" to "${repairedStatus}"`
+    };
+
+    // Update item
+    const updatedItem = await db.prisma.item.update({
+      where: { serialNumber },
+      data: {
+        repaired: repairedStatus,
+        statusHistory: [...(item.statusHistory || []), historyEntry]
+      },
+      include: {
+        category: true,
+        model: {
+          include: {
+            company: true
+          }
+        },
+        vendor: true,
+        customer: true
+      }
+    });
+
+    logger.info(`Item ${serialNumber} repaired status updated to ${repairedStatus}`);
     return updatedItem;
   }
 

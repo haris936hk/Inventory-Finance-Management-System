@@ -97,6 +97,11 @@ router.put('/items/:serialNumber/status',
   inventoryController.updateItemStatus
 );
 
+router.put('/items/:serialNumber/repaired',
+  hasPermission(['inventory.edit']),
+  inventoryController.updateRepairedStatus
+);
+
 // Stock summary
 router.get('/stock-summary',
   hasPermission(['inventory.view']),

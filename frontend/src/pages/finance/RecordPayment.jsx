@@ -9,7 +9,7 @@ import {
   DollarOutlined, FileTextOutlined, ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
@@ -20,6 +20,8 @@ const { Title, Text } = Typography;
 const RecordPayment = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const invoiceIdFromUrl = searchParams.get('invoiceId');
   const [form] = Form.useForm();
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -30,6 +32,17 @@ const RecordPayment = () => {
     const response = await axios.get('/finance/customers');
     return response.data.data;
   });
+
+  // Fetch invoice from URL if invoiceId is provided
+  const { data: invoiceFromUrl, isLoading: loadingInvoiceFromUrl } = useQuery(
+    ['invoice-from-url', invoiceIdFromUrl],
+    async () => {
+      if (!invoiceIdFromUrl) return null;
+      const response = await axios.get(`/finance/invoices/${invoiceIdFromUrl}`);
+      return response.data.data;
+    },
+    { enabled: !!invoiceIdFromUrl }
+  );
 
   // Fetch customer invoices when customer is selected
   const { data: customerInvoices, isLoading: invoicesLoading } = useQuery(
@@ -57,6 +70,25 @@ const RecordPayment = () => {
       }
     }
   );
+
+  // Prefill form when invoice is loaded from URL
+  React.useEffect(() => {
+    if (invoiceFromUrl && !loadingInvoiceFromUrl) {
+      // Set customer and invoice
+      setSelectedCustomer(invoiceFromUrl.customerId);
+      setSelectedInvoice(invoiceFromUrl);
+
+      // Calculate remaining balance
+      const remainingBalance = (invoiceFromUrl.total || 0) - (invoiceFromUrl.paidAmount || 0);
+
+      // Prefill form fields
+      form.setFieldsValue({
+        customerId: invoiceFromUrl.customerId,
+        invoiceId: invoiceFromUrl.id,
+        amount: remainingBalance > 0 ? remainingBalance : undefined
+      });
+    }
+  }, [invoiceFromUrl, loadingInvoiceFromUrl, form]);
 
   const handleCustomerChange = (customerId) => {
     setSelectedCustomer(customerId);

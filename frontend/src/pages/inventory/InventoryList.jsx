@@ -7,15 +7,17 @@ import {
   Popconfirm, Modal, Form, Dropdown
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined, ExportOutlined,
+  PlusOutlined, SearchOutlined, FilterOutlined,
   EditOutlined, DeleteOutlined, EyeOutlined, BarcodeOutlined,
-  PrinterOutlined, MoreOutlined, ScanOutlined, AppstoreAddOutlined
+  PrinterOutlined, MoreOutlined, ScanOutlined, AppstoreAddOutlined,
+  TruckOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import BarcodeScanner from '../../components/BarcodeScanner';
-import UpdateStatusModal from '../../components/UpdateStatusModal';
+import HandoverModal from '../../components/HandoverModal';
+import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
@@ -30,7 +32,8 @@ const InventoryList = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
-  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [handoverModalVisible, setHandoverModalVisible] = useState(false);
+  const [repairedModalVisible, setRepairedModalVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [pageSize, setPageSize] = useState(20);
 
@@ -82,10 +85,7 @@ const InventoryList = () => {
   const getPhysicalStatusColor = (status) => {
     const colors = {
       'In Store': 'green',
-      'In Hand': 'blue',
       'In Lab': 'cyan',
-      'Sold': 'orange',
-      'Delivered': 'purple',
       'Handover': 'magenta'
     };
     return colors[status] || 'default';
@@ -152,16 +152,29 @@ const InventoryList = () => {
       width: 120,
       filters: [
         { text: 'In Store', value: 'In Store' },
-        { text: 'In Hand', value: 'In Hand' },
         { text: 'In Lab', value: 'In Lab' },
-        { text: 'Sold', value: 'Sold' },
-        { text: 'Delivered', value: 'Delivered' },
         { text: 'Handover', value: 'Handover' },
       ],
       onFilter: (value, record) => record.status === value,
       render: (status) => (
         <Tag color={getPhysicalStatusColor(status)}>{status}</Tag>
       )
+    },
+    {
+      title: 'Repaired Status',
+      dataIndex: 'repaired',
+      key: 'repaired',
+      width: 130,
+      render: (repaired, record) => {
+        if (record.status !== 'In Lab') return '-';
+        const status = repaired || 'No';
+        const colors = {
+          'No': 'orange',
+          'Yes': 'green',
+          'Returned': 'default'
+        };
+        return <Tag color={colors[status]}>{status}</Tag>;
+      }
     },
     {
       title: 'Condition',
@@ -255,6 +268,8 @@ const InventoryList = () => {
       render: (_, record) => {
         const isAvailable = (record.inventoryStatus || 'Available') === 'Available';
         const isSold = (record.inventoryStatus === 'Sold' || record.inventoryStatus === 'Delivered');
+        const isInLab = record.status === 'In Lab';
+        const isReturned = record.repaired === 'Returned';
 
         const menuItems = [
           {
@@ -267,15 +282,25 @@ const InventoryList = () => {
             }
           },
           {
-            key: 'edit',
-            label: 'Update Status',
+            key: 'handover',
+            label: 'Handover',
+            icon: <TruckOutlined />,
+            onClick: () => {
+              setSelectedItem(record);
+              setHandoverModalVisible(true);
+            },
+            disabled: !hasPermission('inventory.edit') || isReturned
+          },
+          ...(isInLab ? [{
+            key: 'repaired',
+            label: 'Update Repaired Status',
             icon: <EditOutlined />,
             onClick: () => {
               setSelectedItem(record);
-              setStatusModalVisible(true);
+              setRepairedModalVisible(true);
             },
-            disabled: !hasPermission('inventory.edit')
-          },
+            disabled: !hasPermission('inventory.edit') || isReturned
+          }] : []),
           {
             key: 'print',
             label: 'Print Label',
@@ -303,15 +328,16 @@ const InventoryList = () => {
               icon={<EyeOutlined />}
               onClick={() => navigate(`/app/inventory/items/${record.serialNumber}`)}
             />
-            {hasPermission('inventory.edit') && (
+            {hasPermission('inventory.edit') && !isReturned && (
               <Button
                 type="link"
                 size="small"
-                icon={<EditOutlined />}
+                icon={<TruckOutlined />}
                 onClick={() => {
                   setSelectedItem(record);
-                  setStatusModalVisible(true);
+                  setHandoverModalVisible(true);
                 }}
+                title="Handover"
               />
             )}
             <Dropdown menu={{ items: menuItems }} trigger={['click']}>
@@ -348,14 +374,6 @@ const InventoryList = () => {
     message.info('Printing label...');
   };
 
-  const handleBulkExport = () => {
-    const selectedItems = itemsData?.filter(item => 
-      selectedRowKeys.includes(item.id)
-    );
-    // Export logic
-    message.info(`Exporting ${selectedItems.length} items...`);
-  };
-
   const rowSelection = {
     selectedRowKeys,
     onChange: (keys) => setSelectedRowKeys(keys),
@@ -363,6 +381,17 @@ const InventoryList = () => {
 
   return (
     <>
+      <style>
+        {`
+          .returned-item-row {
+            opacity: 0.5;
+            background-color: #f5f5f5;
+          }
+          .returned-item-row td:first-child {
+            text-decoration: line-through;
+          }
+        `}
+      </style>
       <Card>
         <div style={{ marginBottom: 16 }}>
           <Row gutter={[8, 8]} align="middle">
@@ -405,10 +434,7 @@ const InventoryList = () => {
                 onChange={(value) => setFilters({ ...filters, status: value })}
               >
                 <Select.Option value="In Store">In Store</Select.Option>
-                <Select.Option value="In Hand">In Hand</Select.Option>
                 <Select.Option value="In Lab">In Lab</Select.Option>
-                <Select.Option value="Sold">Sold</Select.Option>
-                <Select.Option value="Delivered">Delivered</Select.Option>
                 <Select.Option value="Handover">Handover</Select.Option>
               </Select>
             </Col>
@@ -451,15 +477,6 @@ const InventoryList = () => {
                     </Button>
                   </>
                 )}
-
-                {selectedRowKeys.length > 0 && (
-                  <Button
-                    icon={<ExportOutlined />}
-                    onClick={handleBulkExport}
-                  >
-                    Export ({selectedRowKeys.length})
-                  </Button>
-                )}
               </Space>
             </Col>
           </Row>
@@ -471,6 +488,7 @@ const InventoryList = () => {
           dataSource={itemsData}
           loading={isLoading}
           rowSelection={rowSelection}
+          rowClassName={(record) => record.repaired === 'Returned' ? 'returned-item-row' : ''}
           scroll={{ x: 1800 }}
           pagination={{
             total: itemsData?.length || 0,
@@ -622,13 +640,23 @@ const InventoryList = () => {
                 >
                   View Full Details
                 </Button>
-                {hasPermission('inventory.edit') && (
-                  <Button onClick={() => {
-                    setStatusModalVisible(true);
-                    setDrawerVisible(false);
-                  }}>
-                    Update Status
-                  </Button>
+                {hasPermission('inventory.edit') && selectedItem?.repaired !== 'Returned' && (
+                  <>
+                    <Button onClick={() => {
+                      setHandoverModalVisible(true);
+                      setDrawerVisible(false);
+                    }}>
+                      Handover
+                    </Button>
+                    {selectedItem?.status === 'In Lab' && (
+                      <Button onClick={() => {
+                        setRepairedModalVisible(true);
+                        setDrawerVisible(false);
+                      }}>
+                        Update Repaired Status
+                      </Button>
+                    )}
+                  </>
                 )}
               </Space>
             </div>
@@ -643,17 +671,32 @@ const InventoryList = () => {
         onScan={handleScanResult}
       />
 
-      {/* Update Status Modal */}
-      <UpdateStatusModal
-        visible={statusModalVisible}
+      {/* Handover Modal */}
+      <HandoverModal
+        visible={handoverModalVisible}
         item={selectedItem}
         onClose={() => {
-          setStatusModalVisible(false);
+          setHandoverModalVisible(false);
           setSelectedItem(null);
         }}
         onSuccess={() => {
           queryClient.invalidateQueries('items');
-          setStatusModalVisible(false);
+          setHandoverModalVisible(false);
+          setSelectedItem(null);
+        }}
+      />
+
+      {/* Update Repaired Status Modal */}
+      <UpdateRepairedStatusModal
+        visible={repairedModalVisible}
+        item={selectedItem}
+        onClose={() => {
+          setRepairedModalVisible(false);
+          setSelectedItem(null);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries('items');
+          setRepairedModalVisible(false);
           setSelectedItem(null);
         }}
       />

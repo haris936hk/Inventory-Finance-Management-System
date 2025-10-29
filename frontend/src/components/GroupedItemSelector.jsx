@@ -60,7 +60,9 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
   const { data: groupedItems, isLoading, refetch } = useQuery(
     ['groupedItems', conditionFilter, categoryFilter, companyFilter, modelFilter],
     async () => {
-      const params = {};
+      const params = {
+        availableForInvoice: true // Only show items available for sale
+      };
       if (conditionFilter) params.condition = conditionFilter;
       if (categoryFilter) params.categoryId = categoryFilter;
       if (modelFilter) params.modelId = modelFilter;
