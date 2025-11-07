@@ -26,12 +26,15 @@ const Payments = () => {
   const [searchText, setSearchText] = useState('');
   const [dateRange, setDateRange] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('');
+  // PERFORMANCE OPTIMIZATION: Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Fetch payments
-  const { data: paymentsData, isLoading } = useQuery(
-    ['payments', searchText, dateRange, paymentMethod],
+  // PERFORMANCE OPTIMIZATION: Fetch paginated payments from backend
+  const { data: response, isLoading } = useQuery(
+    ['payments', searchText, dateRange, paymentMethod, page, pageSize],
     async () => {
-      const params = {};
+      const params = { page, limit: pageSize };
       if (searchText) params.search = searchText;
       if (dateRange && dateRange.length === 2) {
         params.startDate = dateRange[0].format('YYYY-MM-DD');
@@ -40,11 +43,14 @@ const Payments = () => {
       if (paymentMethod) params.method = paymentMethod;
 
       const response = await axios.get('/finance/payments', { params });
-      return response.data.data;
+      return response.data;
     }
   );
 
-  const payments = paymentsData || [];
+  // Extract data from paginated response
+  const payments = response?.data || [];
+  const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
+  const backendStatistics = response?.statistics || { totalPayments: 0, totalAmount: 0 };
 
   // Void payment mutation
   const voidPaymentMutation = useMutation(
@@ -62,15 +68,16 @@ const Payments = () => {
     }
   );
 
-  // Calculate stats from the payments data
+  // PERFORMANCE OPTIMIZATION: Use backend statistics for total count and amount
+  // Note: Today's and this month's amounts still calculated client-side from current page
   const stats = {
-    totalAmount: payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
-    totalCount: payments.length,
+    totalAmount: backendStatistics.totalAmount || 0,
+    totalCount: pagination.totalCount || 0,
     todayAmount: payments
-      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'day'))
+      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'day') && !payment.voidedAt)
       .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
     monthAmount: payments
-      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'month'))
+      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'month') && !payment.voidedAt)
       .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0)
   };
 
@@ -326,12 +333,18 @@ const Payments = () => {
           dataSource={payments}
           loading={isLoading}
           pagination={{
-            total: paymentsData?.total,
-            pageSize: 20,
+            current: page,
+            pageSize: pageSize,
+            total: pagination.totalCount,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) =>
-              `${range[0]}-${range[1]} of ${total} payments`
+              `${range[0]}-${range[1]} of ${total} payments`,
+            onChange: (newPage, newPageSize) => {
+              setPage(newPage);
+              setPageSize(newPageSize);
+            },
+            pageSizeOptions: ['10', '25', '50', '100']
           }}
           scroll={{ x: 800 }}
         />

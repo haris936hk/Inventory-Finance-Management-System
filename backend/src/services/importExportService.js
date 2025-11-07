@@ -12,7 +12,7 @@ class ImportExportService {
     try {
       // Read workbook
       const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-      
+
       const results = {
         success: [],
         failed: [],
@@ -24,22 +24,26 @@ class ImportExportService {
         }
       };
 
+      // PERFORMANCE OPTIMIZATION: Pre-load all categories, companies, and models into cache
+      // This prevents N database queries during import (one per row)
+      const cache = await this.preloadImportCache();
+
       // Process each sheet
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet);
-        
+
         logger.info(`Processing sheet: ${sheetName} with ${data.length} rows`);
-        
+
         for (const row of data) {
           results.summary.totalRows++;
 
           try {
             let importResult;
             if (importType === 'samhan') {
-              importResult = await this.processSamhanRow(row, sheetName, userId);
+              importResult = await this.processSamhanRow(row, sheetName, userId, cache);
             } else {
-              importResult = await this.processRow(row, sheetName, userId);
+              importResult = await this.processRow(row, sheetName, userId, cache);
             }
 
             if (importResult.status === 'review_required') {
@@ -76,9 +80,46 @@ class ImportExportService {
   }
 
   /**
+   * PERFORMANCE OPTIMIZATION: Pre-load all categories, companies, models, and vendors into memory
+   * Prevents N+1 query problem during import
+   */
+  async preloadImportCache() {
+    logger.info('Pre-loading import cache (categories, companies, models, vendors)...');
+
+    const [categories, companies, models, vendors] = await Promise.all([
+      db.prisma.productCategory.findMany({ where: { deletedAt: null } }),
+      db.prisma.company.findMany({ where: { deletedAt: null } }),
+      db.prisma.productModel.findMany({
+        where: { deletedAt: null },
+        include: { company: true, category: true }
+      }),
+      db.prisma.vendor.findMany({ where: { deletedAt: null } })
+    ]);
+
+    // Create lookup Maps for O(1) access
+    const cache = {
+      categories: new Map(),
+      companies: new Map(),
+      models: new Map(), // Key: "companyId:modelName"
+      vendors: new Map()
+    };
+
+    categories.forEach(cat => cache.categories.set(cat.name.toLowerCase(), cat));
+    companies.forEach(comp => cache.companies.set(comp.name.toLowerCase(), comp));
+    models.forEach(mod => {
+      const key = `${mod.companyId}:${mod.name.toLowerCase()}`;
+      cache.models.set(key, mod);
+    });
+    vendors.forEach(vend => cache.vendors.set(vend.name.toLowerCase(), vend));
+
+    logger.info(`Cache loaded: ${categories.length} categories, ${companies.length} companies, ${models.length} models, ${vendors.length} vendors`);
+    return cache;
+  }
+
+  /**
    * Process Samhan-specific row format
    */
-  async processSamhanRow(row, sheetName, userId) {
+  async processSamhanRow(row, sheetName, userId, cache = null) {
     try {
       // Handle undefined/empty values
       if (this.isRowEmpty(row)) {
@@ -111,11 +152,9 @@ class ImportExportService {
         };
       }
 
+      // PERFORMANCE OPTIMIZATION: Use cache for lookups instead of database queries
       // Get or create category
-      let category = await db.prisma.productCategory.findFirst({
-        where: { name: categoryName }
-      });
-
+      let category = cache ? cache.categories.get(categoryName.toLowerCase()) : null;
       if (!category) {
         category = await db.prisma.productCategory.create({
           data: {
@@ -124,16 +163,17 @@ class ImportExportService {
             isActive: true
           }
         });
+        // Update cache with new category
+        if (cache) {
+          cache.categories.set(categoryName.toLowerCase(), category);
+        }
       }
 
       // Get or create company
       let company = null;
       const companyName = row.Make;
       if (companyName && companyName !== 'undefined') {
-        company = await db.prisma.company.findFirst({
-          where: { name: companyName }
-        });
-
+        company = cache ? cache.companies.get(companyName.toLowerCase()) : null;
         if (!company) {
           company = await db.prisma.company.create({
             data: {
@@ -142,6 +182,10 @@ class ImportExportService {
               isActive: true
             }
           });
+          // Update cache with new company
+          if (cache) {
+            cache.companies.set(companyName.toLowerCase(), company);
+          }
         }
       }
 
@@ -149,13 +193,8 @@ class ImportExportService {
       let model = null;
       const modelName = row.Model;
       if (modelName && modelName !== 'undefined' && company) {
-        model = await db.prisma.productModel.findFirst({
-          where: {
-            name: modelName,
-            companyId: company.id
-          }
-        });
-
+        const modelKey = `${company.id}:${modelName.toLowerCase()}`;
+        model = cache ? cache.models.get(modelKey) : null;
         if (!model) {
           model = await db.prisma.productModel.create({
             data: {
@@ -166,6 +205,10 @@ class ImportExportService {
               isActive: true
             }
           });
+          // Update cache with new model
+          if (cache) {
+            cache.models.set(modelKey, model);
+          }
         }
       }
 
@@ -268,15 +311,13 @@ class ImportExportService {
     }
   }
 
-  async processRow(row, sheetName, userId) {
+  async processRow(row, sheetName, userId, cache = null) {
     // Determine category from sheet name or column
     const categoryName = row.Category || sheetName;
-    
-    // Get or create category
-    let category = await db.prisma.productCategory.findFirst({
-      where: { name: categoryName }
-    });
 
+    // PERFORMANCE OPTIMIZATION: Use cache for lookups instead of database queries
+    // Get or create category
+    let category = cache ? cache.categories.get(categoryName.toLowerCase()) : null;
     if (!category) {
       category = await db.prisma.productCategory.create({
         data: {
@@ -285,16 +326,16 @@ class ImportExportService {
           isActive: true
         }
       });
+      if (cache) {
+        cache.categories.set(categoryName.toLowerCase(), category);
+      }
     }
 
     // Get or create company
     let company = null;
     if (row.Company || row.Make) {
       const companyName = row.Company || row.Make;
-      company = await db.prisma.company.findFirst({
-        where: { name: companyName }
-      });
-
+      company = cache ? cache.companies.get(companyName.toLowerCase()) : null;
       if (!company) {
         company = await db.prisma.company.create({
           data: {
@@ -303,19 +344,17 @@ class ImportExportService {
             isActive: true
           }
         });
+        if (cache) {
+          cache.companies.set(companyName.toLowerCase(), company);
+        }
       }
     }
 
     // Get or create model
     let model = null;
     if (row.Model && company) {
-      model = await db.prisma.productModel.findFirst({
-        where: {
-          name: row.Model,
-          companyId: company.id
-        }
-      });
-
+      const modelKey = `${company.id}:${row.Model.toLowerCase()}`;
+      model = cache ? cache.models.get(modelKey) : null;
       if (!model) {
         model = await db.prisma.productModel.create({
           data: {
@@ -326,6 +365,9 @@ class ImportExportService {
             isActive: true
           }
         });
+        if (cache) {
+          cache.models.set(modelKey, model);
+        }
       }
     }
 
@@ -336,10 +378,7 @@ class ImportExportService {
     let vendor = null;
     if (row.Vendor || row.Supplier) {
       const vendorName = row.Vendor || row.Supplier;
-      vendor = await db.prisma.vendor.findFirst({
-        where: { name: vendorName }
-      });
-
+      vendor = cache ? cache.vendors.get(vendorName.toLowerCase()) : null;
       if (!vendor) {
         vendor = await db.prisma.vendor.create({
           data: {
@@ -347,6 +386,9 @@ class ImportExportService {
             code: this.generateVendorCode(vendorName)
           }
         });
+        if (cache) {
+          cache.vendors.set(vendorName.toLowerCase(), vendor);
+        }
       }
     }
 
@@ -371,7 +413,7 @@ class ImportExportService {
     };
 
     // Add customer details if item is sold/delivered
-    if (itemData.status === 'Sold' || itemData.status === 'Delivered' || itemData.status === 'Handover') {
+    if (itemData.inventoryStatus === 'Sold' || itemData.inventoryStatus === 'Delivered' || itemData.status === 'Handover') {
       // Create or find customer if client data provided
       const clientData = {
         name: row['Client Name'] || row.ClientName || row.Client,

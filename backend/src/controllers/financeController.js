@@ -18,15 +18,20 @@ const { ValidationError } = require('../utils/transactionWrapper');
 // @access  Private
 const getCustomers = asyncHandler(async (req, res) => {
   const filters = {
-    search: req.query.search
+    search: req.query.search,
+    page: req.query.page,
+    limit: req.query.limit
   };
 
-  const customers = await customerService.getCustomers(filters);
+  const result = await customerService.getCustomers(filters);
 
   res.json({
     success: true,
-    count: customers.length,
-    data: customers
+    data: {
+      customers: result.customers,
+      pagination: result.pagination,
+      statistics: result.statistics
+    }
   });
 });
 
@@ -105,15 +110,20 @@ const getInvoices = asyncHandler(async (req, res) => {
     status: req.query.status,
     customerId: req.query.customerId,
     dateFrom: req.query.dateFrom,
-    dateTo: req.query.dateTo
+    dateTo: req.query.dateTo,
+    page: req.query.page,
+    limit: req.query.limit
   };
 
-  const invoices = await invoiceService.getInvoices(filters);
+  const result = await invoiceService.getInvoices(filters);
 
   res.json({
     success: true,
-    count: invoices.length,
-    data: invoices
+    data: {
+      invoices: result.invoices,
+      pagination: result.pagination,
+      statistics: result.statistics
+    }
   });
 });
 
@@ -207,7 +217,7 @@ const recordPayment = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get payments
+// @desc    Get payments (OPTIMIZED with pagination)
 // @route   GET /api/finance/payments
 // @access  Private
 const getPayments = asyncHandler(async (req, res) => {
@@ -259,23 +269,78 @@ const getPayments = asyncHandler(async (req, res) => {
     ];
   }
 
-  const payments = await db.prisma.payment.findMany({
-    where,
-    include: {
-      customer: true,
-      invoice: true,
-      recordedBy: {
-        select: {
-          fullName: true
+  // PERFORMANCE OPTIMIZATION: Add pagination
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  const [payments, totalCount, statistics] = await Promise.all([
+    // Get paginated payments with selective field loading
+    db.prisma.payment.findMany({
+      where,
+      select: {
+        id: true,
+        paymentNumber: true,
+        paymentDate: true,
+        amount: true,
+        method: true,
+        reference: true,
+        notes: true,
+        voidedAt: true,
+        createdAt: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            company: true
+          }
+        },
+        invoice: {
+          select: {
+            id: true,
+            invoiceNumber: true,
+            total: true,
+            status: true
+          }
+        },
+        recordedBy: {
+          select: {
+            id: true,
+            fullName: true
+          }
         }
-      }
-    },
-    orderBy: { paymentDate: 'desc' }
-  });
+      },
+      orderBy: { paymentDate: 'desc' },
+      skip,
+      take: limit
+    }),
+
+    // Get total count for pagination
+    db.prisma.payment.count({ where }),
+
+    // Get statistics using SQL aggregation
+    db.prisma.payment.aggregate({
+      where,
+      _sum: {
+        amount: true
+      },
+      _count: true
+    })
+  ]);
 
   res.json({
     success: true,
     count: payments.length,
+    total: totalCount,
+    page,
+    limit,
+    totalPages: Math.ceil(totalCount / limit),
+    statistics: {
+      totalPayments: statistics._count,
+      totalAmount: parseFloat(statistics._sum.amount || 0)
+    },
     data: payments
   });
 });
@@ -330,15 +395,20 @@ const getPurchaseOrders = asyncHandler(async (req, res) => {
   const filters = {
     vendorId: req.query.vendorId,
     status: req.query.status,
-    include: req.query.include
+    include: req.query.include,
+    page: req.query.page,
+    limit: req.query.limit
   };
 
-  const purchaseOrders = await purchaseOrderService.getPurchaseOrders(filters);
+  const result = await purchaseOrderService.getPurchaseOrders(filters);
 
   res.json({
     success: true,
-    count: purchaseOrders.length,
-    data: purchaseOrders
+    data: {
+      purchaseOrders: result.purchaseOrders,
+      pagination: result.pagination,
+      statistics: result.statistics
+    }
   });
 });
 

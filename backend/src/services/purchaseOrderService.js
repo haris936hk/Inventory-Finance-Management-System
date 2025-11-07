@@ -18,6 +18,7 @@ const {
   formatAmount
 } = require('../utils/transactionWrapper');
 const { generatePONumber } = require('../utils/generateId');
+const ValidationService = require('./validationService');
 
 /**
  * Valid PO status transitions
@@ -234,6 +235,16 @@ async function updatePurchaseOrder(poId, updates) {
       if (!compareAmounts(total, subtotal + taxAmount)) {
         throw new ValidationError('Total must equal subtotal + tax');
       }
+
+      // CRITICAL FIX: Prevent reducing total below billedAmount
+      const currentBilledAmount = formatAmount(po.billedAmount || 0);
+      if (total < currentBilledAmount) {
+        throw new ValidationError(
+          `Cannot reduce PO total to ${total} PKR. ` +
+          `Bills totaling ${currentBilledAmount} PKR have already been created against this PO. ` +
+          `You must cancel existing bills before reducing the PO total.`
+        );
+      }
     }
 
     // Delete existing line items if new ones provided
@@ -335,11 +346,15 @@ async function getPurchaseOrder(poId) {
 /**
  * Get all purchase orders with filters
  *
+ * PERFORMANCE OPTIMIZATION: Added pagination and SQL aggregation
+ *
  * @param {Object} filters - Query filters
  * @param {string} filters.vendorId - Filter by vendor
  * @param {string} filters.status - Filter by status
  * @param {string} filters.include - Include related data
- * @returns {Promise<Array>} Purchase orders
+ * @param {number} filters.page - Page number (default: 1)
+ * @param {number} filters.limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Paginated purchase orders with statistics
  */
 async function getPurchaseOrders(filters = {}) {
   const where = { deletedAt: null };
@@ -352,9 +367,31 @@ async function getPurchaseOrders(filters = {}) {
     where.status = filters.status;
   }
 
-  // Build include object
-  const include = {
-    vendor: true,
+  // PERFORMANCE OPTIMIZATION: Add pagination
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  // Build select object with selective field loading
+  const select = {
+    id: true,
+    poNumber: true,
+    orderDate: true,
+    expectedDate: true,
+    status: true,
+    subtotal: true,
+    taxAmount: true,
+    total: true,
+    billedAmount: true,
+    createdAt: true,
+    vendor: {
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true
+      }
+    },
     _count: {
       select: {
         lineItems: true,
@@ -363,34 +400,109 @@ async function getPurchaseOrders(filters = {}) {
     }
   };
 
-  // Include line items if requested
+  // Include line items if requested (with selective loading)
   if (filters.include === 'lineItems') {
-    include.lineItems = {
-      include: {
+    select.lineItems = {
+      select: {
+        id: true,
+        description: true,
+        quantity: true,
+        unitPrice: true,
+        totalPrice: true,
+        specifications: true,
+        notes: true,
         productModel: {
-          include: {
-            category: true,
-            company: true
+          select: {
+            id: true,
+            name: true,
+            category: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
+            company: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
           }
         }
       }
     };
   }
 
-  const purchaseOrders = await db.prisma.purchaseOrder.findMany({
-    where,
-    include,
-    orderBy: { orderDate: 'desc' }
-  });
+  // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  const [purchaseOrders, totalCount, statistics] = await Promise.all([
+    // Get paginated purchase orders with selective field loading
+    db.prisma.purchaseOrder.findMany({
+      where,
+      select,
+      orderBy: { orderDate: 'desc' },
+      skip,
+      take: limit
+    }),
+
+    // Get total count for pagination
+    db.prisma.purchaseOrder.count({ where }),
+
+    // Get statistics using SQL aggregation
+    db.prisma.purchaseOrder.groupBy({
+      by: ['status'],
+      where,
+      _sum: {
+        total: true,
+        billedAmount: true
+      },
+      _count: true
+    })
+  ]);
 
   // Add computed fields
-  return purchaseOrders.map(po => ({
+  const posWithFields = purchaseOrders.map(po => ({
     ...po,
     remainingAmount: formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)),
     canCreateBill: po.status !== 'Cancelled' &&
                    po.status !== 'Completed' &&
                    formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)) > 0
   }));
+
+  // Calculate summary statistics from aggregation
+  const stats = {
+    totalAmount: 0,
+    billedAmount: 0,
+    remainingAmount: 0,
+    totalPOs: totalCount,
+    byStatus: {}
+  };
+
+  statistics.forEach(stat => {
+    const total = parseFloat(stat._sum.total || 0);
+    const billed = parseFloat(stat._sum.billedAmount || 0);
+
+    stats.totalAmount += total;
+    stats.billedAmount += billed;
+    stats.byStatus[stat.status] = {
+      count: stat._count,
+      total: total,
+      billed: billed,
+      remaining: formatAmount(total - billed)
+    };
+  });
+
+  stats.remainingAmount = formatAmount(stats.totalAmount - stats.billedAmount);
+
+  return {
+    purchaseOrders: posWithFields,
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit)
+    },
+    statistics: stats
+  };
 }
 
 /**

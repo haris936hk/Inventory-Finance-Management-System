@@ -35,7 +35,9 @@
       "Bash(npx rg:*)",
       "Bash(del:*)",
       "Bash(set PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=Proceed or yes)",
-      "Bash($env:PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Proceed or yes\")"
+      "Bash($env:PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"Proceed or yes\")",
+      "Bash(Stop-Process -Force -Id 5808)",
+      "Bash(nul)"
     ],
     "deny": [],
     "ask": []

@@ -183,6 +183,28 @@ function formatAmount(amount, precision = 4) {
   return parseFloat(parseFloat(amount).toFixed(precision));
 }
 
+/**
+ * Parse and normalize date input consistently
+ * Handles: Date objects, ISO strings, timestamps, null/undefined
+ *
+ * @param {Date|string|number|null|undefined} dateInput - Date to parse
+ * @returns {Date} Parsed Date object (or current date if input is null/undefined)
+ */
+function parseDate(dateInput) {
+  // Return current date if no input provided
+  if (!dateInput) {
+    return new Date();
+  }
+
+  // If already a Date object, return as-is
+  if (dateInput instanceof Date) {
+    return dateInput;
+  }
+
+  // Parse string or number input
+  return new Date(dateInput);
+}
+
 module.exports = {
   withTransaction,
   lockForUpdate,
@@ -192,5 +214,6 @@ module.exports = {
   InsufficientBalanceError,
   compareAmounts,
   addAmounts,
-  formatAmount
+  formatAmount,
+  parseDate
 };

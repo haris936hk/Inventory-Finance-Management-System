@@ -6,9 +6,9 @@ import {
   Typography, Divider, Statistic, Alert, Modal, message, Tabs
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, DeleteOutlined, PrinterOutlined,
+  ArrowLeftOutlined, EditOutlined, DeleteOutlined,
   BarcodeOutlined, HistoryOutlined, DollarOutlined, TruckOutlined,
-  WarningOutlined, CheckCircleOutlined, ClockCircleOutlined
+  WarningOutlined, CheckCircleOutlined, ClockCircleOutlined, ToolOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -102,6 +102,7 @@ const ItemDetails = () => {
     const colors = {
       'Available': 'green',
       'Reserved': 'orange',
+      'Under Repair': 'purple',
       'Sold': 'blue',
       'Delivered': 'cyan'
     };
@@ -121,6 +122,7 @@ const ItemDetails = () => {
     const icons = {
       'Available': <CheckCircleOutlined />,
       'Reserved': <ClockCircleOutlined />,
+      'Under Repair': <ToolOutlined />,
       'Sold': <DollarOutlined />,
       'Delivered': <TruckOutlined />
     };
@@ -208,12 +210,6 @@ const ItemDetails = () => {
           </Space>
 
           <Space>
-            <Button icon={<BarcodeOutlined />}>
-              Print Barcode
-            </Button>
-            <Button icon={<PrinterOutlined />}>
-              Print Details
-            </Button>
             {hasPermission('inventory.update') && item?.repaired !== 'Returned' && (
               <>
                 <Button
@@ -256,9 +252,6 @@ const ItemDetails = () => {
                 <Descriptions column={2} bordered>
                   <Descriptions.Item label="Serial Number" span={2}>
                     <Text strong>{item.serialNumber}</Text>
-                    <Tag color="blue" style={{ marginLeft: 8 }}>
-                      <BarcodeOutlined /> {item.barcode || 'Auto-generated'}
-                    </Tag>
                   </Descriptions.Item>
 
                   <Descriptions.Item label="Model">
@@ -424,10 +417,10 @@ const ItemDetails = () => {
               </Card>
             </TabPane>
 
-            <TabPane tab="Movement History" key="movements">
+            <TabPane tab="Handover History" key="handover">
               <InventoryMovementHistory
-                movements={inventoryMovements || []}
-                statusHistory={itemHistory || []}
+                movements={(inventoryMovements || []).filter(m => m.movementType === 'HANDOVER')}
+                statusHistory={[]}
               />
             </TabPane>
           </Tabs>
@@ -445,7 +438,8 @@ const ItemDetails = () => {
                   prefix={getInventoryStatusIcon(item.inventoryStatus || 'Available')}
                   valueStyle={{
                     color: getInventoryStatusColor(item.inventoryStatus || 'Available') === 'green' ? '#52c41a' :
-                           getInventoryStatusColor(item.inventoryStatus || 'Available') === 'blue' ? '#1890ff' : '#faad14'
+                           getInventoryStatusColor(item.inventoryStatus || 'Available') === 'blue' ? '#1890ff' :
+                           getInventoryStatusColor(item.inventoryStatus || 'Available') === 'purple' ? '#722ed1' : '#faad14'
                   }}
                 />
                 <Text type="secondary" style={{ fontSize: 12 }}>
@@ -475,6 +469,9 @@ const ItemDetails = () => {
             )}
             {item.inventoryStatus === 'Reserved' && (
               <Text type="warning">⏳ Reserved for customer</Text>
+            )}
+            {item.inventoryStatus === 'Under Repair' && (
+              <Text style={{ color: '#722ed1' }}>🔧 Being repaired - not available for sale</Text>
             )}
             {item.inventoryStatus === 'Sold' && (
               <Text type="secondary">💰 Transaction completed</Text>

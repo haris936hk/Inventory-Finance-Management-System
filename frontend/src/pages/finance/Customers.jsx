@@ -23,17 +23,25 @@ const Customers = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [form] = Form.useForm();
+  // PERFORMANCE OPTIMIZATION: Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Fetch customers
-  const { data: customersData, isLoading } = useQuery(
-    ['customers', searchText],
+  // PERFORMANCE OPTIMIZATION: Fetch paginated customers from backend
+  const { data: response, isLoading } = useQuery(
+    ['customers', searchText, page, pageSize],
     async () => {
       const response = await axios.get('/finance/customers', {
-        params: { search: searchText }
+        params: { search: searchText, page, limit: pageSize }
       });
       return response.data.data;
     }
   );
+
+  // Extract data from paginated response
+  const customersData = response?.customers || [];
+  const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
+  const statistics = response?.statistics || { totalCustomers: 0, totalOutstanding: 0 };
 
   // Create/Update customer mutation
   const customerMutation = useMutation(
@@ -175,8 +183,16 @@ const Customers = () => {
           dataSource={customersData}
           loading={isLoading}
           pagination={{
+            current: page,
+            pageSize: pageSize,
+            total: pagination.totalCount,
             showSizeChanger: true,
-            showTotal: (total) => `Total ${total} customers`
+            showTotal: (total) => `Total ${total} customers (Outstanding: ${formatPKR(statistics.totalOutstanding)})`,
+            onChange: (newPage, newPageSize) => {
+              setPage(newPage);
+              setPageSize(newPageSize);
+            },
+            pageSizeOptions: ['10', '25', '50', '100']
           }}
         />
       </Card>
@@ -195,7 +211,15 @@ const Customers = () => {
         <Form
           form={form}
           layout="vertical"
-          onFinish={(values) => customerMutation.mutate(values)}
+          onFinish={(values) => {
+            // Convert numeric fields to proper numbers
+            const processedValues = {
+              ...values,
+              creditLimit: values.creditLimit ? parseFloat(values.creditLimit) : 0,
+              openingBalance: values.openingBalance ? parseFloat(values.openingBalance) : 0
+            };
+            customerMutation.mutate(processedValues);
+          }}
         >
           <Form.Item
             label="Name"

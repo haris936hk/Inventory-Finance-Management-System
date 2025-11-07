@@ -1,4 +1,9 @@
 // ========== src/config/database.js ==========
+// Connection pooling is configured via DATABASE_URL in .env
+// For optimal performance with Supabase, use connection pooling parameters:
+// - connection_limit: Max connections (recommended: 10-20)
+// - pool_timeout: Connection acquire timeout (recommended: 10s)
+// Example: DATABASE_URL="...?connection_limit=10&pool_timeout=10"
 const { PrismaClient } = require('@prisma/client');
 const logger = require('./logger');
 
@@ -10,16 +15,43 @@ class Database {
         { emit: 'event', level: 'error' },
         { emit: 'event', level: 'warn' }
       ],
-      errorFormat: 'pretty'
+      errorFormat: 'pretty',
+      // PERFORMANCE OPTIMIZATION: Configure connection pooling and timeouts
+      datasources: {
+        db: {
+          url: process.env.DATABASE_URL,
+        },
+      },
     });
 
-    // Log database events in development
-    if (process.env.NODE_ENV === 'development') {
-      this.prisma.$on('query', (e) => {
+    // Log database events and slow queries
+    this.prisma.$on('query', (e) => {
+      // Log all queries in development
+      if (process.env.NODE_ENV === 'development') {
         logger.debug('Query: ' + e.query);
+        logger.debug('Params: ' + e.params);
         logger.debug('Duration: ' + e.duration + 'ms');
-      });
-    }
+      }
+
+      // PERFORMANCE OPTIMIZATION: Tiered query performance logging
+      // Critical slow queries (>500ms) - needs immediate optimization
+      if (e.duration > 500) {
+        logger.warn(`⚠️  CRITICAL SLOW QUERY (${e.duration}ms):`, {
+          query: e.query,
+          params: e.params,
+          duration: e.duration,
+          severity: 'CRITICAL'
+        });
+      }
+      // Moderate slow queries (200-500ms) - should be monitored
+      else if (e.duration > 200) {
+        logger.info(`⏱️  MODERATE SLOW QUERY (${e.duration}ms):`, {
+          query: e.query.substring(0, 200) + '...', // Truncate long queries
+          duration: e.duration,
+          severity: 'MODERATE'
+        });
+      }
+    });
 
     this.prisma.$on('error', (e) => {
       logger.error('Database error:', e);

@@ -96,6 +96,47 @@ const getTimezoneInfo = () => {
   };
 };
 
+/**
+ * Parse date input to JavaScript Date object
+ * Standardizes date handling across all services
+ *
+ * @param {Date|string|moment|null|undefined} dateInput - Date input to parse
+ * @returns {Date} - JavaScript Date object
+ *
+ * @example
+ * parseDate()                    // Returns current date
+ * parseDate(null)                // Returns current date
+ * parseDate(new Date())          // Returns same Date object
+ * parseDate('2024-01-01')        // Returns parsed Date
+ * parseDate(moment())            // Returns Date from moment
+ */
+const parseDate = (dateInput) => {
+  // Return current date if input is null/undefined
+  if (!dateInput) {
+    return new Date();
+  }
+
+  // If already a Date object, return as-is
+  if (dateInput instanceof Date) {
+    return dateInput;
+  }
+
+  // If it's a moment object, convert to Date
+  if (moment.isMoment(dateInput)) {
+    return dateInput.toDate();
+  }
+
+  // Parse string or number to Date
+  const parsedDate = new Date(dateInput);
+
+  // Validate the parsed date
+  if (isNaN(parsedDate.getTime())) {
+    throw new Error(`Invalid date input: ${dateInput}`);
+  }
+
+  return parsedDate;
+};
+
 module.exports = {
   getCurrentDate,
   formatDate,
@@ -107,5 +148,6 @@ module.exports = {
   endOfMonth,
   isValidDate,
   getTimezoneInfo,
+  parseDate,
   PAKISTAN_TIMEZONE
 };

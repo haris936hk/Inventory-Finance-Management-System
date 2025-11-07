@@ -43,11 +43,8 @@ const protect = asyncHandler(async (req, res, next) => {
         throw error;
       }
 
-      // Update last login
-      await db.prisma.user.update({
-        where: { id: req.user.id },
-        data: { lastLogin: new Date() }
-      });
+      // Note: lastLogin is updated only on actual login (see authController)
+      // Removed from here to avoid database write on every request (performance optimization)
 
       next();
     } catch (error) {

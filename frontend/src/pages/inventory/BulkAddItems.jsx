@@ -8,7 +8,7 @@ import {
 import {
   SaveOutlined, ArrowLeftOutlined, ScanOutlined
 } from '@ant-design/icons';
-import { useMutation, useQuery } from 'react-query';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
@@ -19,6 +19,7 @@ const { Text } = Typography;
 
 const BulkAddItems = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
@@ -33,19 +34,31 @@ const BulkAddItems = () => {
   const [serialValidationErrors, setSerialValidationErrors] = useState({});
   const poIdFromUrl = searchParams.get('poId');
 
-  // Fetch categories
-  const { data: categories } = useQuery('categories', async () => {
-    const response = await axios.get('/inventory/categories');
-    return response.data.data;
-  });
+  // Fetch categories (static reference data - cache for 30 minutes)
+  const { data: categories } = useQuery(
+    'categories',
+    async () => {
+      const response = await axios.get('/inventory/categories');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - categories rarely change
+    }
+  );
 
-  // Fetch companies
-  const { data: companies } = useQuery('companies', async () => {
-    const response = await axios.get('/inventory/companies');
-    return response.data.data;
-  });
+  // Fetch companies (static reference data - cache for 30 minutes)
+  const { data: companies } = useQuery(
+    'companies',
+    async () => {
+      const response = await axios.get('/inventory/companies');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - companies rarely change
+    }
+  );
 
-  // Fetch models based on selected category and company
+  // Fetch models based on selected category and company (static reference data - cache for 30 minutes)
   const { data: models, error: modelsError, isLoading: modelsLoading } = useQuery(
     ['models', selectedCategoryId, selectedCompanyId],
     async () => {
@@ -60,17 +73,24 @@ const BulkAddItems = () => {
     },
     {
       enabled: !!selectedCategoryId,
+      staleTime: 30 * 60 * 1000, // 30 minutes - models rarely change
       onError: (error) => {
         console.error('Models fetch error:', error);
       }
     }
   );
 
-  // Fetch vendors
-  const { data: vendors } = useQuery('vendors', async () => {
-    const response = await axios.get('/inventory/vendors');
-    return response.data.data;
-  });
+  // Fetch vendors (static reference data - cache for 30 minutes)
+  const { data: vendors } = useQuery(
+    'vendors',
+    async () => {
+      const response = await axios.get('/inventory/vendors');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - vendors rarely change
+    }
+  );
 
   // Fetch purchase orders (only Paid status ones)
   const { data: purchaseOrders } = useQuery('purchase-orders-paid', async () => {
@@ -87,6 +107,7 @@ const BulkAddItems = () => {
       onSuccess: (response) => {
         const count = response.data.data?.count || serialNumbers.length;
         message.success(`${count} items added successfully`);
+        queryClient.invalidateQueries('items'); // Refetch the items list
         navigate('/app/inventory/items');
       },
       onError: (error) => {

@@ -43,6 +43,7 @@ const InventoryMovementHistory = ({ movements = [], statusHistory = [] }) => {
     const colors = {
       'Available': 'success',
       'Reserved': 'warning',
+      'Under Repair': 'purple',
       'Sold': 'processing',
       'Delivered': 'success',
       'In Store': 'blue',

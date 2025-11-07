@@ -21,6 +21,8 @@ const {
   formatAmount
 } = require('../utils/transactionWrapper');
 const { generateBillNumber } = require('../utils/generateId');
+const JournalEntryService = require('./journalEntryService');
+const ValidationService = require('./validationService');
 
 /**
  * Create a bill against a Purchase Order
@@ -63,16 +65,13 @@ async function createBill(data, userId) {
       throw new ValidationError('Vendor must match Purchase Order vendor');
     }
 
-    // 4. Format and validate amounts
+    // 4. Format and validate amounts using ValidationService
     const subtotal = formatAmount(data.subtotal);
     const taxAmount = formatAmount(data.taxAmount || 0);
     const total = formatAmount(data.total);
 
-    if (!compareAmounts(total, subtotal + taxAmount)) {
-      throw new ValidationError(
-        `Bill total (${total}) must equal subtotal (${subtotal}) + tax (${taxAmount})`
-      );
-    }
+    // Use ValidationService for total calculation validation
+    ValidationService.validateTotalCalculation(subtotal, taxAmount, 0, total, 'Bill');
 
     // 5. CRITICAL: Check available balance (SUM(bills) <= PO.total)
     const currentBilledAmount = formatAmount(po.billedAmount);
@@ -91,7 +90,69 @@ async function createBill(data, userId) {
     // 6. Generate bill number
     const billNumber = await generateBillNumber();
 
-    // 7. Create the bill
+    // 7. Validate and prepare bill line items (if provided)
+    let billItemsData = [];
+    if (data.billItems && data.billItems.length > 0) {
+      // Fetch PO line items for validation
+      const poItems = await tx.purchaseOrderItem.findMany({
+        where: { purchaseOrderId: data.purchaseOrderId }
+      });
+
+      // Validate each bill item
+      for (const billItem of data.billItems) {
+        // If purchaseOrderItemId is provided, validate it belongs to this PO
+        if (billItem.purchaseOrderItemId) {
+          const poItem = poItems.find(item => item.id === billItem.purchaseOrderItemId);
+          if (!poItem) {
+            throw new ValidationError(
+              `Bill item references invalid PO line item: ${billItem.purchaseOrderItemId}`
+            );
+          }
+
+          // Validate quantity doesn't exceed PO quantity
+          if (billItem.quantity > poItem.quantity) {
+            throw new ValidationError(
+              `Bill item quantity (${billItem.quantity}) exceeds PO quantity (${poItem.quantity}) for item: ${poItem.description}`
+            );
+          }
+        }
+
+        // Validate line item calculations
+        const itemUnitPrice = formatAmount(billItem.unitPrice);
+        const itemQuantity = billItem.quantity || 1;
+        const expectedLineTotal = formatAmount(itemUnitPrice * itemQuantity);
+        const itemLineTotal = formatAmount(billItem.lineTotal);
+
+        if (!compareAmounts(itemLineTotal, expectedLineTotal)) {
+          throw new ValidationError(
+            `Line item total mismatch. Expected: ${expectedLineTotal} (${itemQuantity} × ${itemUnitPrice}), Got: ${itemLineTotal}`
+          );
+        }
+
+        billItemsData.push({
+          description: billItem.description || '',
+          quantity: itemQuantity,
+          unitPrice: itemUnitPrice,
+          lineTotal: itemLineTotal,
+          taxAmount: formatAmount(billItem.taxAmount || 0),
+          discountAmount: formatAmount(billItem.discountAmount || 0),
+          purchaseOrderItemId: billItem.purchaseOrderItemId || null
+        });
+      }
+
+      // Validate sum of line items equals bill subtotal
+      const lineItemsTotal = billItemsData.reduce(
+        (sum, item) => sum + parseFloat(item.lineTotal),
+        0
+      );
+      if (!compareAmounts(lineItemsTotal, subtotal)) {
+        throw new ValidationError(
+          `Sum of bill line items (${lineItemsTotal}) does not match bill subtotal (${subtotal})`
+        );
+      }
+    }
+
+    // 8. Create the bill
     const bill = await tx.bill.create({
       data: {
         billNumber,
@@ -111,7 +172,19 @@ async function createBill(data, userId) {
       }
     });
 
-    // 8. Update PO billed amount and status
+    // 9. Create bill line items (if provided)
+    if (billItemsData.length > 0) {
+      await tx.billItem.createMany({
+        data: billItemsData.map(item => ({
+          ...item,
+          billId: bill.id
+        }))
+      });
+
+      logger.info(`Created ${billItemsData.length} bill line items for bill ${billNumber}`);
+    }
+
+    // 10. Update PO billed amount and status
     const updatedBilledAmount = formatAmount(parseFloat(po.billedAmount) + total);
     let newPOStatus = po.status;
 
@@ -133,7 +206,7 @@ async function createBill(data, userId) {
       }
     });
 
-    // 9. Create vendor ledger entry
+    // 11. Create vendor ledger entry
     const vendor = await tx.vendor.findUnique({
       where: { id: data.vendorId }
     });
@@ -152,7 +225,7 @@ async function createBill(data, userId) {
       }
     });
 
-    // 10. Update vendor balance
+    // 12. Update vendor balance
     await tx.vendor.update({
       where: { id: data.vendorId },
       data: {
@@ -160,7 +233,7 @@ async function createBill(data, userId) {
       }
     });
 
-    // 11. Create audit trail
+    // 13. Create audit trail
     await tx.pOBillAudit.create({
       data: {
         purchaseOrderId: data.purchaseOrderId,
@@ -181,6 +254,18 @@ async function createBill(data, userId) {
           vendorId: data.vendorId
         }
       }
+    });
+
+    // 14. Create journal entries for bill (DR: Inventory, DR: Input Tax, CR: A/P)
+    // CRITICAL: Journal entry creation is MANDATORY - if it fails, entire transaction rolls back
+    await JournalEntryService.createBillEntries(tx, {
+      id: bill.id,
+      billNumber,
+      billDate: bill.billDate,
+      subtotal,
+      taxAmount,
+      total,
+      vendor: { name: vendor.name }
     });
 
     logger.info(`Bill created: ${billNumber}`, {
@@ -311,6 +396,16 @@ async function cancelBill(billId, reason, userId) {
       }
     });
 
+    // 9. Reverse journal entries for cancelled bill
+    // CRITICAL: Journal entry reversal is MANDATORY - if it fails, entire transaction rolls back
+    await JournalEntryService.reverseBillEntries(tx, {
+      id: bill.id,
+      billNumber: bill.billNumber,
+      subtotal: bill.subtotal,
+      taxAmount: bill.taxAmount,
+      total: bill.total
+    }, reason);
+
     logger.info(`Bill cancelled: ${bill.billNumber}`, {
       billId,
       reason,
@@ -391,12 +486,16 @@ async function getBill(billId) {
 /**
  * Get all bills with filters
  *
+ * PERFORMANCE OPTIMIZATION: Added pagination and SQL aggregation
+ *
  * @param {Object} filters - Query filters
  * @param {string} filters.vendorId - Filter by vendor
  * @param {string} filters.status - Filter by status (comma-separated)
  * @param {string} filters.dateFrom - Filter by date from
  * @param {string} filters.dateTo - Filter by date to
- * @returns {Promise<Array>} Bills
+ * @param {number} filters.page - Page number (default: 1)
+ * @param {number} filters.limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Paginated bills with statistics
  */
 async function getBills(filters = {}) {
   const where = { deletedAt: null, cancelledAt: null };
@@ -418,22 +517,72 @@ async function getBills(filters = {}) {
     };
   }
 
-  const bills = await db.prisma.bill.findMany({
-    where,
-    include: {
-      vendor: true,
-      purchaseOrder: true,
-      _count: {
-        select: {
-          payments: { where: { voidedAt: null } }
+  // PERFORMANCE OPTIMIZATION: Add pagination
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  const [bills, totalCount, statistics] = await Promise.all([
+    // Get paginated bills with selective field loading
+    db.prisma.bill.findMany({
+      where,
+      select: {
+        id: true,
+        billNumber: true,
+        billDate: true,
+        dueDate: true,
+        status: true,
+        subtotal: true,
+        taxAmount: true,
+        total: true,
+        paidAmount: true,
+        cancelledAt: true,
+        createdAt: true,
+        vendor: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true
+          }
+        },
+        purchaseOrder: {
+          select: {
+            id: true,
+            poNumber: true,
+            status: true,
+            total: true
+          }
+        },
+        _count: {
+          select: {
+            payments: { where: { voidedAt: null } }
+          }
         }
-      }
-    },
-    orderBy: { billDate: 'desc' }
-  });
+      },
+      orderBy: { billDate: 'desc' },
+      skip,
+      take: limit
+    }),
+
+    // Get total count for pagination
+    db.prisma.bill.count({ where }),
+
+    // Get statistics using SQL aggregation
+    db.prisma.bill.groupBy({
+      by: ['status'],
+      where,
+      _sum: {
+        total: true,
+        paidAmount: true
+      },
+      _count: true
+    })
+  ]);
 
   // Add computed fields
-  return bills.map(bill => {
+  const billsWithFields = bills.map(bill => {
     const remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
     return {
       ...bill,
@@ -441,6 +590,42 @@ async function getBills(filters = {}) {
       canBePaid: remainingAmount > 0
     };
   });
+
+  // Calculate summary statistics from aggregation
+  const stats = {
+    totalAmount: 0,
+    paidAmount: 0,
+    remainingAmount: 0,
+    totalBills: totalCount,
+    byStatus: {}
+  };
+
+  statistics.forEach(stat => {
+    const total = parseFloat(stat._sum.total || 0);
+    const paid = parseFloat(stat._sum.paidAmount || 0);
+
+    stats.totalAmount += total;
+    stats.paidAmount += paid;
+    stats.byStatus[stat.status] = {
+      count: stat._count,
+      total: total,
+      paid: paid,
+      remaining: formatAmount(total - paid)
+    };
+  });
+
+  stats.remainingAmount = formatAmount(stats.totalAmount - stats.paidAmount);
+
+  return {
+    bills: billsWithFields,
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit)
+    },
+    statistics: stats
+  };
 }
 
 /**
@@ -504,8 +689,64 @@ async function updateBill(billId, updates, userId) {
   });
 }
 
+/**
+ * Helper function: Create bill and optionally auto-create inventory items
+ * RECOMMENDED WORKFLOW: Use this to ensure bills have corresponding inventory
+ *
+ * @param {Object} billData - Bill creation data
+ * @param {Array} inventoryItems - Optional: Array of items to create in inventory
+ * @param {String} userId - User performing the action
+ * @returns {Promise<Object>} Created bill and inventory items
+ */
+async function createBillWithInventory(billData, inventoryItems, userId) {
+  // Step 1: Create the bill
+  const bill = await createBill(billData, userId);
+
+  // Step 2: If inventory items provided, create them and link to PO
+  if (inventoryItems && inventoryItems.length > 0) {
+    try {
+      const inventoryService = require('./inventoryService');
+
+      const inventoryResults = await inventoryService.bulkCreateItemsFromPO(
+        billData.purchaseOrderId,
+        inventoryItems,
+        userId
+      );
+
+      logger.info(`Bill ${bill.billNumber} created with ${inventoryResults.success.length} inventory items`, {
+        billId: bill.id,
+        successCount: inventoryResults.success.length,
+        failedCount: inventoryResults.failed.length
+      });
+
+      return {
+        bill,
+        inventory: inventoryResults
+      };
+    } catch (error) {
+      logger.error('Failed to create inventory items for bill', {
+        billId: bill.id,
+        billNumber: bill.billNumber,
+        error: error.message
+      });
+
+      // Bill is still created, but inventory creation failed
+      // Return bill with error info for handling by controller
+      return {
+        bill,
+        inventory: null,
+        inventoryError: error.message
+      };
+    }
+  }
+
+  // No inventory items provided
+  return { bill, inventory: null };
+}
+
 module.exports = {
   createBill,
+  createBillWithInventory, // NEW: Recommended workflow
   cancelBill,
   updateBill,
   updateBillStatus,

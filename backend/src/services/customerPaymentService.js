@@ -23,6 +23,7 @@ const {
 const { generatePaymentNumber } = require('../utils/generateId');
 const { calculateInvoiceStatus } = require('./invoiceService');
 const inventoryLifecycleService = require('./inventoryLifecycleService');
+const JournalEntryService = require('./journalEntryService');
 
 /**
  * Record a customer payment against an invoice
@@ -82,7 +83,28 @@ async function recordPayment(data, userId) {
       );
     }
 
-    // 6. Generate payment number
+    // 6. Check for duplicate payments (same customer, amount, within last minute)
+    const oneMinuteAgo = new Date(Date.now() - 60000);
+    const duplicatePayment = await tx.payment.findFirst({
+      where: {
+        customerId: data.customerId,
+        amount: amount,
+        paymentDate: {
+          gte: oneMinuteAgo
+        },
+        voidedAt: null,
+        deletedAt: null
+      }
+    });
+
+    if (duplicatePayment) {
+      throw new ValidationError(
+        'A payment with the same amount was recorded in the last minute. ' +
+        'Please verify this is not a duplicate submission.'
+      );
+    }
+
+    // 7. Generate payment number
     const paymentNumber = await generatePaymentNumber();
 
     // 7. Create the payment
@@ -182,6 +204,91 @@ async function recordPayment(data, userId) {
       }
     });
 
+    // CRITICAL FIX: Create journal entries for payment (DR: Cash, CR: A/R)
+    try {
+      await JournalEntryService.createCustomerPaymentEntries(tx, {
+        id: createdPayment.id,
+        paymentNumber,
+        paymentDate: createdPayment.paymentDate,
+        amount,
+        method: data.method,
+        customer: { name: customer.name },
+        invoice: { invoiceNumber: invoice.invoiceNumber },
+        invoiceId: data.invoiceId
+      });
+      logger.info(`Journal entries created for payment ${paymentNumber}`);
+    } catch (error) {
+      logger.error('Failed to create journal entries for payment', {
+        paymentId: createdPayment.id,
+        paymentNumber,
+        error: error.message
+      });
+      // This is critical - if journal entry creation fails, rollback the transaction
+      throw new ValidationError(
+        `Failed to create journal entries for payment: ${error.message}`
+      );
+    }
+
+    // 13. PROPORTIONAL COGS RECOGNITION: Calculate and record COGS based on payment amount
+    // This ensures COGS is recognized proportionally even for partial payments
+    // CRITICAL: COGS journal entry creation is MANDATORY - if it fails, entire transaction rolls back
+    // Get invoice items with their purchase prices
+    const invoiceItems = await tx.invoiceItem.findMany({
+      where: { invoiceId: data.invoiceId },
+      include: {
+        item: {
+          select: {
+            id: true,
+            serialNumber: true,
+            purchasePrice: true
+          }
+        }
+      }
+    });
+
+    // Calculate total COGS (sum of all item purchase prices)
+    const totalInvoiceCOGS = invoiceItems.reduce((sum, invItem) => {
+      const purchasePrice = invItem.item.purchasePrice || 0;
+      return sum + parseFloat(purchasePrice);
+    }, 0);
+
+    if (totalInvoiceCOGS > 0) {
+      // Calculate proportional COGS for this payment
+      // Formula: COGS for payment = (Payment Amount / Invoice Total) × Total COGS
+      const paymentPercentage = parseFloat(amount) / parseFloat(total);
+      const proportionalCOGS = formatAmount(totalInvoiceCOGS * paymentPercentage);
+
+      // Get current COGS on invoice (accumulated from previous payments)
+      const currentInvoiceCOGS = parseFloat(invoice.cogs || 0);
+      const newCumulativeCOGS = formatAmount(currentInvoiceCOGS + proportionalCOGS);
+
+      // Update invoice with new cumulative COGS
+      await tx.invoice.update({
+        where: { id: data.invoiceId },
+        data: { cogs: newCumulativeCOGS }
+      });
+
+      // Create COGS journal entries for this payment's proportional amount
+      await JournalEntryService.createCOGSEntries(tx, {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        paymentNumber: paymentNumber // Include payment reference
+      }, proportionalCOGS);
+
+      logger.info(`Proportional COGS recorded for payment ${paymentNumber}`, {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        paymentAmount: formatAmount(amount),
+        invoiceTotal: formatAmount(total),
+        paymentPercentage: `${(paymentPercentage * 100).toFixed(2)}%`,
+        totalInvoiceCOGS: formatAmount(totalInvoiceCOGS),
+        proportionalCOGS: proportionalCOGS,
+        previousCOGS: formatAmount(currentInvoiceCOGS),
+        newCumulativeCOGS: newCumulativeCOGS,
+        itemCount: invoiceItems.length
+      });
+    }
+
     logger.info(`Payment recorded: ${paymentNumber}`, {
       paymentId: createdPayment.id,
       invoiceNumber: invoice.invoiceNumber,
@@ -198,9 +305,21 @@ async function recordPayment(data, userId) {
       const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId);
       logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold`);
     } catch (error) {
-      logger.error(`Failed to mark items as sold for Invoice ${invoiceNumber}:`, error);
-      // Don't fail the payment - just log the error
-      // Items can be manually marked as sold later
+      // CRITICAL: Log detailed error information for operations team
+      logger.error(`CRITICAL: Failed to mark items as sold for Invoice ${invoiceNumber}`, {
+        errorMessage: error.message,
+        errorStack: error.stack,
+        invoiceId,
+        invoiceNumber,
+        paymentId: payment.id,
+        paymentNumber: payment.paymentNumber,
+        requiresManualIntervention: true,
+        actionRequired: 'Operations team must manually update item inventory status to "Sold" for this invoice',
+        timestamp: new Date().toISOString()
+      });
+      // NOTE: Don't fail the payment - payment has been recorded successfully
+      // Items can be manually marked as sold later by operations team
+      // TODO: Consider adding automated alert/notification system for operations team
     }
   }
 
@@ -281,6 +400,72 @@ async function voidPayment(paymentId, reason, userId) {
       });
     }
 
+    // CRITICAL FIX: Reverse inventory status if invoice is no longer fully paid
+    // When invoice was "Paid" but is now not "Paid", items should go back from "Sold" to "Reserved"
+    if (invoice.status === 'Paid' && newStatus !== 'Paid') {
+      try {
+        // Find all items that are currently "Sold" for this invoice
+        const soldItems = await tx.item.findMany({
+          where: {
+            reservedForType: 'Invoice',
+            reservedForId: payment.invoiceId,
+            inventoryStatus: 'Sold',
+            deletedAt: null
+          }
+        });
+
+        if (soldItems.length > 0) {
+          // Reverse items from "Sold" back to "Reserved"
+          await Promise.all(
+            soldItems.map(item =>
+              tx.item.update({
+                where: { id: item.id },
+                data: {
+                  inventoryStatus: 'Reserved',
+                  status: 'Reserved', // Also update physical status
+                  outboundDate: null
+                }
+              })
+            )
+          );
+
+          // Create status history entries
+          await Promise.all(
+            soldItems.map(item =>
+              tx.inventoryStatusHistory.create({
+                data: {
+                  itemId: item.id,
+                  fromStatus: 'Sold',
+                  toStatus: 'Reserved',
+                  changeReason: 'PAYMENT_VOIDED',
+                  referenceType: 'Payment',
+                  referenceId: paymentId,
+                  changedBy: userId,
+                  notes: `Reversed due to payment ${payment.paymentNumber} void: ${reason}`
+                }
+              })
+            )
+          );
+
+          logger.info(`Reversed ${soldItems.length} items from Sold to Reserved for Invoice ${invoice.invoiceNumber}`, {
+            invoiceId: payment.invoiceId,
+            paymentId,
+            itemCount: soldItems.length
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to reverse inventory status during payment void', {
+          invoiceId: payment.invoiceId,
+          paymentId,
+          error: error.message
+        });
+        // This is critical - if reversal fails, rollback the transaction
+        throw new ValidationError(
+          `Failed to reverse inventory status: ${error.message}`
+        );
+      }
+    }
+
     // 7. Reverse customer ledger entry
     const customer = await tx.customer.findUnique({
       where: { id: payment.customerId }
@@ -327,6 +512,88 @@ async function voidPayment(paymentId, reason, userId) {
         metadata: { reason }
       }
     });
+
+    // CRITICAL FIX: Reverse journal entries for voided payment
+    try {
+      await JournalEntryService.reverseCustomerPaymentEntries(tx, {
+        id: payment.id,
+        paymentNumber: payment.paymentNumber,
+        amount: payment.amount,
+        customer: payment.customer,
+        invoice: payment.invoice,
+        invoiceId: payment.invoiceId
+      }, reason);
+      logger.info(`Journal entries reversed for voided payment ${payment.paymentNumber}`);
+    } catch (error) {
+      logger.error('Failed to reverse journal entries for voided payment', {
+        paymentId,
+        paymentNumber: payment.paymentNumber,
+        error: error.message
+      });
+      // This is critical - if journal entry reversal fails, rollback the transaction
+      throw new ValidationError(
+        `Failed to reverse journal entries: ${error.message}`
+      );
+    }
+
+    // 10. Reverse proportional COGS for voided payment
+    try {
+      // Get invoice items to calculate total COGS
+      const invoiceItems = await tx.invoiceItem.findMany({
+        where: { invoiceId: payment.invoiceId },
+        include: {
+          item: {
+            select: {
+              id: true,
+              purchasePrice: true
+            }
+          }
+        }
+      });
+
+      const totalInvoiceCOGS = invoiceItems.reduce((sum, invItem) => {
+        return sum + parseFloat(invItem.item.purchasePrice || 0);
+      }, 0);
+
+      if (totalInvoiceCOGS > 0) {
+        // Calculate proportional COGS that was recognized for this payment
+        const paymentPercentage = parseFloat(payment.amount) / parseFloat(invoice.total);
+        const cogsToReverse = formatAmount(totalInvoiceCOGS * paymentPercentage);
+
+        // Reduce invoice COGS by the reversed amount
+        const currentInvoiceCOGS = parseFloat(invoice.cogs || 0);
+        const newCOGS = formatAmount(Math.max(0, currentInvoiceCOGS - cogsToReverse));
+
+        await tx.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { cogs: newCOGS }
+        });
+
+        // Reverse COGS journal entries (CR: COGS, DR: Inventory)
+        if (cogsToReverse > 0) {
+          await JournalEntryService.reverseCOGSEntries(tx, {
+            id: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            paymentNumber: payment.paymentNumber
+          }, cogsToReverse);
+
+          logger.info(`Proportional COGS reversed for voided payment ${payment.paymentNumber}`, {
+            paymentAmount: formatAmount(payment.amount),
+            cogsReversed: cogsToReverse,
+            previousCOGS: formatAmount(currentInvoiceCOGS),
+            newCOGS: newCOGS
+          });
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to reverse COGS for voided payment', {
+        paymentId,
+        paymentNumber: payment.paymentNumber,
+        error: error.message
+      });
+      // Continue - COGS reversal failure is not critical enough to rollback payment void
+      // Can be manually corrected later
+    }
 
     logger.info(`Payment voided: ${payment.paymentNumber}`, {
       paymentId,

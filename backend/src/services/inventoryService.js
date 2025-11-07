@@ -1,7 +1,10 @@
 // ========== src/services/inventoryService.js ==========
 const db = require('../config/database');
+const cache = require('../config/simpleCache');
 const logger = require('../config/logger');
 const { generateSerialNumber } = require('../utils/generateId');
+const { withTransaction, formatAmount } = require('../utils/transactionWrapper');
+const JournalEntryService = require('./journalEntryService');
 
 class InventoryService {
   /**
@@ -24,9 +27,14 @@ class InventoryService {
     }
 
     try {
-      return await db.prisma.productCategory.create({
+      const category = await db.prisma.productCategory.create({
         data
       });
+
+      // Invalidate cache after mutation
+      await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
+
+      return category;
     } catch (error) {
       // Handle Prisma constraint errors
       if (error.code === 'P2002') {
@@ -39,15 +47,32 @@ class InventoryService {
   }
 
   async getCategories(includeDeleted = false) {
-    return await db.findMany('productCategory', {
-      includeDeleted,
-      orderBy: { name: 'asc' },
-      include: {
-        models: {
-          where: { deletedAt: null }
-        }
-      }
-    });
+    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
+    const cacheKey = cache.config.KEYS.CATEGORIES + `all:${includeDeleted}`;
+
+    return await cache.wrap(
+      cacheKey,
+      async () => {
+        // Include models for list display
+        return await db.findMany('productCategory', {
+          includeDeleted,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            description: true,
+            isActive: true,
+            models: {
+              select: {
+                id: true
+              }
+            }
+          }
+        });
+      },
+      cache.config.TTL.DROPDOWN
+    );
   }
 
   async getCategoryById(id) {
@@ -64,10 +89,15 @@ class InventoryService {
   }
 
   async updateCategory(id, data) {
-    return await db.prisma.productCategory.update({
+    const category = await db.prisma.productCategory.update({
       where: { id },
       data
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
+
+    return category;
   }
 
   async deleteCategory(id) {
@@ -80,9 +110,7 @@ class InventoryService {
             models: {
               where: { deletedAt: null }
             },
-            items: {
-              where: { deletedAt: null }
-            }
+            items: true  // Items don't have deletedAt (hard delete model)
           }
         }
       }
@@ -102,10 +130,15 @@ class InventoryService {
     }
 
     // Soft delete
-    return await db.prisma.productCategory.update({
+    const category = await db.prisma.productCategory.update({
       where: { id },
       data: { deletedAt: new Date() }
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
+
+    return category;
   }
 
   /**
@@ -127,21 +160,43 @@ class InventoryService {
       throw error;
     }
 
-    return await db.prisma.company.create({
+    const company = await db.prisma.company.create({
       data
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
+
+    return company;
   }
 
   async getCompanies(includeDeleted = false) {
-    return await db.findMany('company', {
-      includeDeleted,
-      orderBy: { name: 'asc' },
-      include: {
-        models: {
-          where: { deletedAt: null }
-        }
-      }
-    });
+    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
+    const cacheKey = cache.config.KEYS.COMPANIES + `all:${includeDeleted}`;
+
+    return await cache.wrap(
+      cacheKey,
+      async () => {
+        // Include models for list display
+        return await db.findMany('company', {
+          includeDeleted,
+          orderBy: { name: 'asc' },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            description: true,
+            isActive: true,
+            models: {
+              select: {
+                id: true
+              }
+            }
+          }
+        });
+      },
+      cache.config.TTL.DROPDOWN
+    );
   }
 
   async getCompanyById(id) {
@@ -158,10 +213,15 @@ class InventoryService {
   }
 
   async updateCompany(id, data) {
-    return await db.prisma.company.update({
+    const company = await db.prisma.company.update({
       where: { id },
       data
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
+
+    return company;
   }
 
   async deleteCompany(id) {
@@ -188,10 +248,15 @@ class InventoryService {
     }
 
     // Soft delete
-    return await db.prisma.company.update({
+    const company = await db.prisma.company.update({
       where: { id },
       data: { deletedAt: new Date() }
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
+
+    return company;
   }
 
   /**
@@ -208,7 +273,7 @@ class InventoryService {
       throw error;
     }
 
-    return await db.prisma.productModel.create({
+    const model = await db.prisma.productModel.create({
       data: {
         name: data.name,
         code: data.code,
@@ -221,31 +286,59 @@ class InventoryService {
         company: true
       }
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.MODELS + '*');
+
+    return model;
   }
 
   async getModels(filters = {}) {
-    const where = { deletedAt: null };
+    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
+    const filterKey = `${filters.categoryId || 'all'}:${filters.companyId || 'all'}`;
+    const cacheKey = cache.config.KEYS.MODELS + filterKey;
 
-    if (filters.categoryId) {
-      where.categoryId = filters.categoryId;
-    }
+    return await cache.wrap(
+      cacheKey,
+      async () => {
+        const where = { deletedAt: null };
 
-    if (filters.companyId) {
-      where.companyId = filters.companyId;
-    }
-
-    return await db.prisma.productModel.findMany({
-      where,
-      include: {
-        category: true,
-        company: true,
-        items: {
-          where: { deletedAt: null },
-          select: { id: true }
+        if (filters.categoryId) {
+          where.categoryId = filters.categoryId;
         }
+
+        if (filters.companyId) {
+          where.companyId = filters.companyId;
+        }
+
+        // Include items for list display
+        return await db.prisma.productModel.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            description: true,
+            isActive: true,
+            categoryId: true,
+            companyId: true,
+            category: {
+              select: { id: true, name: true, code: true }
+            },
+            company: {
+              select: { id: true, name: true, code: true }
+            },
+            items: {
+              select: {
+                id: true
+              }
+            }
+          },
+          orderBy: { name: 'asc' }
+        });
       },
-      orderBy: { name: 'asc' }
-    });
+      cache.config.TTL.DROPDOWN
+    );
   }
 
   async updateModel(id, data) {
@@ -273,7 +366,7 @@ class InventoryService {
       }
     }
 
-    return await db.prisma.productModel.update({
+    const model = await db.prisma.productModel.update({
       where: { id },
       data: {
         name: data.name,
@@ -288,6 +381,11 @@ class InventoryService {
         company: true
       }
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.MODELS + '*');
+
+    return model;
   }
 
   async deleteModel(id) {
@@ -315,10 +413,15 @@ class InventoryService {
     }
 
     // Soft delete
-    return await db.prisma.productModel.update({
+    const model = await db.prisma.productModel.update({
       where: { id },
       data: { deletedAt: new Date() }
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.MODELS + '*');
+
+    return model;
   }
 
   /**
@@ -352,7 +455,9 @@ class InventoryService {
 
     // Validate serial number uniqueness
     const existing = await db.prisma.item.findUnique({
-      where: { serialNumber: itemData.serialNumber }
+      where: {
+        serialNumber: itemData.serialNumber
+      }
     });
 
     if (existing) {
@@ -368,6 +473,9 @@ class InventoryService {
     // Set repaired status for "In Lab" items
     const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
 
+    // Set inventory status: Used items in lab get "Under Repair", new items get "Available"
+    const inventoryStatus = autoStatus === 'In Lab' ? 'Under Repair' : 'Available';
+
     // Create item with initial status
     try {
       const item = await db.prisma.item.create({
@@ -376,6 +484,7 @@ class InventoryService {
           condition: condition,
           status: autoStatus,
           repaired: repairedStatus,
+          inventoryStatus: inventoryStatus,
           statusHistory: [{
             status: autoStatus,
             date: new Date(),
@@ -450,32 +559,51 @@ class InventoryService {
       throw error;
     }
 
-    // Soft delete the item
-    await db.prisma.item.update({
-      where: { id },
-      data: { deletedAt: new Date() }
+    // Hard delete the item and its related records
+    // Delete related records first (to avoid foreign key constraints)
+    await db.prisma.$transaction(async (prisma) => {
+      // Delete item reservations
+      await prisma.itemReservation.deleteMany({
+        where: { itemId: id }
+      });
+
+      // Delete inventory movements
+      await prisma.inventoryMovement.deleteMany({
+        where: { itemId: id }
+      });
+
+      // Delete inventory status history
+      await prisma.inventoryStatusHistory.deleteMany({
+        where: { itemId: id }
+      });
+
+      // Finally delete the item
+      await prisma.item.delete({
+        where: { id }
+      });
     });
 
-    logger.info(`Item deleted: ${item.serialNumber}`);
+    logger.info(`Item hard deleted: ${item.serialNumber}`);
     return { message: 'Item deleted successfully' };
   }
 
   async getItems(filters = {}) {
-    const where = { deletedAt: null };
-
-    // Exclude "Returned" items by default (unless explicitly filtering for them)
-    if (!filters.includeReturned) {
-      where.NOT = {
-        repaired: 'Returned'
-      };
-    }
+    const where = {};
+    const andConditions = [];
 
     // Filter for invoice-available items only
     if (filters.availableForInvoice) {
-      where.OR = [
-        { status: 'In Store' },
-        { status: 'In Lab', repaired: 'Yes' }
-      ];
+      andConditions.push({
+        OR: [
+          { status: 'In Store' },
+          { status: 'In Lab', repaired: 'Yes' }
+        ]
+      });
+    }
+
+    // Apply AND conditions if any exist
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     // Apply filters
@@ -527,28 +655,93 @@ class InventoryService {
       }
     }
 
-    return await db.prisma.item.findMany({
-      where,
-      include: {
-        category: true,
-        model: {
-          include: {
-            company: true,
-            category: true
+    // PERFORMANCE OPTIMIZATION: Add pagination support
+    const page = filters.page ? parseInt(filters.page) : 1;
+    const limit = filters.limit ? parseInt(filters.limit) : 100; // Default 100 items per page
+    const skip = (page - 1) * limit;
+
+    // Run queries in parallel for better performance
+    const [items, totalCount] = await Promise.all([
+      db.prisma.item.findMany({
+        where,
+        // OPTIMIZED: Use selective field loading instead of full includes
+        // Removed redundant model.category (already have item.category)
+        // Removed invoiceItems from list view (only needed in detail view)
+        select: {
+          id: true,
+          serialNumber: true,
+          condition: true,
+          inventoryStatus: true,
+          status: true,
+          repaired: true,
+          purchasePrice: true,
+          sellingPrice: true,
+          inboundDate: true,
+          outboundDate: true,
+          handoverTo: true,
+          handoverToPhone: true,
+          handoverDate: true,
+          createdAt: true,
+          updatedAt: true,
+          // Related data with selective fields
+          category: {
+            select: { id: true, name: true, code: true }
+          },
+          model: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              company: {
+                select: { id: true, name: true, code: true }
+              }
+            }
+          },
+          vendor: {
+            select: { id: true, name: true, code: true }
+          },
+          customer: {
+            select: { id: true, name: true, phone: true, company: true }
+          },
+          // Minimal invoiceItems for frontend fallback (reserved items)
+          invoiceItems: {
+            select: {
+              invoice: {
+                select: {
+                  customer: {
+                    select: { id: true, name: true, phone: true, company: true }
+                  }
+                }
+              }
+            },
+            take: 1,
+            orderBy: { createdAt: 'desc' }
+          },
+          handoverByUser: {
+            select: { id: true, fullName: true }
           }
         },
-        vendor: true,
-        customer: true,
-        handoverByUser: {
-          select: {
-            fullName: true
-          }
-        }
+        orderBy: {
+          createdAt: 'desc'
+        },
+        skip,
+        take: limit,
+      }),
+      // Get total count for pagination
+      db.prisma.item.count({ where }),
+    ]);
+
+    // Return paginated response
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasMore: skip + items.length < totalCount,
       },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
+    };
   }
 
   async getItemBySerialNumber(serialNumber) {
@@ -722,6 +915,14 @@ class InventoryService {
       throw new Error(`Cannot change repaired status from "${currentRepaired}" to "${repairedStatus}"`);
     }
 
+    // Determine new inventory status based on repaired status change
+    let newInventoryStatus = item.inventoryStatus;
+    if (repairedStatus === 'Yes') {
+      // Item is now repaired and ready to sell
+      newInventoryStatus = 'Available';
+    }
+    // Note: If repairedStatus is 'Returned', keep inventoryStatus as "Under Repair" (item is defective)
+
     // Build status history entry
     const historyEntry = {
       status: item.status,
@@ -736,6 +937,7 @@ class InventoryService {
       where: { serialNumber },
       data: {
         repaired: repairedStatus,
+        inventoryStatus: newInventoryStatus,
         statusHistory: [...(item.statusHistory || []), historyEntry]
       },
       include: {
@@ -755,64 +957,88 @@ class InventoryService {
   }
 
   /**
-   * Stock calculations
+   * Stock calculations - OPTIMIZED with groupBy aggregation
    */
   async getStockSummary() {
-    const items = await db.prisma.item.findMany({
-      where: {
-        deletedAt: null
-      },
-      include: {
-        category: true,
-        model: {
-          include: {
-            company: true
-          }
+    // Run all aggregations in parallel for better performance
+    const [
+      totalItems,
+      availableItems,
+      statusGroups,
+      categoryGroups,
+      totalValueResult,
+    ] = await Promise.all([
+      // Total items count
+      db.prisma.item.count(),
+      // Available items count
+      db.prisma.item.count({
+        where: {
+          status: { in: ['In Store', 'In Hand', 'In Lab'] }
         }
-      }
+      }),
+      // Group by status
+      db.prisma.item.groupBy({
+        by: ['status'],
+        _count: { id: true }
+      }),
+      // Group by category and inventory status
+      db.prisma.item.groupBy({
+        by: ['categoryId', 'inventoryStatus'],
+        _count: { id: true }
+      }),
+      // Calculate total value
+      db.prisma.item.aggregate({
+        _sum: {
+          sellingPrice: true,
+          purchasePrice: true,
+        }
+      }),
+    ]);
+
+    // Transform status groups to object
+    const statusSummary = Object.fromEntries(
+      statusGroups.map(group => [group.status, group._count.id])
+    );
+
+    // Fetch category names for the groups we have
+    const categoryIds = [...new Set(categoryGroups.map(g => g.categoryId))];
+    const categories = await db.prisma.productCategory.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, name: true }
     });
+    const categoryMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
 
-    // Group by status
-    const statusSummary = items.reduce((acc, item) => {
-      acc[item.status] = (acc[item.status] || 0) + 1;
-      return acc;
-    }, {});
-
-    // Group by category
-    const categorySummary = items.reduce((acc, item) => {
-      const key = item.category.name;
-      if (!acc[key]) {
-        acc[key] = {
+    // Transform category groups to nested object
+    const categorySummary = {};
+    categoryGroups.forEach(group => {
+      const categoryName = categoryMap[group.categoryId] || 'Unknown';
+      if (!categorySummary[categoryName]) {
+        categorySummary[categoryName] = {
           total: 0,
           available: 0,
           sold: 0,
           delivered: 0
         };
       }
-      acc[key].total++;
-      
-      if (['In Store', 'In Hand', 'In Lab'].includes(item.status)) {
-        acc[key].available++;
-      } else if (item.status === 'Sold') {
-        acc[key].sold++;
-      } else if (item.status === 'Delivered') {
-        acc[key].delivered++;
-      }
-      
-      return acc;
-    }, {});
 
-    // Calculate total value
-    const totalValue = items.reduce((sum, item) => {
-      const price = item.sellingPrice || item.purchasePrice || 0;
-      return sum + parseFloat(price);
-    }, 0);
+      categorySummary[categoryName].total += group._count.id;
+
+      if (group.inventoryStatus === 'Available') {
+        categorySummary[categoryName].available += group._count.id;
+      } else if (group.inventoryStatus === 'Sold') {
+        categorySummary[categoryName].sold += group._count.id;
+      } else if (group.inventoryStatus === 'Delivered') {
+        categorySummary[categoryName].delivered += group._count.id;
+      }
+    });
+
+    // Calculate total value (sum of selling or purchase prices)
+    const totalValue = parseFloat(totalValueResult._sum.sellingPrice || 0) +
+                       parseFloat(totalValueResult._sum.purchasePrice || 0);
 
     return {
-      totalItems: items.length,
-      availableItems: items.filter(i => 
-        ['In Store', 'In Hand', 'In Lab'].includes(i.status)
-      ).length,
+      totalItems,
+      availableItems,
       statusSummary,
       categorySummary,
       totalValue
@@ -836,24 +1062,89 @@ class InventoryService {
       throw new Error('Vendor name or code already exists');
     }
 
-    return await db.prisma.vendor.create({
-      data
+    // Use transaction to create vendor + opening balance ledger entry atomically
+    const vendor = await withTransaction(async (tx) => {
+      // Create vendor
+      const newVendor = await tx.vendor.create({
+        data
+      });
+
+      // Create opening balance ledger entry if opening balance exists
+      if (data.openingBalance && parseFloat(data.openingBalance) !== 0) {
+        const openingBalanceAmount = formatAmount(parseFloat(data.openingBalance));
+
+        await tx.vendorLedger.create({
+          data: {
+            vendorId: newVendor.id,
+            entryDate: new Date(),
+            description: 'Opening Balance',
+            debit: openingBalanceAmount > 0 ? openingBalanceAmount : 0,
+            credit: openingBalanceAmount < 0 ? Math.abs(openingBalanceAmount) : 0,
+            balance: openingBalanceAmount
+          }
+        });
+
+        logger.info(`Opening balance ledger entry created for vendor: ${newVendor.name}`, {
+          vendorId: newVendor.id,
+          openingBalance: openingBalanceAmount
+        });
+
+        // Create journal entries for opening balance (DR: Opening Balance Equity, CR: A/P)
+        try {
+          await JournalEntryService.createVendorOpeningBalanceEntries(tx, {
+            vendorId: newVendor.id,
+            vendorName: newVendor.name,
+            amount: openingBalanceAmount,
+            entryDate: new Date()
+          });
+        } catch (error) {
+          logger.error('Failed to create opening balance journal entries for vendor', {
+            vendorId: newVendor.id,
+            vendorName: newVendor.name,
+            error: error.message
+          });
+          // Don't fail vendor creation if journal entries fail - can be fixed manually
+        }
+      }
+
+      return newVendor;
     });
+
+    // Invalidate cache after mutation
+    await cache.delPattern(cache.config.KEYS.VENDORS + '*');
+
+    return vendor;
   }
 
   async getVendors(includeDeleted = false) {
-    return await db.findMany('vendor', {
-      includeDeleted,
-      include: {
-        _count: {
+    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
+    const cacheKey = cache.config.KEYS.VENDORS + `all:${includeDeleted}`;
+
+    return await cache.wrap(
+      cacheKey,
+      async () => {
+        // OPTIMIZED: Removed _count include for better performance on dropdown endpoints
+        // Only return fields needed for dropdowns/lists
+        return await db.findMany('vendor', {
+          includeDeleted,
           select: {
-            items: true,
-            purchaseOrders: true
-          }
-        }
+            id: true,
+            name: true,
+            code: true,
+            contactPerson: true,
+            email: true,
+            phone: true,
+            address: true,
+            taxNumber: true,
+            paymentTerms: true,
+            openingBalance: true,
+            currentBalance: true
+          },
+          orderBy: { name: 'asc' }
+        });
       },
-      orderBy: { name: 'asc' }
-    });
+      cache.config.TTL.DROPDOWN
+    );
   }
 
   async getVendorById(id) {
@@ -927,20 +1218,42 @@ class InventoryService {
       failed: []
     };
 
-    for (const itemData of itemsData) {
+    // PERFORMANCE OPTIMIZATION: Process items in parallel instead of sequentially
+    // This reduces total time from N*T to T (where T is average create time)
+    const promises = itemsData.map(async (itemData) => {
       try {
         const item = await this.createItem(itemData, userId);
-        results.success.push({
+        return {
+          success: true,
           serialNumber: item.serialNumber,
           id: item.id
-        });
+        };
       } catch (error) {
-        results.failed.push({
+        return {
+          success: false,
           serialNumber: itemData.serialNumber,
           error: error.message
+        };
+      }
+    });
+
+    // Wait for all items to be processed
+    const processedResults = await Promise.all(promises);
+
+    // Separate success and failed results
+    processedResults.forEach(result => {
+      if (result.success) {
+        results.success.push({
+          serialNumber: result.serialNumber,
+          id: result.id
+        });
+      } else {
+        results.failed.push({
+          serialNumber: result.serialNumber,
+          error: result.error
         });
       }
-    }
+    });
 
     return results;
   }
@@ -1033,6 +1346,26 @@ class InventoryService {
 
       results.purchaseOrder = updatedPO;
 
+      // Auto-update PO delivery status based on received quantities
+      try {
+        const purchaseOrderService = require('./purchaseOrderService');
+        const deliveryResult = await purchaseOrderService.checkAndUpdateDeliveryStatus(purchaseOrderId);
+
+        if (deliveryResult.statusChanged) {
+          logger.info(`PO status auto-updated after item receipt: ${deliveryResult.previousStatus} → ${deliveryResult.newStatus}`, {
+            poId: purchaseOrderId,
+            poNumber: po.poNumber
+          });
+          results.purchaseOrder = deliveryResult.purchaseOrder;
+        }
+      } catch (error) {
+        logger.error('Failed to auto-update PO delivery status', {
+          poId: purchaseOrderId,
+          error: error.message
+        });
+        // Continue - PO status can be manually updated later
+      }
+
       logger.info(`Bulk created ${results.success.length} items from PO ${po.poNumber}`, {
         poId: purchaseOrderId,
         successCount: results.success.length,
@@ -1051,10 +1384,9 @@ class InventoryService {
    * Get item status history
    */
   async getItemHistory(serialNumber) {
-    const item = await db.prisma.item.findFirst({
+    const item = await db.prisma.item.findUnique({
       where: {
-        serialNumber,
-        deletedAt: null
+        serialNumber
       }
     });
 
@@ -1087,10 +1419,9 @@ class InventoryService {
    * Get item movements
    */
   async getItemMovements(serialNumber) {
-    const item = await db.prisma.item.findFirst({
+    const item = await db.prisma.item.findUnique({
       where: {
-        serialNumber,
-        deletedAt: null
+        serialNumber
       }
     });
 

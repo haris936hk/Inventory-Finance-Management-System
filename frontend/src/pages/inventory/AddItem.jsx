@@ -8,7 +8,7 @@ import {
 import {
   SaveOutlined, ArrowLeftOutlined, PlusOutlined, ScanOutlined
 } from '@ant-design/icons';
-import { useMutation, useQuery } from 'react-query';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import dayjs from 'dayjs';
@@ -18,6 +18,7 @@ const { TextArea } = Input;
 
 const AddItem = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -25,19 +26,31 @@ const AddItem = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
-  // Fetch categories
-  const { data: categories } = useQuery('categories', async () => {
-    const response = await axios.get('/inventory/categories');
-    return response.data.data;
-  });
+  // Fetch categories (static reference data - cache for 30 minutes)
+  const { data: categories } = useQuery(
+    'categories',
+    async () => {
+      const response = await axios.get('/inventory/categories');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - categories rarely change
+    }
+  );
 
-  // Fetch companies
-  const { data: companies } = useQuery('companies', async () => {
-    const response = await axios.get('/inventory/companies');
-    return response.data.data;
-  });
+  // Fetch companies (static reference data - cache for 30 minutes)
+  const { data: companies } = useQuery(
+    'companies',
+    async () => {
+      const response = await axios.get('/inventory/companies');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - companies rarely change
+    }
+  );
 
-  // Fetch models based on selected category and company
+  // Fetch models based on selected category and company (static reference data - cache for 30 minutes)
   const { data: models, error: modelsError, isLoading: modelsLoading } = useQuery(
     ['models', selectedCategoryId, selectedCompanyId],
     async () => {
@@ -52,17 +65,24 @@ const AddItem = () => {
     },
     {
       enabled: !!selectedCategoryId, // Only require categoryId to load models
+      staleTime: 30 * 60 * 1000, // 30 minutes - models rarely change
       onError: (error) => {
         console.error('Models fetch error:', error);
       }
     }
   );
 
-  // Fetch vendors
-  const { data: vendors } = useQuery('vendors', async () => {
-    const response = await axios.get('/inventory/vendors');
-    return response.data.data;
-  });
+  // Fetch vendors (static reference data - cache for 30 minutes)
+  const { data: vendors } = useQuery(
+    'vendors',
+    async () => {
+      const response = await axios.get('/inventory/vendors');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - vendors rarely change
+    }
+  );
 
   // Create item mutation
   const createMutation = useMutation(
@@ -70,6 +90,7 @@ const AddItem = () => {
     {
       onSuccess: () => {
         message.success('Item added successfully');
+        queryClient.invalidateQueries('items'); // Refetch the items list
         navigate('/app/inventory/items');
       },
       onError: (error) => {

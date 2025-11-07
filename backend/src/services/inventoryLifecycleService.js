@@ -44,22 +44,33 @@ class InventoryLifecycleService {
    * @param {string[]} itemIds - Array of item IDs to reserve
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User making the reservation
+   * @param {Object} tx - Optional transaction object (if called within existing transaction)
    * @returns {Promise<Object>} Reservation result
    */
-  async reserveItemsForInvoice(itemIds, invoiceId, userId) {
+  async reserveItemsForInvoice(itemIds, invoiceId, userId, tx = null) {
     if (!itemIds || itemIds.length === 0) {
       throw new Error('Item IDs are required');
     }
 
-    return await db.transaction(async (prisma) => {
-      // Lock items for update to prevent race conditions
+    // Execute within provided transaction or create a new one
+    const execute = async (prisma) => {
+      // CRITICAL FIX: Use SELECT FOR UPDATE to lock items and prevent race conditions
+      // Lock items in consistent order (by ID) to prevent deadlocks
+      await prisma.$executeRaw`
+        SELECT * FROM "Item"
+        WHERE id = ANY(${itemIds}::uuid[])
+        AND "deletedAt" IS NULL
+        ORDER BY id ASC
+        FOR UPDATE
+      `;
+
+      // Now fetch the locked items
       const items = await prisma.item.findMany({
         where: {
           id: { in: itemIds },
           deletedAt: null
         },
-        // Add explicit row-level locking
-        orderBy: { id: 'asc' } // Consistent ordering to prevent deadlocks
+        orderBy: { id: 'asc' }
       });
 
       // Validate all items exist
@@ -138,7 +149,10 @@ class InventoryLifecycleService {
         reservationCount: items.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    return tx ? await execute(tx) : await db.transaction(execute);
   }
 
   /**

@@ -115,19 +115,15 @@ const Reports = () => {
             <Card>
               <Statistic
                 title="Available"
-                value={data.items?.filter(i =>
-                  (i.status === 'In Store' || i.status === 'In Lab') && i.repaired !== 'Returned'
-                ).length || 0}
+                value={data.total?.availableCount || 0}
               />
             </Card>
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic 
-                title="Sold/Delivered" 
-                value={data.items?.filter(i => 
-                  ['Sold', 'Delivered'].includes(i.status)
-                ).length || 0}
+              <Statistic
+                title="Sold/Delivered"
+                value={data.total?.soldDeliveredCount || 0}
               />
             </Card>
           </Col>

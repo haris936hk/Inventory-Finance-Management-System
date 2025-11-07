@@ -186,8 +186,8 @@ const CustomerDetails = () => {
                 },
                 {
                   title: 'Total',
-                  dataIndex: 'totalAmount',
-                  key: 'totalAmount',
+                  dataIndex: 'total',
+                  key: 'total',
                   align: 'right',
                   render: (amount, record) => (
                     <span style={{
@@ -215,7 +215,7 @@ const CustomerDetails = () => {
                   align: 'right',
                   render: (_, record) => {
                     if (record.cancelledAt) return '-';
-                    const balance = parseFloat(record.totalAmount) - parseFloat(record.paidAmount || 0);
+                    const balance = parseFloat(record.total) - parseFloat(record.paidAmount || 0);
                     return (
                       <span style={{
                         color: balance > 0 ? '#f5222d' : '#52c41a',

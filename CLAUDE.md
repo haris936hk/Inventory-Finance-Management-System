@@ -8,10 +8,19 @@ This is an Inventory & Finance Management System designed for automating invento
 
 ## Architecture
 
+### Hybrid Electron Architecture
+
+**IMPORTANT**: This is a hybrid Electron desktop application with a unique architecture:
+- **Local Backend**: Each Electron instance runs its own Node.js/Express backend bundled locally for offline processing
+- **Cloud Database**: All instances connect to a centralized Supabase PostgreSQL database for shared data storage
+- **No Clustering**: Single-threaded Node.js per Electron instance (PM2/clustering not applicable)
+- **No Shared Cache**: In-memory caching per instance (Redis not applicable for desktop app)
+- **Connection Pooling**: Critical to prevent exhausting Supabase connection limits across multiple Electron instances
+
 ### Full Stack Structure
 - **Frontend**: React 18 with Ant Design UI components, running in Electron for desktop app distribution
-- **Backend**: Node.js with Express.js REST API
-- **Database**: PostgreSQL via Supabase with Prisma ORM
+- **Backend**: Node.js with Express.js REST API (bundled locally per Electron instance)
+- **Database**: PostgreSQL via Supabase (centralized cloud database) with Prisma ORM
 - **State Management**: Zustand for React state management
 - **Authentication**: JWT-based authentication with role-based access control
 

@@ -36,19 +36,29 @@ const PurchaseOrders = () => {
   const [subtotal, setSubtotal] = useState(0);
   const [taxAmount, setTaxAmount] = useState(0);
   const [total, setTotal] = useState(0);
+  // PERFORMANCE OPTIMIZATION: Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Fetch purchase orders
-  const { data: purchaseOrdersData, isLoading } = useQuery(
-    ['purchase-orders', filters],
+  // PERFORMANCE OPTIMIZATION: Fetch paginated purchase orders from backend
+  const { data: response, isLoading } = useQuery(
+    ['purchase-orders', filters, page, pageSize],
     async () => {
-      const response = await axios.get('/finance/purchase-orders', { params: filters });
+      const response = await axios.get('/finance/purchase-orders', {
+        params: { ...filters, page, limit: pageSize }
+      });
       return response.data.data;
     }
   );
 
+  // Extract data from paginated response
+  const purchaseOrdersData = response?.purchaseOrders || [];
+  const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
+  const backendStatistics = response?.statistics || {};
+
   // Fetch vendors for filter and form
   const { data: vendors } = useQuery('vendors', async () => {
-    const response = await axios.get('/inventory/vendors');
+    const response = await axios.get('/inventory/vendors', { params: { limit: 1000 } });
     return response.data.data;
   });
 
@@ -58,33 +68,21 @@ const PurchaseOrders = () => {
     return response.data.data;
   });
 
-  // Calculate statistics
+  // PERFORMANCE OPTIMIZATION: Use backend statistics instead of client-side calculations
   const statistics = React.useMemo(() => {
-    if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
+    if (!backendStatistics.byStatus) {
+      return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
+    }
 
-    return purchaseOrdersData.reduce((acc, po) => {
-      acc.total += parseFloat(po.total);
-      switch (po.status) {
-        case 'Draft':
-          acc.draft += parseFloat(po.total);
-          break;
-        case 'Sent':
-        case 'Partial':
-          acc.sent += parseFloat(po.total);
-          break;
-        case 'Paid':
-          acc.paid += parseFloat(po.total);
-          break;
-        case 'Delivered':
-          acc.delivered += parseFloat(po.total);
-          break;
-        case 'Cancelled':
-          acc.cancelled += parseFloat(po.total);
-          break;
-      }
-      return acc;
-    }, { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 });
-  }, [purchaseOrdersData]);
+    return {
+      total: backendStatistics.totalAmount || 0,
+      draft: backendStatistics.byStatus.Draft?.total || 0,
+      sent: (backendStatistics.byStatus.Sent?.total || 0) + (backendStatistics.byStatus.Partial?.total || 0),
+      paid: backendStatistics.byStatus.Paid?.total || 0,
+      delivered: backendStatistics.byStatus.Delivered?.total || 0,
+      cancelled: backendStatistics.byStatus.Cancelled?.total || 0
+    };
+  }, [backendStatistics]);
 
   // Create/Update PO mutation
   const poMutation = useMutation(
@@ -572,9 +570,17 @@ const PurchaseOrders = () => {
             onChange: setSelectedRowKeys,
           }}
           pagination={{
+            current: page,
+            pageSize: pageSize,
+            total: pagination.totalCount,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} purchase orders`,
+            onChange: (newPage, newPageSize) => {
+              setPage(newPage);
+              setPageSize(newPageSize);
+            },
+            pageSizeOptions: ['10', '25', '50', '100']
           }}
         />
       </Card>

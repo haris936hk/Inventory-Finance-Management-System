@@ -21,6 +21,7 @@ const {
 } = require('../utils/transactionWrapper');
 const { generatePaymentNumber } = require('../utils/generateId');
 const { updateBillStatus } = require('./billService');
+const JournalEntryService = require('./journalEntryService');
 
 /**
  * Record a vendor payment
@@ -80,7 +81,28 @@ async function recordPayment(data, userId) {
       );
     }
 
-    // 7. Generate payment number
+    // 7. Check for duplicate payments (same vendor, amount, within last minute)
+    const oneMinuteAgo = new Date(Date.now() - 60000);
+    const duplicatePayment = await tx.vendorPayment.findFirst({
+      where: {
+        vendorId: data.vendorId,
+        amount: paymentAmount,
+        paymentDate: {
+          gte: oneMinuteAgo
+        },
+        voidedAt: null,
+        deletedAt: null
+      }
+    });
+
+    if (duplicatePayment) {
+      throw new ValidationError(
+        'A payment with the same amount was recorded in the last minute. ' +
+        'Please verify this is not a duplicate submission.'
+      );
+    }
+
+    // 8. Generate payment number
     const paymentNumber = await generatePaymentNumber('VPAY');
 
     // 8. Create the payment (immutable)
@@ -119,21 +141,23 @@ async function recordPayment(data, userId) {
     // 10. Update bill status based on new paid amount
     const newBillStatus = await updateBillStatus(tx, data.billId);
 
-    // 11. Update vendor balance (decrease payable)
-    await tx.vendor.update({
-      where: { id: data.vendorId },
-      data: {
-        currentBalance: {
-          decrement: paymentAmount
-        }
-      }
-    });
-
-    // 12. Create vendor ledger entry
+    // 11. Get vendor balance BEFORE update to calculate new balance
     const vendor = await tx.vendor.findUnique({
       where: { id: data.vendorId }
     });
 
+    // 12. Calculate new vendor balance (decrease payable)
+    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) - paymentAmount);
+
+    // 13. Update vendor balance
+    await tx.vendor.update({
+      where: { id: data.vendorId },
+      data: {
+        currentBalance: newVendorBalance
+      }
+    });
+
+    // 14. Create vendor ledger entry with CALCULATED balance
     await tx.vendorLedger.create({
       data: {
         vendorId: data.vendorId,
@@ -141,7 +165,7 @@ async function recordPayment(data, userId) {
         description: `Payment ${paymentNumber} for Bill ${bill.billNumber}`,
         debit: 0,
         credit: paymentAmount,
-        balance: parseFloat(vendor.currentBalance),
+        balance: newVendorBalance,
         billId: data.billId
       }
     });
@@ -170,6 +194,30 @@ async function recordPayment(data, userId) {
         }
       }
     });
+
+    // CRITICAL FIX: Create journal entries for vendor payment (DR: A/P, CR: Cash)
+    try {
+      await JournalEntryService.createVendorPaymentEntries(tx, {
+        id: payment.id,
+        paymentNumber,
+        paymentDate: payment.paymentDate,
+        amount: paymentAmount,
+        method: data.method,
+        vendor: { name: vendor.name },
+        billId: data.billId
+      });
+      logger.info(`Journal entries created for vendor payment ${paymentNumber}`);
+    } catch (error) {
+      logger.error('Failed to create journal entries for vendor payment', {
+        paymentId: payment.id,
+        paymentNumber,
+        error: error.message
+      });
+      // This is critical - if journal entry creation fails, rollback the transaction
+      throw new ValidationError(
+        `Failed to create journal entries for vendor payment: ${error.message}`
+      );
+    }
 
     logger.info(`Payment recorded: ${paymentNumber}`, {
       paymentId: payment.id,
@@ -243,21 +291,23 @@ async function voidPayment(paymentId, reason, userId) {
     // 6. Update bill status
     const newBillStatus = await updateBillStatus(tx, payment.billId);
 
-    // 7. Reverse vendor balance
-    await tx.vendor.update({
-      where: { id: payment.vendorId },
-      data: {
-        currentBalance: {
-          increment: parseFloat(payment.amount)
-        }
-      }
-    });
-
-    // 8. Create reverse ledger entry
+    // 7. Get vendor balance BEFORE update to calculate new balance
     const vendor = await tx.vendor.findUnique({
       where: { id: payment.vendorId }
     });
 
+    // 8. Calculate new vendor balance (increase payable - voiding payment means we owe again)
+    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) + parseFloat(payment.amount));
+
+    // 9. Reverse vendor balance
+    await tx.vendor.update({
+      where: { id: payment.vendorId },
+      data: {
+        currentBalance: newVendorBalance
+      }
+    });
+
+    // 10. Create reverse ledger entry with CALCULATED balance
     await tx.vendorLedger.create({
       data: {
         vendorId: payment.vendorId,
@@ -265,7 +315,7 @@ async function voidPayment(paymentId, reason, userId) {
         description: `Payment ${payment.paymentNumber} voided: ${reason}`,
         debit: parseFloat(payment.amount),
         credit: 0,
-        balance: parseFloat(vendor.currentBalance),
+        balance: newVendorBalance,
         billId: payment.billId
       }
     });
@@ -292,6 +342,28 @@ async function voidPayment(paymentId, reason, userId) {
         }
       }
     });
+
+    // CRITICAL FIX: Reverse journal entries for voided vendor payment
+    try {
+      await JournalEntryService.reverseVendorPaymentEntries(tx, {
+        id: payment.id,
+        paymentNumber: payment.paymentNumber,
+        amount: parseFloat(payment.amount),
+        vendor: voided.vendor,
+        billId: payment.billId
+      }, reason);
+      logger.info(`Journal entries reversed for voided vendor payment ${payment.paymentNumber}`);
+    } catch (error) {
+      logger.error('Failed to reverse journal entries for voided vendor payment', {
+        paymentId,
+        paymentNumber: payment.paymentNumber,
+        error: error.message
+      });
+      // This is critical - if journal entry reversal fails, rollback the transaction
+      throw new ValidationError(
+        `Failed to reverse journal entries: ${error.message}`
+      );
+    }
 
     logger.info(`Payment voided: ${payment.paymentNumber}`, {
       paymentId,
@@ -375,10 +447,14 @@ async function getPaymentsForBill(billId) {
 /**
  * Get all vendor payments with filters
  *
+ * PERFORMANCE OPTIMIZATION: Added pagination and SQL aggregation
+ *
  * @param {Object} filters - Query filters
  * @param {string} filters.vendorId - Filter by vendor
  * @param {string} filters.billId - Filter by bill
- * @returns {Promise<Array>} Payments
+ * @param {number} filters.page - Page number (default: 1)
+ * @param {number} filters.limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Paginated payments with statistics
  */
 async function getVendorPayments(filters = {}) {
   const where = { deletedAt: null };
@@ -391,25 +467,92 @@ async function getVendorPayments(filters = {}) {
     where.billId = filters.billId;
   }
 
-  const payments = await db.prisma.vendorPayment.findMany({
-    where,
-    include: {
-      vendor: true,
-      bill: true,
-      createdByUser: {
-        select: {
-          fullName: true
-        }
-      }
-    },
-    orderBy: { paymentDate: 'desc' }
-  });
+  // PERFORMANCE OPTIMIZATION: Add pagination
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 50;
+  const skip = (page - 1) * limit;
 
-  return payments.map(p => ({
+  // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  const [payments, totalCount, statistics] = await Promise.all([
+    // Get paginated vendor payments with selective field loading
+    db.prisma.vendorPayment.findMany({
+      where,
+      select: {
+        id: true,
+        paymentNumber: true,
+        paymentDate: true,
+        amount: true,
+        method: true,
+        reference: true,
+        notes: true,
+        voidedAt: true,
+        voidReason: true,
+        createdAt: true,
+        vendor: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            email: true
+          }
+        },
+        bill: {
+          select: {
+            id: true,
+            billNumber: true,
+            total: true,
+            status: true
+          }
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            fullName: true
+          }
+        }
+      },
+      orderBy: { paymentDate: 'desc' },
+      skip,
+      take: limit
+    }),
+
+    // Get total count for pagination
+    db.prisma.vendorPayment.count({ where }),
+
+    // Get statistics using SQL aggregation
+    db.prisma.vendorPayment.aggregate({
+      where,
+      _sum: {
+        amount: true
+      },
+      _count: true
+    })
+  ]);
+
+  // Add computed fields
+  const paymentsWithFields = payments.map(p => ({
     ...p,
     isVoided: !!p.voidedAt,
     effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
   }));
+
+  // Calculate effective total (excluding voided payments)
+  const effectiveTotal = paymentsWithFields.reduce((sum, p) => sum + p.effectiveAmount, 0);
+
+  return {
+    payments: paymentsWithFields,
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit)
+    },
+    statistics: {
+      totalPayments: statistics._count,
+      totalAmount: parseFloat(statistics._sum.amount || 0),
+      effectiveAmount: effectiveTotal
+    }
+  };
 }
 
 /**

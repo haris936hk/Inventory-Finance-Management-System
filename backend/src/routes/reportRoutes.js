@@ -3,13 +3,15 @@ const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportController');
 const { protect, hasPermission } = require('../middleware/auth');
+const { cacheControl, CACHE_DURATION } = require('../middleware/cacheControl');
 
 // All routes require authentication
 router.use(protect);
 
-// Dashboard
+// PERFORMANCE OPTIMIZATION: Dashboard with caching (5 min client-side cache)
 router.get('/dashboard',
   hasPermission(['reports.view']),
+  cacheControl(CACHE_DURATION.MEDIUM), // 5 min cache for dashboard stats
   reportController.getDashboard
 );
 
@@ -79,6 +81,27 @@ router.get('/inventory-turnover',
 router.get('/gross-profit-margin',
   hasPermission(['reports.view']),
   reportController.getGrossProfitMargin
+);
+
+// =========== DOUBLE-ENTRY ACCOUNTING REPORTS ===========
+router.get('/accounting/trial-balance',
+  hasPermission(['reports.view']),
+  reportController.getTrialBalance
+);
+
+router.get('/accounting/balance-sheet',
+  hasPermission(['reports.view']),
+  reportController.getAccountingBalanceSheet
+);
+
+router.get('/accounting/profit-loss',
+  hasPermission(['reports.view']),
+  reportController.getAccountingProfitLoss
+);
+
+router.get('/accounting/tax-summary',
+  hasPermission(['reports.view']),
+  reportController.getTaxSummary
 );
 
 module.exports = router;

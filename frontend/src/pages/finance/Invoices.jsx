@@ -25,38 +25,56 @@ const Invoices = () => {
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  // PERFORMANCE OPTIMIZATION: Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Fetch invoices
-  const { data: invoicesData, isLoading } = useQuery(
-    ['invoices', filters],
+  // PERFORMANCE OPTIMIZATION: Fetch paginated invoices from backend
+  const { data: response, isLoading } = useQuery(
+    ['invoices', filters, page, pageSize],
     async () => {
-      const response = await axios.get('/finance/invoices', { params: filters });
+      const response = await axios.get('/finance/invoices', {
+        params: { ...filters, page, limit: pageSize }
+      });
       return response.data.data;
     }
   );
 
+  // Extract data from paginated response
+  const invoicesData = response?.invoices || [];
+  const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
+  const backendStatistics = response?.statistics || {};
+
   // Fetch customers for filter
-  const { data: customers } = useQuery('customers', async () => {
-    const response = await axios.get('/finance/customers');
+  const { data: customersResponse } = useQuery('customers', async () => {
+    const response = await axios.get('/finance/customers', { params: { limit: 1000 } });
     return response.data.data;
   });
+  const customers = customersResponse?.customers || [];
 
-  // Calculate statistics
+  // PERFORMANCE OPTIMIZATION: Use backend statistics instead of client-side calculations
   const statistics = React.useMemo(() => {
-    if (!invoicesData) return { total: 0, paid: 0, pending: 0, overdue: 0 };
-    
-    return invoicesData.reduce((acc, invoice) => {
-      acc.total += parseFloat(invoice.total);
-      if (invoice.status === 'Paid') {
-        acc.paid += parseFloat(invoice.total);
-      } else if (invoice.status === 'Overdue') {
-        acc.overdue += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
-      } else {
-        acc.pending += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
-      }
-      return acc;
-    }, { total: 0, paid: 0, pending: 0, overdue: 0 });
-  }, [invoicesData]);
+    if (!backendStatistics.byStatus) {
+      return { total: 0, paid: 0, pending: 0, overdue: 0 };
+    }
+
+    const paid = backendStatistics.byStatus.Paid?.total || 0;
+    const overdue = (backendStatistics.byStatus.Overdue?.total || 0) -
+                    (backendStatistics.byStatus.Overdue?.paid || 0);
+    const partial = (backendStatistics.byStatus.Partial?.total || 0) -
+                    (backendStatistics.byStatus.Partial?.paid || 0);
+    const sent = (backendStatistics.byStatus.Sent?.total || 0) -
+                 (backendStatistics.byStatus.Sent?.paid || 0);
+    const draft = (backendStatistics.byStatus.Draft?.total || 0) -
+                  (backendStatistics.byStatus.Draft?.paid || 0);
+
+    return {
+      total: backendStatistics.totalAmount || 0,
+      paid: paid,
+      pending: partial + sent + draft,
+      overdue: overdue
+    };
+  }, [backendStatistics]);
 
   // Update status mutation
   const updateStatusMutation = useMutation(
@@ -413,8 +431,16 @@ const Invoices = () => {
         rowSelection={rowSelection}
         scroll={{ x: 1200 }}
         pagination={{
+          current: page,
+          pageSize: pageSize,
+          total: pagination.totalCount,
           showSizeChanger: true,
-          showTotal: (total) => `Total ${total} invoices`
+          showTotal: (total) => `Total ${total} invoices`,
+          onChange: (newPage, newPageSize) => {
+            setPage(newPage);
+            setPageSize(newPageSize);
+          },
+          pageSizeOptions: ['10', '25', '50', '100']
         }}
       />
     </Card>

@@ -1,15 +1,15 @@
 // ========== src/pages/inventory/InventoryList.jsx ==========
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Table, Card, Button, Space, Tag, Input, Select, DatePicker, 
+import {
+  Table, Card, Button, Space, Tag, Input, Select, DatePicker,
   Row, Col, Drawer, Descriptions, Badge, Tooltip, message,
-  Popconfirm, Modal, Form, Dropdown
+  Popconfirm, Modal, Form, Dropdown, Typography, Alert
 } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FilterOutlined,
   EditOutlined, DeleteOutlined, EyeOutlined, BarcodeOutlined,
-  PrinterOutlined, MoreOutlined, ScanOutlined, AppstoreAddOutlined,
+  MoreOutlined, ScanOutlined, AppstoreAddOutlined,
   TruckOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
@@ -19,8 +19,9 @@ import BarcodeScanner from '../../components/BarcodeScanner';
 import HandoverModal from '../../components/HandoverModal';
 import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
 
-const { Search } = Input;
+const { Search, TextArea } = Input;
 const { RangePicker } = DatePicker;
+const { Text } = Typography;
 
 const InventoryList = () => {
   const navigate = useNavigate();
@@ -36,27 +37,73 @@ const InventoryList = () => {
   const [repairedModalVisible, setRepairedModalVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [pageSize, setPageSize] = useState(20);
+  const [bulkRepairedForm] = Form.useForm();
+  const [bulkHandoverForm] = Form.useForm();
+  const [bulkRepairedModalVisible, setBulkRepairedModalVisible] = useState(false);
+  const [bulkHandoverModalVisible, setBulkHandoverModalVisible] = useState(false);
 
   // Fetch items
-  const { data: itemsData, isLoading } = useQuery(
+  const { data: itemsResponse, isLoading, error } = useQuery(
     ['items', filters],
     async () => {
       const response = await axios.get('/inventory/items', { params: filters });
+      console.log('Items API Response:', response.data);
       return response.data.data;
+    },
+    {
+      onError: (error) => {
+        console.error('Error fetching items:', error);
+        console.error('Error response:', error.response?.data);
+        if (error.response?.status === 403) {
+          message.error('You do not have permission to view inventory items');
+        } else if (error.response?.status === 401) {
+          message.error('Authentication failed. Please login again.');
+        } else {
+          message.error(error.response?.data?.message || 'Failed to fetch items');
+        }
+      }
     }
   );
 
-  // Fetch categories for filter
-  const { data: categories } = useQuery('categories', async () => {
-    const response = await axios.get('/inventory/categories');
-    return response.data.data;
-  });
+  // Extract items and pagination from the response
+  const itemsData = itemsResponse?.items || [];
+  const paginationData = itemsResponse?.pagination || { totalCount: 0, page: 1, limit: 100 };
 
-  // Fetch companies for filter
-  const { data: companies } = useQuery('companies', async () => {
-    const response = await axios.get('/inventory/companies');
-    return response.data.data;
-  });
+  // Fetch categories for filter (static reference data - cache for 30 minutes)
+  const { data: categories } = useQuery(
+    'categories',
+    async () => {
+      const response = await axios.get('/inventory/categories');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - categories rarely change
+    }
+  );
+
+  // Fetch companies for filter (static reference data - cache for 30 minutes)
+  const { data: companies } = useQuery(
+    'companies',
+    async () => {
+      const response = await axios.get('/inventory/companies');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - companies rarely change
+    }
+  );
+
+  // Fetch models for filter (static reference data - cache for 30 minutes)
+  const { data: models } = useQuery(
+    'models',
+    async () => {
+      const response = await axios.get('/inventory/models');
+      return response.data.data;
+    },
+    {
+      staleTime: 30 * 60 * 1000, // 30 minutes - models rarely change
+    }
+  );
 
   // Delete item mutation
   const deleteMutation = useMutation(
@@ -76,6 +123,7 @@ const InventoryList = () => {
     const colors = {
       'Available': 'success',
       'Reserved': 'warning',
+      'Under Repair': 'purple',
       'Sold': 'processing',
       'Delivered': 'success'
     };
@@ -91,7 +139,30 @@ const InventoryList = () => {
     return colors[status] || 'default';
   };
 
-  const columns = [
+  // PERFORMANCE OPTIMIZATION: Memoize handlers to prevent column recreation
+  // Note: These must be defined BEFORE columns since columns references them
+  const handleSearch = useCallback((value) => {
+    setFilters(prev => ({ ...prev, serialNumber: value }));
+  }, []);
+
+  const handleScanResult = useCallback((result) => {
+    setScannerVisible(false);
+    setFilters(prev => ({ ...prev, serialNumber: result }));
+    message.success(`Scanned: ${result}`);
+  }, []);
+
+  const handleDelete = useCallback((record) => {
+    Modal.confirm({
+      title: 'Delete Item',
+      content: `Are you sure you want to delete item ${record.serialNumber}?`,
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: () => deleteMutation.mutate(record.id)
+    });
+  }, [deleteMutation]);
+
+  // PERFORMANCE OPTIMIZATION: Memoize columns to prevent recreation on every render
+  const columns = useMemo(() => [
     {
       title: 'Serial Number',
       dataIndex: 'serialNumber',
@@ -120,12 +191,16 @@ const InventoryList = () => {
       dataIndex: ['model', 'company', 'name'],
       key: 'company',
       width: 120,
+      filters: companies?.map(company => ({ text: company.name, value: company.id })),
+      onFilter: (value, record) => record.model?.company?.id === value,
     },
     {
       title: 'Model',
       dataIndex: ['model', 'name'],
       key: 'model',
       width: 150,
+      filters: models?.map(model => ({ text: model.name, value: model.id })),
+      onFilter: (value, record) => record.model?.id === value,
     },
     {
       title: 'Inventory Status',
@@ -135,6 +210,7 @@ const InventoryList = () => {
       filters: [
         { text: 'Available', value: 'Available' },
         { text: 'Reserved', value: 'Reserved' },
+        { text: 'Under Repair', value: 'Under Repair' },
         { text: 'Sold', value: 'Sold' },
         { text: 'Delivered', value: 'Delivered' },
       ],
@@ -165,13 +241,23 @@ const InventoryList = () => {
       dataIndex: 'repaired',
       key: 'repaired',
       width: 130,
+      filters: [
+        { text: 'No', value: 'No' },
+        { text: 'Yes', value: 'Yes' },
+        { text: 'Returned', value: 'Returned' },
+      ],
+      onFilter: (value, record) => {
+        if (record.status !== 'In Lab') return false;
+        const status = record.repaired || 'No';
+        return status === value;
+      },
       render: (repaired, record) => {
         if (record.status !== 'In Lab') return '-';
         const status = repaired || 'No';
         const colors = {
           'No': 'orange',
           'Yes': 'green',
-          'Returned': 'default'
+          'Returned': 'red'
         };
         return <Tag color={colors[status]}>{status}</Tag>;
       }
@@ -181,6 +267,11 @@ const InventoryList = () => {
       dataIndex: 'condition',
       key: 'condition',
       width: 100,
+      filters: [
+        { text: 'New', value: 'New' },
+        { text: 'Used', value: 'Used' },
+      ],
+      onFilter: (value, record) => record.condition === value,
       render: (condition) => (
         <Tag color={condition === 'New' ? 'green' : 'orange'}>{condition}</Tag>
       )
@@ -207,20 +298,21 @@ const InventoryList = () => {
       key: 'customer',
       width: 150,
       render: (customer, record) => {
-        if (!customer) {
-          // Show reservation info if available
-          if (record.reservedBy || record.reservedForType) {
-            return (
-              <Tooltip title={`Reserved ${record.reservedForType ? 'for ' + record.reservedForType : ''}`}>
-                <Tag color="orange" size="small">Reserved</Tag>
-              </Tooltip>
-            );
-          }
+        // First check direct customer relationship (for sold/delivered items)
+        let displayCustomer = customer;
+
+        // If no direct customer, check if item is in an invoice (reserved or sold)
+        if (!displayCustomer && record.invoiceItems && record.invoiceItems.length > 0) {
+          displayCustomer = record.invoiceItems[0].invoice?.customer;
+        }
+
+        if (!displayCustomer) {
           return '-';
         }
+
         return (
-          <Tooltip title={`${customer.phone || ''} ${customer.company || ''}`}>
-            {customer.name}
+          <Tooltip title={`${displayCustomer.phone || ''} ${displayCustomer.company || ''}`}>
+            {displayCustomer.name}
           </Tooltip>
         );
       }
@@ -270,6 +362,7 @@ const InventoryList = () => {
         const isSold = (record.inventoryStatus === 'Sold' || record.inventoryStatus === 'Delivered');
         const isInLab = record.status === 'In Lab';
         const isReturned = record.repaired === 'Returned';
+        const canUpdateRepaired = isInLab && (record.repaired === 'No' || record.repaired === null);
 
         const menuItems = [
           {
@@ -291,7 +384,7 @@ const InventoryList = () => {
             },
             disabled: !hasPermission('inventory.edit') || isReturned
           },
-          ...(isInLab ? [{
+          ...(canUpdateRepaired ? [{
             key: 'repaired',
             label: 'Update Repaired Status',
             icon: <EditOutlined />,
@@ -299,14 +392,8 @@ const InventoryList = () => {
               setSelectedItem(record);
               setRepairedModalVisible(true);
             },
-            disabled: !hasPermission('inventory.edit') || isReturned
+            disabled: !hasPermission('inventory.edit')
           }] : []),
-          {
-            key: 'print',
-            label: 'Print Label',
-            icon: <PrinterOutlined />,
-            onClick: () => handlePrintLabel(record)
-          },
           {
             type: 'divider'
           },
@@ -347,31 +434,107 @@ const InventoryList = () => {
         );
       }
     }
-  ];
+  ], [categories, companies, models, navigate, hasPermission, handleDelete]);
 
-  const handleSearch = (value) => {
-    setFilters({ ...filters, serialNumber: value });
+  // Get selected items data
+  const selectedItems = itemsData?.filter(item => selectedRowKeys.includes(item.id)) || [];
+
+  // Calculate eligible items for each bulk action
+  const eligibleForRepairUpdate = selectedItems.filter(item =>
+    item.status === 'In Lab' && (item.repaired === 'No' || item.repaired === null)
+  );
+
+  const eligibleForHandover = selectedItems.filter(item =>
+    (item.inventoryStatus === 'Reserved' || item.inventoryStatus === 'Sold') &&
+    item.repaired !== 'Returned' &&
+    item.repaired !== 'No'
+  );
+
+  const eligibleForDelete = selectedItems.filter(item =>
+    item.inventoryStatus !== 'Sold' && item.inventoryStatus !== 'Delivered'
+  );
+
+  // Bulk action handlers
+  const handleBulkRepairedUpdate = () => {
+    if (eligibleForRepairUpdate.length === 0) {
+      message.warning('No eligible items selected for repaired status update');
+      return;
+    }
+    setBulkRepairedModalVisible(true);
   };
 
-  const handleScanResult = (result) => {
-    setScannerVisible(false);
-    setFilters({ ...filters, serialNumber: result });
-    message.success(`Scanned: ${result}`);
+  const handleBulkRepairedSubmit = async (values) => {
+    try {
+      await Promise.all(eligibleForRepairUpdate.map(item =>
+        axios.put(`/inventory/items/${item.serialNumber}/repaired-status`, {
+          repairedStatus: values.repairedStatus,
+          notes: values.notes
+        })
+      ));
+      message.success(`Successfully updated repaired status for ${eligibleForRepairUpdate.length} item(s)`);
+      queryClient.invalidateQueries('items');
+      setBulkRepairedModalVisible(false);
+      bulkRepairedForm.resetFields();
+      setSelectedRowKeys([]);
+    } catch (error) {
+      message.error('Failed to update some items');
+    }
   };
 
-  const handleDelete = (record) => {
+  const handleBulkHandover = () => {
+    if (eligibleForHandover.length === 0) {
+      message.warning('No eligible items selected for handover');
+      return;
+    }
+    setBulkHandoverModalVisible(true);
+  };
+
+  const handleBulkHandoverSubmit = async (values) => {
+    try {
+      await Promise.all(eligibleForHandover.map(item =>
+        axios.put(`/inventory/items/${item.serialNumber}/status`, {
+          status: 'Handover',
+          handoverTo: values.handoverTo,
+          handoverToNIC: values.handoverToNIC,
+          handoverToPhone: values.handoverToPhone,
+          handoverDetails: values.handoverDetails,
+          notes: values.notes
+        })
+      ));
+      message.success(`Successfully handed over ${eligibleForHandover.length} item(s)`);
+      queryClient.invalidateQueries('items');
+      setBulkHandoverModalVisible(false);
+      bulkHandoverForm.resetFields();
+      setSelectedRowKeys([]);
+    } catch (error) {
+      message.error('Failed to handover some items');
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (eligibleForDelete.length === 0) {
+      message.warning('No eligible items selected for deletion');
+      return;
+    }
+
     Modal.confirm({
-      title: 'Delete Item',
-      content: `Are you sure you want to delete item ${record.serialNumber}?`,
+      title: 'Bulk Delete Items',
+      content: `Are you sure you want to delete ${eligibleForDelete.length} item(s)? ${selectedItems.length - eligibleForDelete.length > 0 ? `\n\n(${selectedItems.length - eligibleForDelete.length} sold/delivered item(s) will be skipped)` : ''}`,
       okText: 'Delete',
       okType: 'danger',
-      onOk: () => deleteMutation.mutate(record.id)
+      onOk: async () => {
+        try {
+          await Promise.all(eligibleForDelete.map(item =>
+            axios.delete(`/inventory/items/${item.id}`)
+          ));
+          message.success(`Successfully deleted ${eligibleForDelete.length} item(s)`);
+          queryClient.invalidateQueries('items');
+          setSelectedRowKeys([]);
+        } catch (error) {
+          message.error('Failed to delete some items');
+        }
+      }
     });
-  };
-
-  const handlePrintLabel = (record) => {
-    // Generate and print label
-    message.info('Printing label...');
   };
 
   const rowSelection = {
@@ -381,17 +544,6 @@ const InventoryList = () => {
 
   return (
     <>
-      <style>
-        {`
-          .returned-item-row {
-            opacity: 0.5;
-            background-color: #f5f5f5;
-          }
-          .returned-item-row td:first-child {
-            text-decoration: line-through;
-          }
-        `}
-      </style>
       <Card>
         <div style={{ marginBottom: 16 }}>
           <Row gutter={[8, 8]} align="middle">
@@ -482,20 +634,73 @@ const InventoryList = () => {
           </Row>
         </div>
 
+        {/* Bulk Actions Bar */}
+        {selectedRowKeys.length > 0 && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#e6f7ff', borderRadius: 4, border: '1px solid #91d5ff' }}>
+            <Row align="middle" justify="space-between">
+              <Col>
+                <Space>
+                  <Text strong>{selectedRowKeys.length} item(s) selected</Text>
+                  <Button size="small" onClick={() => setSelectedRowKeys([])}>Clear Selection</Button>
+                </Space>
+              </Col>
+              <Col>
+                <Space>
+                  {hasPermission('inventory.edit') && eligibleForRepairUpdate.length > 0 && (
+                    <Button
+                      icon={<EditOutlined />}
+                      onClick={handleBulkRepairedUpdate}
+                    >
+                      Update Repaired Status ({eligibleForRepairUpdate.length})
+                    </Button>
+                  )}
+                  {hasPermission('inventory.edit') && eligibleForHandover.length > 0 && (
+                    <Button
+                      icon={<TruckOutlined />}
+                      onClick={handleBulkHandover}
+                    >
+                      Handover ({eligibleForHandover.length})
+                    </Button>
+                  )}
+                  {hasPermission('inventory.delete') && eligibleForDelete.length > 0 && (
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={handleBulkDelete}
+                    >
+                      Delete ({eligibleForDelete.length})
+                    </Button>
+                  )}
+                </Space>
+              </Col>
+            </Row>
+          </div>
+        )}
+
         <Table
           rowKey="id"
           columns={columns}
           dataSource={itemsData}
           loading={isLoading}
           rowSelection={rowSelection}
-          rowClassName={(record) => record.repaired === 'Returned' ? 'returned-item-row' : ''}
           scroll={{ x: 1800 }}
           pagination={{
-            total: itemsData?.length || 0,
-            pageSize: pageSize,
+            current: paginationData.page,
+            pageSize: paginationData.limit,
+            total: paginationData.totalCount,
             showSizeChanger: true,
             showTotal: (total) => `Total ${total} items`,
-            onShowSizeChange: (current, size) => setPageSize(size),
+            onChange: (page, limit) => {
+              setFilters({ ...filters, page, limit });
+            },
+            onShowSizeChange: (current, size) => {
+              setFilters({ ...filters, page: 1, limit: size });
+            },
+          }}
+          locale={{
+            emptyText: error
+              ? `Error loading items: ${error.response?.data?.message || error.message || 'Unknown error'}`
+              : 'No items found'
           }}
         />
       </Card>
@@ -648,7 +853,7 @@ const InventoryList = () => {
                     }}>
                       Handover
                     </Button>
-                    {selectedItem?.status === 'In Lab' && (
+                    {selectedItem?.status === 'In Lab' && (selectedItem?.repaired === 'No' || selectedItem?.repaired === null) && (
                       <Button onClick={() => {
                         setRepairedModalVisible(true);
                         setDrawerVisible(false);
@@ -700,6 +905,150 @@ const InventoryList = () => {
           setSelectedItem(null);
         }}
       />
+
+      {/* Bulk Update Repaired Status Modal */}
+      <Modal
+        title={`Bulk Update Repaired Status - ${eligibleForRepairUpdate.length} Item(s)`}
+        open={bulkRepairedModalVisible}
+        onCancel={() => {
+          setBulkRepairedModalVisible(false);
+          bulkRepairedForm.resetFields();
+        }}
+        onOk={() => bulkRepairedForm.submit()}
+        okText="Update All"
+        width={600}
+      >
+        <Form
+          form={bulkRepairedForm}
+          layout="vertical"
+          onFinish={handleBulkRepairedSubmit}
+        >
+          {selectedItems.length - eligibleForRepairUpdate.length > 0 && (
+            <Alert
+              message={`${selectedItems.length - eligibleForRepairUpdate.length} item(s) will be skipped`}
+              description="Only items with 'In Lab' status and repaired status 'No' can be updated."
+              type="warning"
+              style={{ marginBottom: 16 }}
+              showIcon
+            />
+          )}
+
+          <Form.Item
+            label="Repaired Status"
+            name="repairedStatus"
+            rules={[{ required: true, message: 'Please select repaired status' }]}
+          >
+            <Select placeholder="Select status">
+              <Select.Option value="Yes">Yes - Repaired Successfully</Select.Option>
+              <Select.Option value="Returned">Returned - Cannot be Repaired</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            label="Notes"
+            name="notes"
+          >
+            <TextArea rows={3} placeholder="Optional notes for all items" />
+          </Form.Item>
+
+          <Alert
+            message="Items to be updated:"
+            description={
+              <div style={{ maxHeight: 200, overflow: 'auto' }}>
+                {eligibleForRepairUpdate.map(item => (
+                  <div key={item.id}>• {item.serialNumber} - {item.model?.name}</div>
+                ))}
+              </div>
+            }
+            type="info"
+            showIcon
+          />
+        </Form>
+      </Modal>
+
+      {/* Bulk Handover Modal */}
+      <Modal
+        title={`Bulk Handover - ${eligibleForHandover.length} Item(s)`}
+        open={bulkHandoverModalVisible}
+        onCancel={() => {
+          setBulkHandoverModalVisible(false);
+          bulkHandoverForm.resetFields();
+        }}
+        onOk={() => bulkHandoverForm.submit()}
+        okText="Process Handover"
+        width={700}
+      >
+        <Form
+          form={bulkHandoverForm}
+          layout="vertical"
+          onFinish={handleBulkHandoverSubmit}
+        >
+          {selectedItems.length - eligibleForHandover.length > 0 && (
+            <Alert
+              message={`${selectedItems.length - eligibleForHandover.length} item(s) will be skipped`}
+              description="Items with 'Returned' repaired status cannot be handed over."
+              type="warning"
+              style={{ marginBottom: 16 }}
+              showIcon
+            />
+          )}
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="Handover To (Name)"
+                name="handoverTo"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder="Recipient name" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="Phone Number"
+                name="handoverToPhone"
+                rules={[{ required: true, message: 'Required' }]}
+              >
+                <Input placeholder="Contact number" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            label="NIC (Optional)"
+            name="handoverToNIC"
+          >
+            <Input placeholder="National ID" />
+          </Form.Item>
+
+          <Form.Item
+            label="Handover Details"
+            name="handoverDetails"
+          >
+            <TextArea rows={2} placeholder="Transport details, vehicle info, etc." />
+          </Form.Item>
+
+          <Form.Item
+            label="Notes"
+            name="notes"
+          >
+            <TextArea rows={2} placeholder="Additional notes" />
+          </Form.Item>
+
+          <Alert
+            message="Items to be handed over:"
+            description={
+              <div style={{ maxHeight: 150, overflow: 'auto' }}>
+                {eligibleForHandover.map(item => (
+                  <div key={item.id}>• {item.serialNumber} - {item.model?.name}</div>
+                ))}
+              </div>
+            }
+            type="info"
+            showIcon
+          />
+        </Form>
+      </Modal>
     </>
   );
 };

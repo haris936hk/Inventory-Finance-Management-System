@@ -4,10 +4,13 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 const db = require('./config/database');
+const cache = require('./config/simpleCache');
 const logger = require('./config/logger');
+const schedulerService = require('./services/schedulerService');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 // Import routes
@@ -25,6 +28,10 @@ const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
+
+// Compression middleware - compress all responses
+app.use(compression());
+
 app.use(cors({
   origin: ['http://localhost:3000'], // Electron app
   credentials: true
@@ -75,7 +82,14 @@ const startServer = async () => {
   try {
     // Connect to database
     await db.connect();
-    
+
+    // PERFORMANCE OPTIMIZATION: Initialize in-memory cache (per Electron instance)
+    await cache.connect();
+    cache.startPeriodicCleanup(); // Clean expired entries every 5 minutes
+
+    // Start background scheduler for automated tasks
+    schedulerService.start();
+
     app.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📚 Environment: ${process.env.NODE_ENV}`);
@@ -89,13 +103,19 @@ const startServer = async () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
   logger.info('SIGINT received. Shutting down gracefully...');
+  schedulerService.stop();
+  cache.stopPeriodicCleanup();
   await db.disconnect();
+  await cache.disconnect();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received. Shutting down gracefully...');
+  schedulerService.stop();
+  cache.stopPeriodicCleanup();
   await db.disconnect();
+  await cache.disconnect();
   process.exit(0);
 });
 

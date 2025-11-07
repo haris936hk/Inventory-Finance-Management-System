@@ -14,10 +14,14 @@ const logger = require('../config/logger');
 class LedgerService {
   /**
    * Get customer ledger with all financial transactions
+   * REFACTORED: Now uses CustomerLedger table as single source of truth
    * @param {string} customerId - Customer ID
+   * @param {Object} options - Optional filters
+   * @param {Date} options.dateFrom - Filter entries from this date
+   * @param {Date} options.dateTo - Filter entries to this date
    * @returns {Promise<Array>} Ledger entries with running balance
    */
-  async getCustomerLedger(customerId) {
+  async getCustomerLedger(customerId, options = {}) {
     const customer = await db.prisma.customer.findUnique({
       where: { id: customerId }
     });
@@ -28,88 +32,60 @@ class LedgerService {
       throw error;
     }
 
-    // Get all financial transactions for this customer
-    const ledgerEntries = [];
+    // Build where clause for CustomerLedger query
+    const where = { customerId };
 
-    // Get invoices (exclude cancelled ones)
-    const invoices = await db.prisma.invoice.findMany({
-      where: {
-        customerId,
-        deletedAt: null,
-        cancelledAt: null  // Exclude cancelled invoices
+    // Add date filters if provided
+    if (options.dateFrom) {
+      where.entryDate = { ...where.entryDate, gte: new Date(options.dateFrom) };
+    }
+    if (options.dateTo) {
+      where.entryDate = { ...where.entryDate, lte: new Date(options.dateTo) };
+    }
+
+    // Fetch ledger entries from CustomerLedger table (single source of truth)
+    const ledgerEntries = await db.prisma.customerLedger.findMany({
+      where,
+      include: {
+        invoice: {
+          select: {
+            invoiceNumber: true,
+            status: true,
+            cancelledAt: true
+          }
+        }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { entryDate: 'asc' }
     });
 
-    for (const invoice of invoices) {
-      ledgerEntries.push({
-        id: `invoice-${invoice.id}`,
-        date: invoice.createdAt,
-        type: 'Invoice',
-        reference: invoice.invoiceNumber,
-        description: `Invoice ${invoice.invoiceNumber}`,
-        amount: parseFloat(invoice.total),
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Get payments (exclude voided ones)
-    const payments = await db.prisma.payment.findMany({
-      where: {
-        customerId,
-        deletedAt: null,
-        voidedAt: null  // Exclude voided payments
-      },
-      orderBy: { paymentDate: 'asc' }
-    });
-
-    for (const payment of payments) {
-      ledgerEntries.push({
-        id: `payment-${payment.id}`,
-        date: payment.paymentDate,
-        type: 'Payment',
-        reference: payment.paymentNumber,
-        description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Sort by date and calculate running balance
-    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    let runningBalance = parseFloat(customer.openingBalance) || 0;
-
-    // Add opening balance entry if it exists
-    if (customer.openingBalance && customer.openingBalance !== 0) {
-      ledgerEntries.unshift({
-        id: 'opening-balance',
-        date: customer.createdAt,
-        type: 'Opening Balance',
-        reference: 'OB',
-        description: 'Opening Balance',
-        amount: parseFloat(customer.openingBalance),
-        balance: parseFloat(customer.openingBalance)
-      });
-    }
-
-    // Calculate running balance for each entry
-    for (const entry of ledgerEntries) {
-      if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
-      }
-      entry.balance = runningBalance;
-    }
-
-    return ledgerEntries;
+    // Convert to response format
+    return ledgerEntries.map(entry => ({
+      id: entry.id,
+      date: entry.entryDate,
+      type: entry.description.includes('Invoice') ? 'Invoice' :
+            entry.description.includes('Payment') ? 'Payment' :
+            entry.description.includes('Opening Balance') ? 'Opening Balance' : 'Other',
+      reference: entry.invoice?.invoiceNumber || entry.description.split(' ')[1] || '-',
+      description: entry.description,
+      debit: parseFloat(entry.debit),
+      credit: parseFloat(entry.credit),
+      amount: parseFloat(entry.debit) - parseFloat(entry.credit), // Net amount for backward compatibility
+      balance: parseFloat(entry.balance),
+      invoiceStatus: entry.invoice?.status || null,
+      isCancelled: entry.invoice?.cancelledAt ? true : false
+    }));
   }
 
   /**
    * Get vendor ledger with all financial transactions
+   * REFACTORED: Now uses VendorLedger table as single source of truth
    * @param {string} vendorId - Vendor ID
+   * @param {Object} options - Optional filters
+   * @param {Date} options.dateFrom - Filter entries from this date
+   * @param {Date} options.dateTo - Filter entries to this date
    * @returns {Promise<Array>} Ledger entries with running balance
    */
-  async getVendorLedger(vendorId) {
+  async getVendorLedger(vendorId, options = {}) {
     const vendor = await db.prisma.vendor.findUnique({
       where: { id: vendorId }
     });
@@ -120,75 +96,48 @@ class LedgerService {
       throw error;
     }
 
-    // Get all financial transactions for this vendor
-    const ledgerEntries = [];
+    // Build where clause for VendorLedger query
+    const where = { vendorId };
 
-    // Get vendor bills (not POs - bills represent the actual financial obligation)
-    const bills = await db.prisma.bill.findMany({
-      where: {
-        vendorId,
-        deletedAt: null
+    // Add date filters if provided
+    if (options.dateFrom) {
+      where.entryDate = { ...where.entryDate, gte: new Date(options.dateFrom) };
+    }
+    if (options.dateTo) {
+      where.entryDate = { ...where.entryDate, lte: new Date(options.dateTo) };
+    }
+
+    // Fetch ledger entries from VendorLedger table (single source of truth)
+    const ledgerEntries = await db.prisma.vendorLedger.findMany({
+      where,
+      include: {
+        bill: {
+          select: {
+            billNumber: true,
+            status: true,
+            cancelledAt: true
+          }
+        }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { entryDate: 'asc' }
     });
 
-    for (const bill of bills) {
-      ledgerEntries.push({
-        date: bill.createdAt,
-        type: 'Bill',
-        reference: bill.billNumber,
-        description: `Bill ${bill.billNumber}`,
-        amount: parseFloat(bill.total),
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Get vendor payments
-    const payments = await db.prisma.vendorPayment.findMany({
-      where: {
-        vendorId,
-        deletedAt: null
-      },
-      orderBy: { paymentDate: 'asc' }
-    });
-
-    for (const payment of payments) {
-      ledgerEntries.push({
-        date: payment.paymentDate,
-        type: 'Payment',
-        reference: payment.paymentNumber,
-        description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments (reduces what we owe)
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Sort by date and calculate running balance
-    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    let runningBalance = parseFloat(vendor.openingBalance) || 0;
-
-    // Add opening balance entry if it exists
-    if (vendor.openingBalance && vendor.openingBalance !== 0) {
-      ledgerEntries.unshift({
-        date: vendor.createdAt,
-        type: 'Opening Balance',
-        reference: 'OB',
-        description: 'Opening Balance',
-        amount: parseFloat(vendor.openingBalance),
-        balance: parseFloat(vendor.openingBalance)
-      });
-    }
-
-    // Calculate running balance for each entry
-    for (const entry of ledgerEntries) {
-      if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
-      }
-      entry.balance = runningBalance;
-    }
-
-    return ledgerEntries;
+    // Convert to response format
+    return ledgerEntries.map(entry => ({
+      id: entry.id,
+      date: entry.entryDate,
+      type: entry.description.includes('Bill') ? 'Bill' :
+            entry.description.includes('Payment') ? 'Payment' :
+            entry.description.includes('Opening Balance') ? 'Opening Balance' : 'Other',
+      reference: entry.bill?.billNumber || entry.description.split(' ')[1] || '-',
+      description: entry.description,
+      debit: parseFloat(entry.debit),
+      credit: parseFloat(entry.credit),
+      amount: parseFloat(entry.debit) - parseFloat(entry.credit), // Net amount for backward compatibility
+      balance: parseFloat(entry.balance),
+      billStatus: entry.bill?.status || null,
+      isCancelled: entry.bill?.cancelledAt ? true : false
+    }));
   }
 
   /**

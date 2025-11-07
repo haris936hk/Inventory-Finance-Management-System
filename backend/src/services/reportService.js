@@ -39,7 +39,7 @@ class ReportService {
 
     const soldThisMonth = await db.prisma.item.count({
       where: {
-        status: 'Sold',
+        inventoryStatus: 'Sold',
         outboundDate: {
           gte: startOfMonth
         }
@@ -104,10 +104,7 @@ class ReportService {
     const topProducts = await db.prisma.item.groupBy({
       by: ['modelId'],
       where: {
-        status: 'Sold',
-        NOT: {
-          modelId: null
-        },
+        inventoryStatus: 'Sold',
         outboundDate: {
           gte: startOfMonth
         }
@@ -236,47 +233,121 @@ class ReportService {
       where.status = filters.status;
     }
 
-    const items = await db.prisma.item.findMany({
-      where,
-      include: {
-        category: true,
-        model: {
-          include: {
-            company: true
+    // PERFORMANCE OPTIMIZATION: Add pagination support
+    const page = filters.page ? parseInt(filters.page) : 1;
+    const limit = filters.limit ? parseInt(filters.limit) : 500; // Default 500 items for reports
+    const skip = (page - 1) * limit;
+
+    // Run queries in parallel for better performance
+    const [items, totalCount, categoryStatusGroups, totalValueResult, availableCount, soldDeliveredCount] = await Promise.all([
+      // Fetch paginated items
+      db.prisma.item.findMany({
+        where,
+        select: {
+          id: true,
+          serialNumber: true,
+          status: true,
+          inventoryStatus: true,
+          purchasePrice: true,
+          purchaseDate: true,
+          inboundDate: true,
+          category: {
+            select: { id: true, name: true }
+          },
+          model: {
+            select: {
+              id: true,
+              name: true,
+              company: {
+                select: { id: true, name: true }
+              }
+            }
+          },
+          vendor: {
+            select: { id: true, name: true }
           }
         },
-        vendor: true
-      }
-    });
+        skip,
+        take: limit,
+        orderBy: { inboundDate: 'desc' }
+      }),
+      // Get total count for pagination
+      db.prisma.item.count({ where }),
+      // Group by category and status for summary
+      db.prisma.item.groupBy({
+        by: ['categoryId', 'status'],
+        where,
+        _count: { id: true },
+        _sum: { purchasePrice: true }
+      }),
+      // Calculate total value
+      db.prisma.item.aggregate({
+        where,
+        _sum: { purchasePrice: true }
+      }),
+      // Count available items (In Store or In Lab with repaired != 'Returned')
+      db.prisma.item.count({
+        where: {
+          ...where,
+          OR: [
+            { status: 'In Store' },
+            { status: 'In Lab', repaired: { not: 'Returned' } }
+          ]
+        }
+      }),
+      // Count sold/delivered items
+      db.prisma.item.count({
+        where: {
+          ...where,
+          status: { in: ['Sold', 'Delivered'] }
+        }
+      })
+    ]);
 
-    // Group by category and status
+    // Fetch category names for the groups
+    const categoryIds = [...new Set(categoryStatusGroups.map(g => g.categoryId))];
+    const categories = await db.prisma.productCategory.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, name: true }
+    });
+    const categoryMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
+
+    // Group by category and status for summary
     const summary = {};
-    
-    items.forEach(item => {
-      const categoryName = item.category.name;
-      const status = item.status;
-      
+    categoryStatusGroups.forEach(group => {
+      const categoryName = categoryMap[group.categoryId] || 'Unknown';
+      const status = group.status;
+
       if (!summary[categoryName]) {
         summary[categoryName] = {};
       }
-      
+
       if (!summary[categoryName][status]) {
         summary[categoryName][status] = {
           count: 0,
           value: 0
         };
       }
-      
-      summary[categoryName][status].count++;
-      summary[categoryName][status].value += parseFloat(item.purchasePrice || 0);
+
+      summary[categoryName][status].count += group._count.id;
+      summary[categoryName][status].value += parseFloat(group._sum.purchasePrice || 0);
     });
 
     return {
       items,
       summary,
       total: {
-        count: items.length,
-        value: items.reduce((sum, item) => sum + parseFloat(item.purchasePrice || 0), 0)
+        count: totalCount,
+        value: parseFloat(totalValueResult._sum.purchasePrice || 0),
+        availableCount,
+        soldDeliveredCount
+      },
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasMore: skip + items.length < totalCount,
       }
     };
   }
@@ -373,30 +444,55 @@ class ReportService {
 
   async getSalesReport(startDate, endDate, groupBy = 'day') {
     const dateFilter = {};
-    
+
     if (startDate) {
       dateFilter.gte = new Date(startDate);
     }
-    
+
     if (endDate) {
       dateFilter.lte = new Date(endDate);
     }
 
+    // PERFORMANCE OPTIMIZATION: Use selective fields instead of include
+    // This reduces data transfer and improves query performance significantly
     const invoices = await db.prisma.invoice.findMany({
       where: {
         deletedAt: null,
         invoiceDate: dateFilter
       },
-      include: {
-        customer: true,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        invoiceDate: true,
+        total: true,
+        paidAmount: true,
+        status: true,
+        customerId: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true
+          }
+        },
         items: {
-          include: {
+          select: {
+            id: true,
+            quantity: true,
+            unitPrice: true,
+            total: true,
             item: {
-              include: {
-                category: true,
+              select: {
+                serialNumber: true,
+                category: {
+                  select: { name: true }
+                },
                 model: {
-                  include: {
-                    company: true
+                  select: {
+                    name: true,
+                    company: {
+                      select: { name: true }
+                    }
                   }
                 }
               }
@@ -409,11 +505,11 @@ class ReportService {
 
     // Group sales data
     const grouped = {};
-    
+
     invoices.forEach(invoice => {
       let key;
       const date = new Date(invoice.invoiceDate);
-      
+
       switch (groupBy) {
         case 'day':
           key = date.toISOString().split('T')[0];
@@ -428,7 +524,7 @@ class ReportService {
         default:
           key = date.toISOString().split('T')[0];
       }
-      
+
       if (!grouped[key]) {
         grouped[key] = {
           invoices: 0,
@@ -437,7 +533,7 @@ class ReportService {
           customers: new Set()
         };
       }
-      
+
       grouped[key].invoices++;
       grouped[key].items += invoice.items.length;
       grouped[key].total += parseFloat(invoice.total);
@@ -457,7 +553,7 @@ class ReportService {
       totals: {
         invoices: invoices.length,
         revenue: invoices.reduce((sum, inv) => sum + parseFloat(inv.total), 0),
-        averageInvoiceValue: invoices.length ? 
+        averageInvoiceValue: invoices.length ?
           (invoices.reduce((sum, inv) => sum + parseFloat(inv.total), 0) / invoices.length).toFixed(2) : 0
       }
     };

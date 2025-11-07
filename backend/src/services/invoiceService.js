@@ -18,6 +18,9 @@ const {
   formatAmount
 } = require('../utils/transactionWrapper');
 const { generateInvoiceNumber } = require('../utils/generateId');
+const JournalEntryService = require('./journalEntryService');
+const InventoryLifecycleService = require('./inventoryLifecycleService');
+const ValidationService = require('./validationService');
 
 /**
  * Valid Invoice status transitions
@@ -83,18 +86,14 @@ function calculateInvoiceStatus(invoice) {
  */
 async function createInvoice(data, userId) {
   return withTransaction(async (tx) => {
-    // Validate amounts
+    // Validate amounts using ValidationService
     const subtotal = formatAmount(data.subtotal);
     const taxAmount = formatAmount(data.taxAmount || 0);
+    const discount = formatAmount(data.discountValue || 0);
     const total = formatAmount(data.total);
 
-    // Verify total = subtotal + tax (allow discount logic)
-    const expectedTotal = formatAmount(subtotal + taxAmount - (data.discountValue || 0));
-    if (!compareAmounts(total, expectedTotal, 0.01)) {
-      throw new ValidationError(
-        `Total (${total}) calculation mismatch. Expected: ${expectedTotal}`
-      );
-    }
+    // Use ValidationService for total calculation validation
+    ValidationService.validateTotalCalculation(subtotal, taxAmount, discount, total, 'Invoice');
 
     // Verify customer exists
     const customer = await tx.customer.findUnique({
@@ -114,6 +113,63 @@ async function createInvoice(data, userId) {
           `Current: ${customer.currentBalance}, Limit: ${customer.creditLimit}`
         );
       }
+    }
+
+    // CRITICAL FIX: Validate item availability before creating invoice
+    const itemIds = data.items.map(item => item.itemId);
+
+    // Check that all items exist and are available
+    const items = await tx.item.findMany({
+      where: {
+        id: { in: itemIds },
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        serialNumber: true,
+        inventoryStatus: true,
+        reservedForId: true,
+        reservedForType: true,
+        purchasePrice: true
+      }
+    });
+
+    // Validate all items were found
+    if (items.length !== itemIds.length) {
+      const foundIds = items.map(item => item.id);
+      const missingIds = itemIds.filter(id => !foundIds.includes(id));
+      throw new ValidationError(
+        `Some items not found: ${missingIds.join(', ')}`
+      );
+    }
+
+    // Validate all items are available for reservation
+    const unavailableItems = items.filter(item => item.inventoryStatus !== 'Available');
+    if (unavailableItems.length > 0) {
+      const unavailableDetails = unavailableItems.map(item => ({
+        serialNumber: item.serialNumber,
+        status: item.inventoryStatus,
+        reservedFor: item.reservedForType && item.reservedForId
+          ? `${item.reservedForType} ${item.reservedForId}`
+          : null
+      }));
+      throw new ValidationError(
+        `Cannot create invoice. Some items are not available: ${JSON.stringify(unavailableDetails)}`
+      );
+    }
+
+    // CRITICAL FIX: Validate all items have purchase price for COGS calculation
+    const itemsWithoutPrice = items.filter(item =>
+      !item.purchasePrice || parseFloat(item.purchasePrice) <= 0
+    );
+    if (itemsWithoutPrice.length > 0) {
+      const itemsDetails = itemsWithoutPrice.map(item => ({
+        serialNumber: item.serialNumber,
+        purchasePrice: item.purchasePrice || 0
+      }));
+      throw new ValidationError(
+        `Cannot create invoice. Some items are missing purchase price (required for COGS calculation): ${JSON.stringify(itemsDetails)}`
+      );
     }
 
     // Generate invoice number
@@ -178,6 +234,29 @@ async function createInvoice(data, userId) {
       }
     });
 
+    // Update customer balance (invoice increases what customer owes)
+    const newBalance = formatAmount(customer.currentBalance + total);
+
+    await tx.customer.update({
+      where: { id: data.customerId },
+      data: {
+        currentBalance: newBalance
+      }
+    });
+
+    // Create customer ledger entry
+    await tx.customerLedger.create({
+      data: {
+        customerId: data.customerId,
+        entryDate: data.invoiceDate || new Date(),
+        description: `Invoice ${invoiceNumber}`,
+        debit: total,
+        credit: 0,
+        balance: newBalance,
+        invoiceId: invoice.id
+      }
+    });
+
     // Create audit log
     await tx.invoicePaymentAudit.create({
       data: {
@@ -196,6 +275,38 @@ async function createInvoice(data, userId) {
         }
       }
     });
+
+    // Create journal entries for invoice (DR: A/R, CR: Sales Revenue, CR: Sales Tax)
+    // CRITICAL: Journal entry creation is MANDATORY - if it fails, entire transaction rolls back
+    await JournalEntryService.createInvoiceEntries(tx, {
+      id: invoice.id,
+      invoiceNumber,
+      invoiceDate: invoice.invoiceDate,
+      total,
+      subtotal,
+      taxAmount,
+      customer: { name: customer.name }
+    });
+
+    // CRITICAL FIX: Reserve items for this invoice (within same transaction)
+    try {
+      await InventoryLifecycleService.reserveItemsForInvoice(
+        itemIds,
+        invoice.id,
+        userId,
+        tx // Pass transaction to ensure atomic operation
+      );
+      logger.info(`Reserved ${itemIds.length} items for invoice ${invoiceNumber}`);
+    } catch (error) {
+      logger.error('Failed to reserve items for invoice - rolling back', {
+        invoiceId: invoice.id,
+        error: error.message
+      });
+      // This is critical - if reservation fails, the transaction will rollback
+      throw new ValidationError(
+        `Failed to reserve items for invoice: ${error.message}`
+      );
+    }
 
     logger.info(`Invoice created: ${invoiceNumber}`, {
       invoiceId: invoice.id,
@@ -389,16 +500,35 @@ async function cancelInvoice(invoiceId, reason, userId) {
       throw new ValidationError('Invoice is already cancelled');
     }
 
-    // CRITICAL: Only Draft invoices can be cancelled
-    if (invoice.status !== 'Draft') {
+    // Validate invoice status allows cancellation
+    if (invoice.status === 'Paid') {
       throw new ValidationError(
-        `Cannot cancel invoice with status ${invoice.status}. Only Draft invoices can be cancelled.`
+        'Cannot cancel fully paid invoice. Please void payments first or contact accounting.'
       );
     }
 
+    if (invoice.status === 'Partial' || invoice.status === 'Overdue') {
+      const paidAmount = formatAmount(invoice.paidAmount);
+      throw new ValidationError(
+        `Cannot cancel invoice with status ${invoice.status}. ` +
+        `Invoice has ${paidAmount} in payments. ` +
+        `Please void all payments first, then cancel the invoice.`
+      );
+    }
+
+    // Additional safety check for any payments
     if (invoice.paidAmount > 0) {
       throw new ValidationError(
-        `Cannot cancel invoice with payments. Invoice has ${invoice.paidAmount} paid.`
+        `Cannot cancel invoice with payments. Invoice has ${formatAmount(invoice.paidAmount)} paid. ` +
+        `Please void all payments first.`
+      );
+    }
+
+    // Allow Draft or Sent invoices to be cancelled
+    if (!['Draft', 'Sent'].includes(invoice.status)) {
+      throw new ValidationError(
+        `Cannot cancel invoice with status ${invoice.status}. ` +
+        `Only Draft or Sent invoices can be cancelled.`
       );
     }
 
@@ -516,6 +646,16 @@ async function cancelInvoice(invoiceId, reason, userId) {
       }
     });
 
+    // Reverse journal entries for cancelled invoice
+    // CRITICAL: Journal entry reversal is MANDATORY - if it fails, entire transaction rolls back
+    await JournalEntryService.reverseInvoiceEntries(tx, {
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      total: invoice.total,
+      subtotal: invoice.subtotal,
+      taxAmount: invoice.taxAmount
+    }, reason);
+
     logger.info(`Invoice cancelled: ${invoice.invoiceNumber}`, {
       invoiceId,
       reason,
@@ -593,14 +733,16 @@ async function getInvoice(invoiceId) {
 }
 
 /**
- * Get all invoices with filters
+ * Get all invoices with filters (OPTIMIZED with pagination)
  *
  * @param {Object} filters - Query filters
  * @param {string} filters.status - Filter by status (comma-separated)
  * @param {string} filters.customerId - Filter by customer
  * @param {string} filters.dateFrom - Filter by date from
  * @param {string} filters.dateTo - Filter by date to
- * @returns {Promise<Array>} Invoices
+ * @param {number} filters.page - Page number (default: 1)
+ * @param {number} filters.limit - Items per page (default: 50)
+ * @returns {Promise<Object>} Paginated invoices with metadata
  */
 async function getInvoices(filters = {}) {
   const where = { deletedAt: null };
@@ -632,19 +774,97 @@ async function getInvoices(filters = {}) {
     }
   }
 
-  return await db.prisma.invoice.findMany({
-    where,
-    include: {
-      customer: true,
-      _count: {
-        select: {
-          items: true,
-          payments: true
+  // PERFORMANCE OPTIMIZATION: Add pagination
+  const page = parseInt(filters.page) || 1;
+  const limit = parseInt(filters.limit) || 50;
+  const skip = (page - 1) * limit;
+
+  // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  const [invoices, totalCount, statistics] = await Promise.all([
+    // Get paginated invoices with selective field loading
+    db.prisma.invoice.findMany({
+      where,
+      select: {
+        id: true,
+        invoiceNumber: true,
+        invoiceDate: true,
+        dueDate: true,
+        status: true,
+        subtotal: true,
+        taxAmount: true,
+        total: true,
+        paidAmount: true,
+        cancelledAt: true,
+        createdAt: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            company: true
+          }
+        },
+        _count: {
+          select: {
+            items: true,
+            payments: true
+          }
         }
-      }
-    },
-    orderBy: { invoiceDate: 'desc' }
+      },
+      orderBy: { invoiceDate: 'desc' },
+      skip,
+      take: limit
+    }),
+
+    // Get total count for pagination
+    db.prisma.invoice.count({ where }),
+
+    // Get statistics using SQL aggregation (instead of JS calculations)
+    db.prisma.invoice.groupBy({
+      by: ['status'],
+      where,
+      _sum: {
+        total: true,
+        paidAmount: true
+      },
+      _count: true
+    })
+  ]);
+
+  // Calculate summary statistics from aggregation
+  const stats = {
+    totalAmount: 0,
+    paidAmount: 0,
+    pendingAmount: 0,
+    totalInvoices: totalCount,
+    byStatus: {}
+  };
+
+  statistics.forEach(stat => {
+    const total = parseFloat(stat._sum.total || 0);
+    const paid = parseFloat(stat._sum.paidAmount || 0);
+
+    stats.totalAmount += total;
+    stats.paidAmount += paid;
+    stats.byStatus[stat.status] = {
+      count: stat._count,
+      total: total,
+      paid: paid
+    };
   });
+
+  stats.pendingAmount = stats.totalAmount - stats.paidAmount;
+
+  return {
+    invoices,
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit)
+    },
+    statistics: stats
+  };
 }
 
 /**

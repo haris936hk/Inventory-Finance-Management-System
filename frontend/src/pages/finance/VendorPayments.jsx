@@ -26,31 +26,40 @@ const VendorPayments = () => {
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  // PERFORMANCE OPTIMIZATION: Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
-  // Fetch vendor payments
-  const { data: vendorPaymentsData, isLoading } = useQuery(
-    ['vendor-payments', filters],
+  // PERFORMANCE OPTIMIZATION: Fetch paginated vendor payments from backend
+  const { data: response, isLoading } = useQuery(
+    ['vendor-payments', filters, page, pageSize],
     async () => {
-      const response = await axios.get('/finance/vendor-payments', { params: filters });
+      const response = await axios.get('/finance/vendor-payments', {
+        params: { ...filters, page, limit: pageSize }
+      });
       return response.data.data;
     }
   );
 
+  // Extract data from paginated response
+  const vendorPaymentsData = response?.payments || [];
+  const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
+  const backendStatistics = response?.statistics || {};
+
   // Fetch vendors for filter and form
   const { data: vendors } = useQuery('vendors', async () => {
-    const response = await axios.get('/inventory/vendors');
+    const response = await axios.get('/inventory/vendors', { params: { limit: 1000 } });
     return response.data.data;
   });
 
-
-  // Calculate statistics
+  // PERFORMANCE OPTIMIZATION: Use backend statistics for total amount
+  // Method breakdown still calculated client-side from current page
   const statistics = React.useMemo(() => {
-    if (!vendorPaymentsData) return { total: 0, cash: 0, bank: 0, cheque: 0, count: 0 };
+    const pageStats = vendorPaymentsData.reduce((acc, payment) => {
+      if (payment.voidedAt) return acc; // Skip voided payments
 
-    return vendorPaymentsData.reduce((acc, payment) => {
       const amount = parseFloat(payment.amount);
-      acc.total += amount;
-      acc.count++;
+      acc.pageTotal += amount;
 
       switch (payment.method) {
         case 'Cash':
@@ -64,8 +73,16 @@ const VendorPayments = () => {
           break;
       }
       return acc;
-    }, { total: 0, cash: 0, bank: 0, cheque: 0, count: 0 });
-  }, [vendorPaymentsData]);
+    }, { pageTotal: 0, cash: 0, bank: 0, cheque: 0 });
+
+    return {
+      total: backendStatistics.effectiveAmount || backendStatistics.totalAmount || 0,
+      cash: pageStats.cash,
+      bank: pageStats.bank,
+      cheque: pageStats.cheque,
+      count: pagination.totalCount || 0
+    };
+  }, [vendorPaymentsData, backendStatistics, pagination]);
 
   // Void Payment mutation
   const voidPaymentMutation = useMutation(
@@ -440,9 +457,17 @@ const VendorPayments = () => {
             onChange: setSelectedRowKeys,
           }}
           pagination={{
+            current: page,
+            pageSize: pageSize,
+            total: pagination.totalCount,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} vendor payments`,
+            onChange: (newPage, newPageSize) => {
+              setPage(newPage);
+              setPageSize(newPageSize);
+            },
+            pageSizeOptions: ['10', '25', '50', '100']
           }}
         />
       </Card>

@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ==================== USER & ACCESS MANAGEMENT ====================
@@ -138,11 +139,11 @@ model ProductModel {
 
 model Item {
   id           String @id @default(uuid())
-  serialNumber String @unique // Mandatory, from box or custom format
+  serialNumber String @unique // Mandatory, from box or custom format (must be globally unique)
   condition    String @default("New") // "New", "Used"
 
   // Enhanced inventory status tracking
-  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered"
+  inventoryStatus String  @default("Available") // "Available", "Reserved", "Under Repair", "Sold", "Delivered"
   status          String // "In Store", "In Lab", "Handover" (physical location)
   statusHistory   Json[] // Array of {status, date, userId, notes}
   repaired        String? // "No", "Yes", "Returned" (only for "In Lab" items)
@@ -204,9 +205,8 @@ model Item {
   createdBy   User   @relation("CreatedByUser", fields: [createdById], references: [id])
 
   // Audit
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([inventoryStatus])
@@ -214,7 +214,12 @@ model Item {
   @@index([modelId])
   @@index([vendorId])
   @@index([customerId])
-  @@index([deletedAt])
+  // Performance optimization indexes
+  // Note: serialNumber has @unique, so no separate index needed
+  @@index([purchaseOrderId]) // PO-to-items lookups
+  @@index([createdById]) // User activity tracking
+  @@index([reservedForType, reservedForId]) // Reservation queries
+  @@index([status, repaired]) // In Lab status filtering
 }
 
 // Track all inventory status changes for audit trail
@@ -240,6 +245,7 @@ model InventoryStatusHistory {
   @@index([referenceType, referenceId])
   @@index([changeDate])
   @@index([toStatus])
+  @@index([changeReason]) // Filter by reason for audit queries
 }
 
 // ==================== VENDOR/SUPPLIER MANAGEMENT ====================
@@ -256,8 +262,8 @@ model Vendor {
   paymentTerms  String? // "Net 30", "Due on Receipt", etc.
 
   // Financial
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+  openingBalance Decimal @default(0) @db.Decimal(18, 4)
+  currentBalance Decimal @default(0) @db.Decimal(18, 4)
 
   // Relationships
   items          Item[]
@@ -281,13 +287,14 @@ model Customer {
   email   String?
   phone   String  @unique
   address String?
-  nic     String? // National ID
-  company String? // Company name
+  nic         String? // National ID
+  company     String? // Company name
+  gstinNumber String? // GST Identification Number
 
   // Financial
-  creditLimit    Decimal @default(0) @db.Decimal(10, 2)
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+  creditLimit    Decimal @default(0) @db.Decimal(18, 4)
+  openingBalance Decimal @default(0) @db.Decimal(18, 4)
+  currentBalance Decimal @default(0) @db.Decimal(18, 4)
 
   // Relationships
   items         Item[]
@@ -316,8 +323,8 @@ model Account {
   children Account[] @relation("AccountHierarchy")
 
   // Balance
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+  openingBalance Decimal @default(0) @db.Decimal(18, 4)
+  currentBalance Decimal @default(0) @db.Decimal(18, 4)
 
   // Relationships
   journalEntries JournalEntry[]
@@ -340,8 +347,8 @@ model JournalEntry {
   // Double entry
   accountId String
   account   Account @relation(fields: [accountId], references: [id])
-  debit     Decimal @default(0) @db.Decimal(10, 2)
-  credit    Decimal @default(0) @db.Decimal(10, 2)
+  debit     Decimal @default(0) @db.Decimal(18, 4)
+  credit    Decimal @default(0) @db.Decimal(18, 4)
 
   // Source tracking
   sourceType String? // "Invoice", "Bill", "Payment", "Manual"
@@ -394,6 +401,10 @@ model PurchaseOrder {
   @@index([status, deletedAt])
   @@index([orderDate])
   @@index([deletedAt])
+  // Performance optimization indexes
+  @@index([vendorId, status]) // Common vendor+status filters
+  @@index([vendorId, orderDate]) // Vendor PO history queries
+  @@index([status, orderDate]) // Status with date sorting
 }
 
 model PurchaseOrderItem {
@@ -414,6 +425,9 @@ model PurchaseOrderItem {
   // Product Model relationship (what we're ordering)
   productModelId String
   productModel   ProductModel @relation("PurchaseOrderModelItems", fields: [productModelId], references: [id])
+
+  // Bill Items relationship (bills created from this PO line item)
+  billItems BillItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -444,6 +458,7 @@ model Bill {
   vendor          Vendor          @relation(fields: [vendorId], references: [id])
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+  billItems       BillItem[]
   payments        VendorPayment[]
   ledgerEntries   VendorLedger[]
   auditLogs       POBillAudit[]   @relation("BillAudits")
@@ -459,6 +474,36 @@ model Bill {
   @@index([billDate])
   @@index([cancelledAt])
   @@index([deletedAt])
+  // Performance optimization indexes
+  @@index([vendorId, status]) // Vendor bill queries with status filter
+  @@index([vendorId, billDate]) // Vendor bill history
+  @@index([purchaseOrderId, cancelledAt]) // PO-to-active-bills lookups
+  @@index([dueDate, status]) // Overdue bill checks
+}
+
+model BillItem {
+  id          String  @id @default(uuid())
+  description String? // Item description
+
+  // Quantity and pricing
+  quantity       Int     @default(1)
+  unitPrice      Decimal @db.Decimal(18, 4)
+  lineTotal      Decimal @db.Decimal(18, 4)
+  taxAmount      Decimal @default(0) @db.Decimal(18, 4)
+  discountAmount Decimal @default(0) @db.Decimal(18, 4)
+
+  // Relationships
+  billId String
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  purchaseOrderItemId String?
+  purchaseOrderItem   PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([billId])
+  @@index([purchaseOrderItemId])
 }
 
 // ==================== SALES & INVOICING ====================
@@ -482,6 +527,9 @@ model Invoice {
 
   total      Decimal @db.Decimal(18, 4)
   paidAmount Decimal @default(0) @db.Decimal(18, 4)
+
+  // Cost of Goods Sold (for profitability tracking)
+  cogs Decimal @default(0) @db.Decimal(18, 4)
 
   // Terms
   terms String? @db.Text
@@ -517,13 +565,20 @@ model Invoice {
   @@index([dueDate])
   @@index([cancelledAt])
   @@index([deletedAt])
+  // Performance optimization indexes
+  @@index([createdById]) // User activity tracking
+  @@index([cancelledBy]) // Cancellation tracking
+  @@index([customerId, invoiceDate]) // Customer invoice history queries
+  @@index([status, dueDate]) // Overdue invoice checks
+  @@index([cancelledAt, deletedAt]) // Active invoice filtering
+  @@index([createdById, invoiceDate]) // User activity tracking with date
 }
 
 model InvoiceItem {
   id          String  @id @default(uuid())
   quantity    Int     @default(1)
-  unitPrice   Decimal @db.Decimal(10, 2)
-  total       Decimal @db.Decimal(10, 2)
+  unitPrice   Decimal @db.Decimal(18, 4) // Updated from (10, 2) for consistency with Invoice
+  total       Decimal @db.Decimal(18, 4) // Updated from (10, 2) for consistency with Invoice
   description String?
 
   // Relationships
@@ -575,6 +630,12 @@ model Payment {
   @@index([paymentDate])
   @@index([voidedAt])
   @@index([deletedAt])
+  // Performance optimization indexes
+  @@index([recordedById]) // User activity tracking
+  @@index([voidedBy]) // Void tracking
+  @@index([customerId, paymentDate]) // Customer payment history queries
+  @@index([method, paymentDate]) // Payment method reports by date
+  @@index([voidedAt, deletedAt]) // Active payments filtering
 }
 
 model VendorPayment {
@@ -613,6 +674,11 @@ model VendorPayment {
   @@index([deletedAt])
   @@index([voidedAt])
   @@index([createdBy])
+  // Performance optimization indexes
+  @@index([voidedBy]) // Void tracking
+  @@index([vendorId, paymentDate]) // Vendor payment history queries
+  @@index([vendorId, voidedAt]) // Filter non-voided payments by vendor
+  @@index([billId, voidedAt]) // Bill payments filtering
 }
 
 // ==================== INVOICE PAYMENT AUDIT TRAIL ====================
@@ -646,9 +712,9 @@ model CustomerLedger {
   id          String   @id @default(uuid())
   entryDate   DateTime
   description String
-  debit       Decimal  @default(0) @db.Decimal(10, 2)
-  credit      Decimal  @default(0) @db.Decimal(10, 2)
-  balance     Decimal  @db.Decimal(18, 2)
+  debit       Decimal  @default(0) @db.Decimal(18, 4)
+  credit      Decimal  @default(0) @db.Decimal(18, 4)
+  balance     Decimal  @db.Decimal(18, 4)
 
   // Relationships
   customerId String
@@ -660,15 +726,20 @@ model CustomerLedger {
 
   @@index([customerId])
   @@index([entryDate])
+  @@index([invoiceId]) // Invoice-to-ledger lookups
+  @@index([balance]) // Performance: balance calculations and queries
+  // Performance optimization indexes
+  @@index([customerId, entryDate]) // Chronological ledger queries
+  @@index([customerId, balance]) // Customer balance lookups
 }
 
 model VendorLedger {
   id          String   @id @default(uuid())
   entryDate   DateTime
   description String
-  debit       Decimal  @default(0) @db.Decimal(10, 2)
-  credit      Decimal  @default(0) @db.Decimal(10, 2)
-  balance     Decimal  @db.Decimal(18, 2)
+  debit       Decimal  @default(0) @db.Decimal(18, 4)
+  credit      Decimal  @default(0) @db.Decimal(18, 4)
+  balance     Decimal  @db.Decimal(18, 4)
 
   // Relationships
   vendorId String
@@ -680,6 +751,11 @@ model VendorLedger {
 
   @@index([vendorId])
   @@index([entryDate])
+  @@index([billId]) // Bill-to-ledger lookups
+  @@index([balance]) // Performance: balance calculations and queries
+  // Performance optimization indexes
+  @@index([vendorId, entryDate]) // Chronological ledger queries
+  @@index([vendorId, balance]) // Vendor balance lookups
 }
 
 // ==================== INVENTORY MOVEMENT TRACKING ====================
@@ -703,6 +779,7 @@ model InventoryMovement {
   @@index([itemId])
   @@index([movementType])
   @@index([createdAt])
+  @@index([userId]) // User activity tracking
 }
 
 // ==================== ITEM RESERVATION SYSTEM ====================
@@ -756,6 +833,7 @@ model POBillAudit {
   @@index([paymentId])
   @@index([performedAt])
   @@index([action])
+  @@index([performedBy]) // User activity tracking
 }
 
 // ==================== SYSTEM SETTINGS ====================

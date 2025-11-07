@@ -3,13 +3,18 @@ const express = require('express');
 const router = express.Router();
 const inventoryController = require('../controllers/inventoryController');
 const { protect, hasPermission } = require('../middleware/auth');
+const { cacheControl, CACHE_DURATION } = require('../middleware/cacheControl');
 
 // All routes require authentication
 router.use(protect);
 
-// Category routes
+// PERFORMANCE OPTIMIZATION: Category routes with caching for dropdowns
 router.route('/categories')
-  .get(hasPermission(['inventory.view']), inventoryController.getCategories)
+  .get(
+    hasPermission(['inventory.view']),
+    cacheControl(CACHE_DURATION.LONG), // 15 min cache for dropdown data
+    inventoryController.getCategories
+  )
   .post(hasPermission(['inventory.create']), inventoryController.createCategory);
 
 router.route('/categories/:id')
@@ -17,9 +22,13 @@ router.route('/categories/:id')
   .put(hasPermission(['inventory.edit']), inventoryController.updateCategory)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteCategory);
 
-// Company routes
+// PERFORMANCE OPTIMIZATION: Company routes with caching for dropdowns
 router.route('/companies')
-  .get(hasPermission(['inventory.view']), inventoryController.getCompanies)
+  .get(
+    hasPermission(['inventory.view']),
+    cacheControl(CACHE_DURATION.LONG), // 15 min cache for dropdown data
+    inventoryController.getCompanies
+  )
   .post(hasPermission(['inventory.create']), inventoryController.createCompany);
 
 router.route('/companies/:id')
@@ -27,9 +36,13 @@ router.route('/companies/:id')
   .put(hasPermission(['inventory.edit']), inventoryController.updateCompany)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteCompany);
 
-// Model routes
+// PERFORMANCE OPTIMIZATION: Model routes with caching for dropdowns
 router.route('/models')
-  .get(hasPermission(['inventory.view']), inventoryController.getModels)
+  .get(
+    hasPermission(['inventory.view']),
+    cacheControl(CACHE_DURATION.LONG), // 15 min cache for dropdown data
+    inventoryController.getModels
+  )
   .post(hasPermission(['inventory.create']), inventoryController.createModel);
 
 router.route('/models/:id')
