@@ -694,6 +694,114 @@ const getAgingReport = asyncHandler(async (req, res) => {
   });
 });
 
+// ============= CHART OF ACCOUNTS & JOURNAL ENTRIES =============
+
+// @desc    Get all accounts (Chart of Accounts)
+// @route   GET /api/finance/accounts
+// @access  Private
+const getAccounts = asyncHandler(async (req, res) => {
+  const filters = {
+    type: req.query.type, // Asset, Liability, Income, Expense, Equity
+    search: req.query.search,
+    page: req.query.page,
+    limit: req.query.limit
+  };
+
+  const accounts = await financialReportsService.getAccounts(filters);
+
+  res.json({
+    success: true,
+    data: accounts
+  });
+});
+
+// @desc    Get single account
+// @route   GET /api/finance/accounts/:id
+// @access  Private
+const getAccount = asyncHandler(async (req, res) => {
+  const account = await financialReportsService.getAccountById(req.params.id);
+
+  if (!account) {
+    res.status(404);
+    throw new Error('Account not found');
+  }
+
+  res.json({
+    success: true,
+    data: account
+  });
+});
+
+// @desc    Get journal entries
+// @route   GET /api/finance/journal-entries
+// @access  Private
+const getJournalEntries = asyncHandler(async (req, res) => {
+  const filters = {
+    accountId: req.query.accountId,
+    sourceType: req.query.sourceType, // Invoice, Bill, Payment, VendorPayment
+    sourceId: req.query.sourceId,
+    dateFrom: req.query.dateFrom,
+    dateTo: req.query.dateTo,
+    page: req.query.page,
+    limit: req.query.limit
+  };
+
+  const entries = await financialReportsService.getJournalEntries(filters);
+
+  res.json({
+    success: true,
+    data: entries
+  });
+});
+
+// @desc    Get Trial Balance report
+// @route   GET /api/finance/reports/trial-balance
+// @access  Private
+const getTrialBalance = asyncHandler(async (req, res) => {
+  const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
+
+  const report = await financialReportsService.generateTrialBalance(new Date(asOfDate));
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
+// @desc    Get Balance Sheet report
+// @route   GET /api/finance/reports/balance-sheet
+// @access  Private
+const getBalanceSheet = asyncHandler(async (req, res) => {
+  const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
+
+  const report = await financialReportsService.generateBalanceSheet(new Date(asOfDate));
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
+// @desc    Get Profit & Loss report
+// @route   GET /api/finance/reports/profit-loss
+// @access  Private
+const getProfitLoss = asyncHandler(async (req, res) => {
+  const {
+    startDate = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0],
+    endDate = new Date().toISOString().split('T')[0]
+  } = req.query;
+
+  const report = await financialReportsService.generateProfitAndLoss(
+    new Date(startDate),
+    new Date(endDate)
+  );
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
 // ============= PDF GENERATION =============
 
 // @desc    Generate invoice PDF
@@ -789,9 +897,16 @@ module.exports = {
   getVendorPayments,
   recordVendorPayment,
   voidVendorPayment,
+  // Chart of Accounts & Journal Entries
+  getAccounts,
+  getAccount,
+  getJournalEntries,
   // Reports
   getCustomerStatement,
   getAgingReport,
+  getTrialBalance,
+  getBalanceSheet,
+  getProfitLoss,
   // PDF Generation
   generateInvoicePDF,
   generatePurchaseOrderPDF,

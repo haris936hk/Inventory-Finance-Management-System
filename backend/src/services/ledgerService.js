@@ -1,6 +1,7 @@
 // ========== src/services/ledgerService.js ==========
 const db = require('../config/database');
 const logger = require('../config/logger');
+const Decimal = require('decimal.js');
 
 /**
  * Ledger Service
@@ -59,6 +60,7 @@ class LedgerService {
     });
 
     // Convert to response format
+    // FIXED: Use Decimal for precise ledger amount conversions
     return ledgerEntries.map(entry => ({
       id: entry.id,
       date: entry.entryDate,
@@ -67,10 +69,10 @@ class LedgerService {
             entry.description.includes('Opening Balance') ? 'Opening Balance' : 'Other',
       reference: entry.invoice?.invoiceNumber || entry.description.split(' ')[1] || '-',
       description: entry.description,
-      debit: parseFloat(entry.debit),
-      credit: parseFloat(entry.credit),
-      amount: parseFloat(entry.debit) - parseFloat(entry.credit), // Net amount for backward compatibility
-      balance: parseFloat(entry.balance),
+      debit: new Decimal(entry.debit || 0).toNumber(),
+      credit: new Decimal(entry.credit || 0).toNumber(),
+      amount: new Decimal(entry.debit || 0).minus(new Decimal(entry.credit || 0)).toNumber(), // Net amount for backward compatibility
+      balance: new Decimal(entry.balance || 0).toNumber(),
       invoiceStatus: entry.invoice?.status || null,
       isCancelled: entry.invoice?.cancelledAt ? true : false
     }));
@@ -123,6 +125,7 @@ class LedgerService {
     });
 
     // Convert to response format
+    // FIXED: Use Decimal for precise ledger amount conversions
     return ledgerEntries.map(entry => ({
       id: entry.id,
       date: entry.entryDate,
@@ -131,10 +134,10 @@ class LedgerService {
             entry.description.includes('Opening Balance') ? 'Opening Balance' : 'Other',
       reference: entry.bill?.billNumber || entry.description.split(' ')[1] || '-',
       description: entry.description,
-      debit: parseFloat(entry.debit),
-      credit: parseFloat(entry.credit),
-      amount: parseFloat(entry.debit) - parseFloat(entry.credit), // Net amount for backward compatibility
-      balance: parseFloat(entry.balance),
+      debit: new Decimal(entry.debit || 0).toNumber(),
+      credit: new Decimal(entry.credit || 0).toNumber(),
+      amount: new Decimal(entry.debit || 0).minus(new Decimal(entry.credit || 0)).toNumber(), // Net amount for backward compatibility
+      balance: new Decimal(entry.balance || 0).toNumber(),
       billStatus: entry.bill?.status || null,
       isCancelled: entry.bill?.cancelledAt ? true : false
     }));
@@ -148,14 +151,24 @@ class LedgerService {
    * @returns {Promise<Object>} Statement with customer info, entries, and totals
    */
   async getCustomerStatement(customerId, dateFrom, dateTo) {
+    // Build where clause conditionally to avoid passing undefined to Prisma
+    const whereClause = {
+      customerId
+    };
+
+    // Only add entryDate filter if at least one date is provided
+    if (dateFrom || dateTo) {
+      whereClause.entryDate = {};
+      if (dateFrom) {
+        whereClause.entryDate.gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        whereClause.entryDate.lte = new Date(dateTo);
+      }
+    }
+
     const ledgerEntries = await db.prisma.customerLedger.findMany({
-      where: {
-        customerId,
-        entryDate: {
-          gte: dateFrom ? new Date(dateFrom) : undefined,
-          lte: dateTo ? new Date(dateTo) : undefined
-        }
-      },
+      where: whereClause,
       include: {
         invoice: true
       },

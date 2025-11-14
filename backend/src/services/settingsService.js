@@ -3,6 +3,9 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const logger = require('../config/logger');
 
+// FIXED: Extract magic numbers to constants
+const MAX_PAYMENT_TERMS_DAYS = 365;
+
 // Default settings structure
 const DEFAULT_SETTINGS = {
   general: {
@@ -159,8 +162,8 @@ class SettingsService {
         break;
 
       case 'finance':
-        if (value.defaultPaymentTerms === undefined || value.defaultPaymentTerms < 0 || value.defaultPaymentTerms > 365) {
-          throw new Error('Default payment terms must be between 0 and 365 days');
+        if (value.defaultPaymentTerms === undefined || value.defaultPaymentTerms < 0 || value.defaultPaymentTerms > MAX_PAYMENT_TERMS_DAYS) {
+          throw new Error(`Default payment terms must be between 0 and ${MAX_PAYMENT_TERMS_DAYS} days`);
         }
         if (value.taxRate === undefined || value.taxRate < 0 || value.taxRate > 100) {
           throw new Error('Tax rate must be between 0 and 100');

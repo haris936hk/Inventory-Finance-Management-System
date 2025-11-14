@@ -1,5 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { Decimal } = require('../utils/transactionWrapper');
+
+// FIXED: Extract magic numbers to constants
+const DAYS_IN_YEAR = 365;
 
 class FinancialReportsService {
 
@@ -53,12 +57,12 @@ class FinancialReportsService {
       return {
         period: { startDate, endDate },
         summary: {
-          grossRevenue: parseFloat(grossRevenue),
-          costOfGoodsSold: parseFloat(costOfGoodsSold),
-          grossProfit: parseFloat(grossProfit),
+          grossRevenue: new Decimal(grossRevenue || 0).toNumber(),
+          costOfGoodsSold: new Decimal(costOfGoodsSold || 0).toNumber(),
+          grossProfit: new Decimal(grossProfit || 0).toNumber(),
           grossProfitMargin: grossRevenue > 0 ? (grossProfit / grossRevenue * 100) : 0,
-          operatingExpenses: parseFloat(operatingExpenses),
-          netIncome: parseFloat(netIncome),
+          operatingExpenses: new Decimal(operatingExpenses || 0).toNumber(),
+          netIncome: new Decimal(netIncome || 0).toNumber(),
           netProfitMargin: grossRevenue > 0 ? (netIncome / grossRevenue * 100) : 0
         },
         details: {
@@ -96,10 +100,14 @@ class FinancialReportsService {
       }
     });
 
-    return soldItems.reduce((total, invoiceItem) => {
-      const costPerUnit = invoiceItem.item.purchasePrice || 0;
-      return total + (costPerUnit * invoiceItem.quantity);
-    }, 0);
+    // FIXED: Use Decimal.js for precise COGS calculation
+    const totalCOGS = soldItems.reduce((total, invoiceItem) => {
+      const costPerUnit = new Decimal(invoiceItem.item.purchasePrice || 0);
+      const quantity = new Decimal(invoiceItem.quantity);
+      return total.plus(costPerUnit.times(quantity));
+    }, new Decimal(0));
+
+    return totalCOGS.toNumber();
   }
 
   async getRevenueBreakdown(startDate, endDate) {
@@ -223,9 +231,9 @@ class FinancialReportsService {
           balanced: balanceCheck
         },
         cashBreakdown: {
-          openingBalance: parseFloat(openingBalance),
-          customerPayments: parseFloat(customerPayments._sum.amount || 0),
-          vendorPayments: parseFloat(vendorPayments._sum.amount || 0),
+          openingBalance: new Decimal(openingBalance || 0).toNumber(),
+          customerPayments: new Decimal(customerPayments._sum.amount || 0).toNumber(),
+          vendorPayments: new Decimal(vendorPayments._sum.amount || 0).toNumber(),
           currentCash: assets.cash
         }
       };
@@ -238,7 +246,7 @@ class FinancialReportsService {
     try {
       const settingsService = require('./settingsService');
       const financeSettings = await settingsService.getSettingsByKey('finance');
-      return parseFloat(financeSettings?.openingCashBalance || 0);
+      return new Decimal(financeSettings?.openingCashBalance || 0).toNumber();
     } catch (error) {
       // Default to 0 if settings not found or error occurs
       return 0;
@@ -329,12 +337,12 @@ class FinancialReportsService {
     const fixedAssets = 0;
 
     return {
-      cash: parseFloat(cash),
-      accountsReceivable: parseFloat(accountsReceivable),
-      inventory: parseFloat(inventoryValue),
-      fixedAssets: parseFloat(fixedAssets),
-      current: parseFloat(cash + accountsReceivable + inventoryValue),
-      nonCurrent: parseFloat(fixedAssets)
+      cash: new Decimal(cash || 0).toNumber(),
+      accountsReceivable: new Decimal(accountsReceivable || 0).toNumber(),
+      inventory: new Decimal(inventoryValue || 0).toNumber(),
+      fixedAssets: new Decimal(fixedAssets || 0).toNumber(),
+      current: new Decimal(cash + accountsReceivable + inventoryValue || 0).toNumber(),
+      nonCurrent: new Decimal(fixedAssets || 0).toNumber()
     };
   }
 
@@ -355,10 +363,10 @@ class FinancialReportsService {
     const accountsPayable = (payables._sum.total || 0) - (payables._sum.paidAmount || 0);
 
     return {
-      accountsPayable: parseFloat(accountsPayable),
+      accountsPayable: new Decimal(accountsPayable || 0).toNumber(),
       shortTermDebt: 0, // Implement if needed
       longTermDebt: 0, // Implement if needed
-      current: parseFloat(accountsPayable),
+      current: new Decimal(accountsPayable || 0).toNumber(),
       nonCurrent: 0
     };
   }
@@ -411,9 +419,9 @@ class FinancialReportsService {
         operating: operatingCashFlow,
         investing: investingCashFlow,
         financing: financingCashFlow,
-        netChange: parseFloat(netCashFlow),
-        openingBalance: parseFloat(openingBalance),
-        closingBalance: parseFloat(closingBalance),
+        netChange: new Decimal(netCashFlow || 0).toNumber(),
+        openingBalance: new Decimal(openingBalance || 0).toNumber(),
+        closingBalance: new Decimal(closingBalance || 0).toNumber(),
         summary: {
           cashFromOperations: operatingCashFlow.net,
           cashFromInvesting: investingCashFlow.net,
@@ -455,9 +463,9 @@ class FinancialReportsService {
     const cashPayments = payments._sum.amount || 0;
 
     return {
-      receipts: parseFloat(cashReceipts),
-      payments: parseFloat(cashPayments),
-      net: parseFloat(cashReceipts - cashPayments)
+      receipts: new Decimal(cashReceipts || 0).toNumber(),
+      payments: new Decimal(cashPayments || 0).toNumber(),
+      net: new Decimal(cashReceipts - cashPayments || 0).toNumber()
     };
   }
 
@@ -516,7 +524,7 @@ class FinancialReportsService {
 
       unpaidInvoices.forEach(invoice => {
         const daysOverdue = Math.floor((asOfDate - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
-        const balanceAmount = parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        const balanceAmount = new Decimal(invoice.total || 0).minus(new Decimal(invoice.paidAmount || 0)).toNumber();
 
         const invoiceData = {
           invoiceId: invoice.id,
@@ -524,8 +532,8 @@ class FinancialReportsService {
           customer: invoice.customer,
           invoiceDate: invoice.invoiceDate,
           dueDate: invoice.dueDate,
-          totalAmount: parseFloat(invoice.total),
-          paidAmount: parseFloat(invoice.paidAmount),
+          totalAmount: new Decimal(invoice.total || 0).toNumber(),
+          paidAmount: new Decimal(invoice.paidAmount || 0).toNumber(),
           balanceAmount,
           daysOverdue,
           status: invoice.status
@@ -589,7 +597,7 @@ class FinancialReportsService {
 
       const customerData = customerMap.get(customerId);
       const daysOverdue = Math.floor((asOfDate - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
-      const balanceAmount = parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+      const balanceAmount = new Decimal(invoice.total || 0).minus(new Decimal(invoice.paidAmount || 0)).toNumber();
 
       customerData.invoices.push(invoice);
       customerData.totalDue += balanceAmount;
@@ -609,13 +617,16 @@ class FinancialReportsService {
   }
 
   calculateAverageDaysOverdue(invoices, asOfDate) {
-    if (invoices.length === 0) return 0;
+    // FIXED: Enhanced division-by-zero protection with explicit checks
+    if (!invoices || invoices.length === 0) return 0;
 
     const totalDays = invoices.reduce((sum, invoice) => {
       const days = Math.floor((asOfDate - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
       return sum + Math.max(0, days);
     }, 0);
 
+    // Additional safety: check for zero or NaN
+    if (totalDays === 0 || isNaN(totalDays)) return 0;
     return Math.round(totalDays / invoices.length);
   }
 
@@ -657,7 +668,7 @@ class FinancialReportsService {
 
       unpaidBills.forEach(bill => {
         const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
-        const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+        const balanceAmount = new Decimal(bill.total || 0).minus(new Decimal(bill.paidAmount || 0)).toNumber();
 
         const billData = {
           id: bill.id,
@@ -665,8 +676,8 @@ class FinancialReportsService {
           billDate: bill.billDate,
           dueDate: bill.dueDate,
           vendor: bill.vendor,
-          total: parseFloat(bill.total),
-          paidAmount: parseFloat(bill.paidAmount || 0),
+          total: new Decimal(bill.total || 0).toNumber(),
+          paidAmount: new Decimal(bill.paidAmount || 0).toNumber(),
           balance: balanceAmount,
           daysOverdue: Math.max(0, daysOverdue),
           status: bill.status
@@ -728,7 +739,7 @@ class FinancialReportsService {
 
       const vendorData = vendorMap.get(vendorId);
       const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
-      const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+      const balanceAmount = new Decimal(bill.total || 0).minus(new Decimal(bill.paidAmount || 0)).toNumber();
 
       vendorData.bills.push(bill);
       vendorData.totalDue += balanceAmount;
@@ -748,13 +759,16 @@ class FinancialReportsService {
   }
 
   calculateAverageBillDaysOverdue(bills, asOfDate) {
-    if (bills.length === 0) return 0;
+    // FIXED: Enhanced division-by-zero protection with explicit checks
+    if (!bills || bills.length === 0) return 0;
 
     const totalDays = bills.reduce((sum, bill) => {
       const days = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
       return sum + Math.max(0, days);
     }, 0);
 
+    // Additional safety: check for zero or NaN
+    if (totalDays === 0 || isNaN(totalDays)) return 0;
     return Math.round(totalDays / bills.length);
   }
 
@@ -826,10 +840,10 @@ class FinancialReportsService {
   calculateGSTSummary(sales, purchases) {
     // Sales tax - we have detailed CGST/SGST/IGST breakdown
     const salesSummary = sales.reduce((acc, sale) => {
-      acc.totalSales += parseFloat(sale.total || 0);
-      acc.cgstCollected += parseFloat(sale.cgstAmount || 0);
-      acc.sgstCollected += parseFloat(sale.sgstAmount || 0);
-      acc.igstCollected += parseFloat(sale.igstAmount || 0);
+      acc.totalSales += new Decimal(sale.total || 0).toNumber();
+      acc.cgstCollected += new Decimal(sale.cgstAmount || 0).toNumber();
+      acc.sgstCollected += new Decimal(sale.sgstAmount || 0).toNumber();
+      acc.igstCollected += new Decimal(sale.igstAmount || 0).toNumber();
       return acc;
     }, { totalSales: 0, cgstCollected: 0, sgstCollected: 0, igstCollected: 0 });
 
@@ -839,8 +853,8 @@ class FinancialReportsService {
     // Purchase tax - Bills only have taxAmount (no CGST/SGST/IGST breakdown)
     // We show total tax paid without assuming the breakdown
     const purchaseSummary = purchases.reduce((acc, purchase) => {
-      acc.totalPurchases += parseFloat(purchase.total || 0);
-      acc.totalTaxPaid += parseFloat(purchase.taxAmount || 0);
+      acc.totalPurchases += new Decimal(purchase.total || 0).toNumber();
+      acc.totalTaxPaid += new Decimal(purchase.taxAmount || 0).toNumber();
       return acc;
     }, { totalPurchases: 0, totalTaxPaid: 0 });
 
@@ -885,7 +899,7 @@ class FinancialReportsService {
       const inventoryTurnoverRatio = averageInventory > 0 ? cogs / averageInventory : 0;
 
       // Calculate days sales in inventory
-      const daysSalesInInventory = inventoryTurnoverRatio > 0 ? 365 / inventoryTurnoverRatio : 0;
+      const daysSalesInInventory = inventoryTurnoverRatio > 0 ? DAYS_IN_YEAR / inventoryTurnoverRatio : 0;
 
       // Get category-wise turnover
       const categoryTurnover = await this.getCategoryWiseTurnover(startDate, endDate);
@@ -893,12 +907,12 @@ class FinancialReportsService {
       return {
         period: { startDate, endDate },
         summary: {
-          costOfGoodsSold: parseFloat(cogs),
-          beginningInventory: parseFloat(beginningInventory),
-          endingInventory: parseFloat(endingInventory),
-          averageInventory: parseFloat(averageInventory),
-          inventoryTurnoverRatio: parseFloat(inventoryTurnoverRatio.toFixed(2)),
-          daysSalesInInventory: parseFloat(daysSalesInInventory.toFixed(0))
+          costOfGoodsSold: new Decimal(cogs || 0).toNumber(),
+          beginningInventory: new Decimal(beginningInventory || 0).toNumber(),
+          endingInventory: new Decimal(endingInventory || 0).toNumber(),
+          averageInventory: new Decimal(averageInventory || 0).toNumber(),
+          inventoryTurnoverRatio: new Decimal(inventoryTurnoverRatio || 0).toDecimalPlaces(2).toNumber(),
+          daysSalesInInventory: new Decimal(daysSalesInInventory || 0).toDecimalPlaces(0).toNumber()
         },
         categoryBreakdown: categoryTurnover
       };
@@ -963,7 +977,7 @@ class FinancialReportsService {
     itemsWithCategories.forEach(item => {
       const categoryName = item.category.name;
       const soldQty = soldItemsByCategory.find(si => si.itemId === item.id)?._sum.quantity || 0;
-      const cost = parseFloat(item.purchasePrice || 0) * soldQty;
+      const cost = new Decimal(item.purchasePrice || 0).times(soldQty).toNumber();
 
       if (!categoryMap.has(categoryName)) {
         categoryMap.set(categoryName, {
@@ -1013,10 +1027,10 @@ class FinancialReportsService {
       return {
         period: { startDate, endDate },
         summary: {
-          grossRevenue: parseFloat(grossRevenue),
-          costOfGoodsSold: parseFloat(cogs),
-          grossProfit: parseFloat(grossProfit),
-          grossProfitMargin: parseFloat(grossProfitMargin.toFixed(2))
+          grossRevenue: new Decimal(grossRevenue || 0).toNumber(),
+          costOfGoodsSold: new Decimal(cogs || 0).toNumber(),
+          grossProfit: new Decimal(grossProfit || 0).toNumber(),
+          grossProfitMargin: new Decimal(grossProfitMargin || 0).toDecimalPlaces(2).toNumber()
         },
         categoryBreakdown: categoryMargins,
         topProducts: productMargins.slice(0, 10) // Top 10 products
@@ -1056,8 +1070,8 @@ class FinancialReportsService {
     invoices.forEach(invoice => {
       invoice.items.forEach(invoiceItem => {
         const category = invoiceItem.item.category.name;
-        const revenue = parseFloat(invoiceItem.unitPrice) * invoiceItem.quantity;
-        const cost = parseFloat(invoiceItem.item.purchasePrice || 0) * invoiceItem.quantity;
+        const revenue = new Decimal(invoiceItem.unitPrice || 0).times(invoiceItem.quantity).toNumber();
+        const cost = new Decimal(invoiceItem.item.purchasePrice || 0).times(invoiceItem.quantity).toNumber();
         const profit = revenue - cost;
 
         if (!categoryMap.has(category)) {
@@ -1082,7 +1096,7 @@ class FinancialReportsService {
     // Calculate margins
     categoryMap.forEach((data, category) => {
       data.margin = data.revenue > 0 ? (data.profit / data.revenue * 100) : 0;
-      data.margin = parseFloat(data.margin.toFixed(2));
+      data.margin = new Decimal(data.margin || 0).toDecimalPlaces(2).toNumber();
     });
 
     return Array.from(categoryMap.values()).sort((a, b) => b.margin - a.margin);
@@ -1120,8 +1134,8 @@ class FinancialReportsService {
     invoiceItems.forEach(invoiceItem => {
       const productId = invoiceItem.item.modelId;
       const productName = `${invoiceItem.item.model.company.name} ${invoiceItem.item.model.name}`;
-      const revenue = parseFloat(invoiceItem.unitPrice) * invoiceItem.quantity;
-      const cost = parseFloat(invoiceItem.item.purchasePrice || 0) * invoiceItem.quantity;
+      const revenue = new Decimal(invoiceItem.unitPrice || 0).times(invoiceItem.quantity).toNumber();
+      const cost = new Decimal(invoiceItem.item.purchasePrice || 0).times(invoiceItem.quantity).toNumber();
       const profit = revenue - cost;
 
       if (!productMap.has(productId)) {
@@ -1145,10 +1159,207 @@ class FinancialReportsService {
     // Calculate margins
     productMap.forEach((data) => {
       data.margin = data.revenue > 0 ? (data.profit / data.revenue * 100) : 0;
-      data.margin = parseFloat(data.margin.toFixed(2));
+      data.margin = new Decimal(data.margin || 0).toDecimalPlaces(2).toNumber();
     });
 
     return Array.from(productMap.values()).sort((a, b) => b.margin - a.margin);
+  }
+
+  // ===================== CHART OF ACCOUNTS & JOURNAL ENTRIES =====================
+
+  /**
+   * Get Chart of Accounts with filtering
+   * @param {Object} filters - Filter options (type, search, page, limit)
+   * @returns {Promise<Object>} Accounts with pagination
+   */
+  async getAccounts(filters = {}) {
+    const { type, search, page = 1, limit = 100 } = filters;
+    const skip = (page - 1) * limit;
+
+    const whereClause = {
+      deletedAt: null
+    };
+
+    if (type) {
+      whereClause.type = type;
+    }
+
+    if (search) {
+      whereClause.OR = [
+        { code: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const [accounts, total] = await Promise.all([
+      prisma.account.findMany({
+        where: whereClause,
+        orderBy: [{ code: 'asc' }],
+        skip,
+        take: limit
+      }),
+      prisma.account.count({ where: whereClause })
+    ]);
+
+    // Convert Decimal fields to floats
+    const convertedAccounts = accounts.map(account => ({
+      ...account,
+      openingBalance: new Decimal(account.openingBalance || 0).toNumber(),
+      currentBalance: new Decimal(account.currentBalance || 0).toNumber()
+    }));
+
+    return {
+      accounts: convertedAccounts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  /**
+   * Get single account by ID
+   * @param {string} id - Account ID
+   * @returns {Promise<Object>} Account details
+   */
+  async getAccountById(id) {
+    const account = await prisma.account.findUnique({
+      where: { id, deletedAt: null }
+    });
+
+    if (!account) {
+      return null;
+    }
+
+    return {
+      ...account,
+      openingBalance: new Decimal(account.openingBalance || 0).toNumber(),
+      currentBalance: new Decimal(account.currentBalance || 0).toNumber()
+    };
+  }
+
+  /**
+   * Get Journal Entries with filtering
+   * @param {Object} filters - Filter options
+   * @returns {Promise<Object>} Journal entries with pagination
+   */
+  async getJournalEntries(filters = {}) {
+    const { accountId, sourceType, sourceId, dateFrom, dateTo, page = 1, limit = 100 } = filters;
+    const skip = (page - 1) * limit;
+
+    const whereClause = {
+      deletedAt: null
+    };
+
+    if (accountId) {
+      whereClause.accountId = accountId;
+    }
+
+    if (sourceType) {
+      whereClause.sourceType = sourceType;
+    }
+
+    if (sourceId) {
+      whereClause.sourceId = sourceId;
+    }
+
+    if (dateFrom || dateTo) {
+      whereClause.entryDate = {};
+      if (dateFrom) {
+        whereClause.entryDate.gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        whereClause.entryDate.lte = new Date(dateTo);
+      }
+    }
+
+    const [entries, total] = await Promise.all([
+      prisma.journalEntry.findMany({
+        where: whereClause,
+        include: {
+          account: {
+            select: {
+              code: true,
+              name: true,
+              type: true
+            }
+          }
+        },
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit
+      }),
+      prisma.journalEntry.count({ where: whereClause })
+    ]);
+
+    // Convert Decimal fields to floats
+    const convertedEntries = entries.map(entry => ({
+      ...entry,
+      debit: new Decimal(entry.debit || 0).toNumber(),
+      credit: new Decimal(entry.credit || 0).toNumber()
+    }));
+
+    return {
+      entries: convertedEntries,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
+  }
+
+  /**
+   * Generate Trial Balance report
+   * @param {Date} asOfDate - As of date
+   * @returns {Promise<Object>} Trial balance
+   */
+  async generateTrialBalance(asOfDate = new Date()) {
+    const accounts = await prisma.account.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ code: 'asc' }]
+    });
+
+    const accountBalances = accounts.map(account => {
+      const balance = new Decimal(account.currentBalance || 0).toNumber();
+      const debitBalance = ['Asset', 'Expense'].includes(account.type) && balance > 0 ? balance : 0;
+      const creditBalance = ['Liability', 'Income', 'Equity'].includes(account.type) && balance > 0 ? balance : 0;
+
+      return {
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        debit: debitBalance,
+        credit: creditBalance
+      };
+    });
+
+    const totalDebit = accountBalances.reduce((sum, acc) => sum + acc.debit, 0);
+    const totalCredit = accountBalances.reduce((sum, acc) => sum + acc.credit, 0);
+    const balanced = Math.abs(totalDebit - totalCredit) < 0.01;
+
+    return {
+      asOfDate,
+      accounts: accountBalances,
+      totals: {
+        debit: totalDebit,
+        credit: totalCredit,
+        balanced
+      }
+    };
+  }
+
+  /**
+   * Wrapper for Profit & Loss (for API consistency)
+   * @param {Date} startDate - Start date
+   * @param {Date} endDate - End date
+   * @returns {Promise<Object>} P&L report
+   */
+  async generateProfitAndLoss(startDate, endDate) {
+    return await this.generateProfitLossStatement(startDate, endDate);
   }
 }
 

@@ -15,7 +15,8 @@ const {
   InsufficientBalanceError,
   compareAmounts,
   addAmounts,
-  formatAmount
+  formatAmount,
+  Decimal
 } = require('../utils/transactionWrapper');
 const { generatePONumber } = require('../utils/generateId');
 const ValidationService = require('./validationService');
@@ -335,7 +336,10 @@ async function getPurchaseOrder(poId) {
   }
 
   // Add computed fields
-  po.remainingAmount = formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount));
+  // FIXED: Use Decimal for precise remaining amount calculation
+  po.remainingAmount = formatAmount(
+    new Decimal(po.total || 0).minus(new Decimal(po.billedAmount || 0)).toNumber()
+  );
   po.canCreateBill = po.status !== 'Cancelled' &&
                      po.status !== 'Completed' &&
                      po.remainingAmount > 0;

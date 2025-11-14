@@ -97,8 +97,35 @@ router.post('/payments/:id/void',
   financeController.voidCustomerPayment
 );
 
-// Account routes (REMOVED - Chart of Accounts not required)
-// If needed in future, implement in dedicated /api/accounting routes
+// Chart of Accounts routes (read-only for reporting)
+router.route('/accounts')
+  .get(readRateLimiter, validatePagination, hasPermission(['finance.view']), financeController.getAccounts);
+
+router.route('/accounts/:id')
+  .get(readRateLimiter, validateUUIDParam('id'), hasPermission(['finance.view']), financeController.getAccount);
+
+// Journal Entry routes (read-only for audit/reporting)
+router.route('/journal-entries')
+  .get(readRateLimiter, validatePagination, hasPermission(['finance.view']), financeController.getJournalEntries);
+
+// Financial Reports routes
+router.get('/reports/trial-balance',
+  readRateLimiter,
+  hasPermission(['finance.view']),
+  financeController.getTrialBalance
+);
+
+router.get('/reports/balance-sheet',
+  readRateLimiter,
+  hasPermission(['finance.view']),
+  financeController.getBalanceSheet
+);
+
+router.get('/reports/profit-loss',
+  readRateLimiter,
+  hasPermission(['finance.view']),
+  financeController.getProfitLoss
+);
 
 // Purchase Order routes
 router.route('/purchase-orders')

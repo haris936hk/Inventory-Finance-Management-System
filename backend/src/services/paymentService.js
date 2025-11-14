@@ -17,7 +17,8 @@ const {
   ConcurrencyError,
   InsufficientBalanceError,
   compareAmounts,
-  formatAmount
+  formatAmount,
+  Decimal
 } = require('../utils/transactionWrapper');
 const { generatePaymentNumber } = require('../utils/generateId');
 const { updateBillStatus } = require('./billService');
@@ -81,14 +82,23 @@ async function recordPayment(data, userId) {
       );
     }
 
-    // 7. Check for duplicate payments (same vendor, amount, within last minute)
-    const oneMinuteAgo = new Date(Date.now() - 60000);
+    // 7. FIXED: Improved duplicate payment detection (5-min window, bill+vendor+method check)
+    const fiveMinutesAgo = new Date(Date.now() - 300000); // 5 minutes
+    const amountDec = new Decimal(paymentAmount);
+    const lowerBound = amountDec.minus(0.50).toNumber(); // 50 cents below
+    const upperBound = amountDec.plus(0.50).toNumber(); // 50 cents above
+
     const duplicatePayment = await tx.vendorPayment.findFirst({
       where: {
         vendorId: data.vendorId,
-        amount: paymentAmount,
+        billId: data.billId,      // FIXED: Check same bill
+        method: data.method,       // FIXED: Check same payment method
+        amount: {
+          gte: lowerBound,         // FIXED: Near-amount matching
+          lte: upperBound
+        },
         paymentDate: {
-          gte: oneMinuteAgo
+          gte: fiveMinutesAgo      // FIXED: 5-minute window
         },
         voidedAt: null,
         deletedAt: null
@@ -97,8 +107,10 @@ async function recordPayment(data, userId) {
 
     if (duplicatePayment) {
       throw new ValidationError(
-        'A payment with the same amount was recorded in the last minute. ' +
-        'Please verify this is not a duplicate submission.'
+        `A similar payment was recorded recently (${duplicatePayment.paymentNumber}). ` +
+        `Amount: ${duplicatePayment.amount}, Method: ${duplicatePayment.method}, ` +
+        `Time: ${duplicatePayment.paymentDate.toISOString()}. ` +
+        `If this is a new payment, please wait 5 minutes or use a different payment method.`
       );
     }
 
@@ -147,7 +159,9 @@ async function recordPayment(data, userId) {
     });
 
     // 12. Calculate new vendor balance (decrease payable)
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) - paymentAmount);
+    const newVendorBalance = formatAmount(
+      new Decimal(vendor.currentBalance || 0).minus(new Decimal(paymentAmount)).toNumber()
+    );
 
     // 13. Update vendor balance
     await tx.vendor.update({
@@ -279,7 +293,9 @@ async function voidPayment(paymentId, reason, userId) {
     });
 
     // 5. Reverse bill paid amount
-    const newPaidAmount = formatAmount(parseFloat(bill.paidAmount) - parseFloat(payment.amount));
+    const newPaidAmount = formatAmount(
+      new Decimal(bill.paidAmount || 0).minus(new Decimal(payment.amount || 0)).toNumber()
+    );
 
     await tx.bill.update({
       where: { id: payment.billId },
@@ -297,7 +313,9 @@ async function voidPayment(paymentId, reason, userId) {
     });
 
     // 8. Calculate new vendor balance (increase payable - voiding payment means we owe again)
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) + parseFloat(payment.amount));
+    const newVendorBalance = formatAmount(
+      new Decimal(vendor.currentBalance || 0).plus(new Decimal(payment.amount || 0)).toNumber()
+    );
 
     // 9. Reverse vendor balance
     await tx.vendor.update({
@@ -313,7 +331,7 @@ async function voidPayment(paymentId, reason, userId) {
         vendorId: payment.vendorId,
         entryDate: new Date(),
         description: `Payment ${payment.paymentNumber} voided: ${reason}`,
-        debit: parseFloat(payment.amount),
+        debit: new Decimal(payment.amount || 0).toNumber(),
         credit: 0,
         balance: newVendorBalance,
         billId: payment.billId
@@ -329,7 +347,7 @@ async function voidPayment(paymentId, reason, userId) {
         paymentId: payment.id,
         beforeState: {
           billStatus: bill.status,
-          paidAmount: parseFloat(bill.paidAmount)
+          paidAmount: new Decimal(bill.paidAmount || 0).toNumber()
         },
         afterState: {
           billStatus: newBillStatus,
@@ -338,7 +356,7 @@ async function voidPayment(paymentId, reason, userId) {
         performedBy: userId,
         metadata: {
           reason,
-          voidedAmount: parseFloat(payment.amount)
+          voidedAmount: new Decimal(payment.amount || 0).toNumber()
         }
       }
     });
@@ -348,7 +366,7 @@ async function voidPayment(paymentId, reason, userId) {
       await JournalEntryService.reverseVendorPaymentEntries(tx, {
         id: payment.id,
         paymentNumber: payment.paymentNumber,
-        amount: parseFloat(payment.amount),
+        amount: new Decimal(payment.amount || 0).toNumber(),
         vendor: voided.vendor,
         billId: payment.billId
       }, reason);
@@ -368,7 +386,7 @@ async function voidPayment(paymentId, reason, userId) {
     logger.info(`Payment voided: ${payment.paymentNumber}`, {
       paymentId,
       reason,
-      reversedAmount: parseFloat(payment.amount)
+      reversedAmount: new Decimal(payment.amount || 0).toNumber()
     });
 
     return voided;
@@ -440,7 +458,7 @@ async function getPaymentsForBill(billId) {
   return payments.map(p => ({
     ...p,
     isVoided: !!p.voidedAt,
-    effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
+    effectiveAmount: p.voidedAt ? 0 : new Decimal(p.amount || 0).toNumber()
   }));
 }
 
@@ -533,7 +551,7 @@ async function getVendorPayments(filters = {}) {
   const paymentsWithFields = payments.map(p => ({
     ...p,
     isVoided: !!p.voidedAt,
-    effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
+    effectiveAmount: p.voidedAt ? 0 : new Decimal(p.amount || 0).toNumber()
   }));
 
   // Calculate effective total (excluding voided payments)
@@ -549,7 +567,7 @@ async function getVendorPayments(filters = {}) {
     },
     statistics: {
       totalPayments: statistics._count,
-      totalAmount: parseFloat(statistics._sum.amount || 0),
+      totalAmount: new Decimal(statistics._sum.amount || 0).toNumber(),
       effectiveAmount: effectiveTotal
     }
   };

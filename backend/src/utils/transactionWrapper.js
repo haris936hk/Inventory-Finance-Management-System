@@ -1,9 +1,21 @@
 /**
  * Transaction wrapper utilities for safe concurrent operations
+ * Uses Decimal.js for precise financial calculations
  */
 
 const db = require('../config/database');
 const logger = require('../config/logger');
+const Decimal = require('decimal.js');
+
+// Configure Decimal.js for financial precision
+// precision: 20 digits for intermediate calculations
+// rounding: ROUND_HALF_EVEN (banker's rounding) for fairness
+Decimal.set({
+  precision: 20,
+  rounding: Decimal.ROUND_HALF_EVEN,
+  toExpNeg: -9,
+  toExpPos: 9
+});
 
 /**
  * Custom error classes for better error handling
@@ -156,6 +168,7 @@ function hashStringToInt(str) {
 
 /**
  * Validate and compare decimal amounts with tolerance
+ * FIXED: Uses Decimal.js instead of parseFloat() to avoid precision errors
  *
  * @param {Decimal|number|string} amount1
  * @param {Decimal|number|string} amount2
@@ -163,24 +176,53 @@ function hashStringToInt(str) {
  * @returns {boolean} True if amounts are equal within tolerance
  */
 function compareAmounts(amount1, amount2, tolerance = 0.0001) {
-  const diff = Math.abs(parseFloat(amount1) - parseFloat(amount2));
-  return diff <= tolerance;
+  try {
+    const dec1 = new Decimal(amount1 || 0);
+    const dec2 = new Decimal(amount2 || 0);
+    const diff = dec1.minus(dec2).abs();
+    return diff.lessThanOrEqualTo(tolerance);
+  } catch (error) {
+    logger.error('compareAmounts error:', { amount1, amount2, error: error.message });
+    return false;
+  }
 }
 
 /**
  * Safely add decimal amounts
+ * FIXED: Uses Decimal.js instead of parseFloat() to avoid precision errors
+ *
+ * @param {...(Decimal|number|string)} amounts - Amounts to add
+ * @returns {string} Sum formatted to 4 decimal places
  */
 function addAmounts(...amounts) {
-  return amounts.reduce((sum, amount) => {
-    return sum + (parseFloat(amount) || 0);
-  }, 0);
+  try {
+    const sum = amounts.reduce((acc, amount) => {
+      return acc.plus(new Decimal(amount || 0));
+    }, new Decimal(0));
+    return sum.toFixed(4);
+  } catch (error) {
+    logger.error('addAmounts error:', { amounts, error: error.message });
+    return '0.0000';
+  }
 }
 
 /**
  * Format amount to fixed precision for storage
+ * FIXED: Uses Decimal.js instead of parseFloat() to avoid precision errors
+ *
+ * @param {Decimal|number|string} amount - Amount to format
+ * @param {number} precision - Decimal places (default: 4)
+ * @returns {number} Formatted amount as number (for Prisma Decimal compatibility)
  */
 function formatAmount(amount, precision = 4) {
-  return parseFloat(parseFloat(amount).toFixed(precision));
+  try {
+    const dec = new Decimal(amount || 0);
+    // Return as number for Prisma Decimal field compatibility
+    return parseFloat(dec.toFixed(precision));
+  } catch (error) {
+    logger.error('formatAmount error:', { amount, error: error.message });
+    return 0;
+  }
 }
 
 /**
@@ -205,6 +247,82 @@ function parseDate(dateInput) {
   return new Date(dateInput);
 }
 
+/**
+ * Multiply two amounts with precision
+ * @param {Decimal|number|string} amount1
+ * @param {Decimal|number|string} amount2
+ * @returns {number} Product formatted to 4 decimal places
+ */
+function multiplyAmounts(amount1, amount2) {
+  try {
+    const dec1 = new Decimal(amount1 || 0);
+    const dec2 = new Decimal(amount2 || 0);
+    const product = dec1.times(dec2);
+    return parseFloat(product.toFixed(4));
+  } catch (error) {
+    logger.error('multiplyAmounts error:', { amount1, amount2, error: error.message });
+    return 0;
+  }
+}
+
+/**
+ * Divide two amounts with precision
+ * @param {Decimal|number|string} amount1 - Numerator
+ * @param {Decimal|number|string} amount2 - Denominator
+ * @returns {number} Quotient formatted to 4 decimal places
+ */
+function divideAmounts(amount1, amount2) {
+  try {
+    const dec1 = new Decimal(amount1 || 0);
+    const dec2 = new Decimal(amount2 || 0);
+    if (dec2.isZero()) {
+      logger.warn('divideAmounts: Division by zero', { amount1, amount2 });
+      return 0;
+    }
+    const quotient = dec1.dividedBy(dec2);
+    return parseFloat(quotient.toFixed(4));
+  } catch (error) {
+    logger.error('divideAmounts error:', { amount1, amount2, error: error.message });
+    return 0;
+  }
+}
+
+/**
+ * Subtract two amounts with precision
+ * @param {Decimal|number|string} amount1
+ * @param {Decimal|number|string} amount2
+ * @returns {number} Difference formatted to 4 decimal places
+ */
+function subtractAmounts(amount1, amount2) {
+  try {
+    const dec1 = new Decimal(amount1 || 0);
+    const dec2 = new Decimal(amount2 || 0);
+    const diff = dec1.minus(dec2);
+    return parseFloat(diff.toFixed(4));
+  } catch (error) {
+    logger.error('subtractAmounts error:', { amount1, amount2, error: error.message });
+    return 0;
+  }
+}
+
+/**
+ * Calculate percentage of amount
+ * @param {Decimal|number|string} amount - Base amount
+ * @param {Decimal|number|string} percentage - Percentage (e.g., 10 for 10%)
+ * @returns {number} Result formatted to 4 decimal places
+ */
+function calculatePercentage(amount, percentage) {
+  try {
+    const dec = new Decimal(amount || 0);
+    const pct = new Decimal(percentage || 0);
+    const result = dec.times(pct).dividedBy(100);
+    return parseFloat(result.toFixed(4));
+  } catch (error) {
+    logger.error('calculatePercentage error:', { amount, percentage, error: error.message });
+    return 0;
+  }
+}
+
 module.exports = {
   withTransaction,
   lockForUpdate,
@@ -215,5 +333,11 @@ module.exports = {
   compareAmounts,
   addAmounts,
   formatAmount,
-  parseDate
+  parseDate,
+  // New Decimal-based helpers
+  multiplyAmounts,
+  divideAmounts,
+  subtractAmounts,
+  calculatePercentage,
+  Decimal // Export Decimal for advanced use cases
 };

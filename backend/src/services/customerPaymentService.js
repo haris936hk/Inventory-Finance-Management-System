@@ -18,7 +18,11 @@ const {
   InsufficientBalanceError,
   compareAmounts,
   addAmounts,
-  formatAmount
+  formatAmount,
+  multiplyAmounts,
+  divideAmounts,
+  subtractAmounts,
+  Decimal
 } = require('../utils/transactionWrapper');
 const { generatePaymentNumber } = require('../utils/generateId');
 const { calculateInvoiceStatus } = require('./invoiceService');
@@ -69,6 +73,19 @@ async function recordPayment(data, userId) {
       throw new ValidationError('Payment amount must be greater than zero');
     }
 
+    // FIXED: Validate payment date (no future dates, reasonable minimum for data integrity)
+    const paymentDate = data.paymentDate ? new Date(data.paymentDate) : new Date();
+    const now = new Date();
+    const minDate = new Date('1970-01-01'); // Unix epoch - allows historical data migration
+
+    if (paymentDate > now) {
+      throw new ValidationError('Payment date cannot be in the future');
+    }
+
+    if (paymentDate < minDate) {
+      throw new ValidationError('Payment date cannot be before 1970-01-01 (invalid date)');
+    }
+
     // 5. CRITICAL: Check available balance (SUM(payments) <= invoice.total)
     const currentPaid = formatAmount(invoice.paidAmount);
     const newPaid = formatAmount(currentPaid + amount);
@@ -83,14 +100,32 @@ async function recordPayment(data, userId) {
       );
     }
 
-    // 6. Check for duplicate payments (same customer, amount, within last minute)
-    const oneMinuteAgo = new Date(Date.now() - 60000);
+    // 6. FIXED: Improved duplicate payment detection (acts as idempotency check)
+    // - Extended to 5-minute window (was 60 seconds)
+    // - Check invoice + customer + method combination
+    // - Allow near-amount matching (within 50 cents) to catch typos
+    //
+    // NOTE: For true idempotency, add 'idempotencyKey' field to Payment model:
+    //   idempotencyKey String? @unique
+    //   @@index([idempotencyKey])
+    // Then check: WHERE idempotencyKey = data.idempotencyKey AND voidedAt IS NULL
+    // This provides exact duplicate prevention for network retries
+    const fiveMinutesAgo = new Date(Date.now() - 300000); // 5 minutes
+    const amountDec = new Decimal(amount);
+    const lowerBound = amountDec.minus(0.50).toNumber(); // 50 cents below
+    const upperBound = amountDec.plus(0.50).toNumber(); // 50 cents above
+
     const duplicatePayment = await tx.payment.findFirst({
       where: {
         customerId: data.customerId,
-        amount: amount,
+        invoiceId: data.invoiceId, // FIXED: Check same invoice
+        method: data.method,        // FIXED: Check same payment method
+        amount: {
+          gte: lowerBound,          // FIXED: Near-amount matching
+          lte: upperBound
+        },
         paymentDate: {
-          gte: oneMinuteAgo
+          gte: fiveMinutesAgo       // FIXED: 5-minute window
         },
         voidedAt: null,
         deletedAt: null
@@ -99,8 +134,10 @@ async function recordPayment(data, userId) {
 
     if (duplicatePayment) {
       throw new ValidationError(
-        'A payment with the same amount was recorded in the last minute. ' +
-        'Please verify this is not a duplicate submission.'
+        `A similar payment was recorded recently (${duplicatePayment.paymentNumber}). ` +
+        `Amount: ${duplicatePayment.amount}, Method: ${duplicatePayment.method}, ` +
+        `Time: ${duplicatePayment.paymentDate.toISOString()}. ` +
+        `If this is a new payment, please wait 5 minutes or use a different payment method.`
       );
     }
 
@@ -246,21 +283,36 @@ async function recordPayment(data, userId) {
       }
     });
 
-    // Calculate total COGS (sum of all item purchase prices)
+    // FIXED: Validate all items have purchase prices (critical for COGS calculation)
+    const itemsWithoutPurchasePrice = invoiceItems.filter(invItem =>
+      invItem.item.purchasePrice === null || invItem.item.purchasePrice === undefined
+    );
+
+    if (itemsWithoutPurchasePrice.length > 0) {
+      const serialNumbers = itemsWithoutPurchasePrice.map(item => item.item.serialNumber).join(', ');
+      throw new ValidationError(
+        `Cannot record payment: ${itemsWithoutPurchasePrice.length} items are missing purchase prices. ` +
+        `Items: ${serialNumbers}. Please update item purchase prices before recording payment.`
+      );
+    }
+
+    // FIXED: Calculate total COGS using Decimal.js for precision
     const totalInvoiceCOGS = invoiceItems.reduce((sum, invItem) => {
-      const purchasePrice = invItem.item.purchasePrice || 0;
-      return sum + parseFloat(purchasePrice);
-    }, 0);
+      const purchasePrice = invItem.item.purchasePrice; // Now guaranteed to be non-null
+      return sum.plus(new Decimal(purchasePrice));
+    }, new Decimal(0));
 
-    if (totalInvoiceCOGS > 0) {
-      // Calculate proportional COGS for this payment
+    if (totalInvoiceCOGS.greaterThan(0)) {
+      // FIXED: Calculate proportional COGS for this payment using Decimal
       // Formula: COGS for payment = (Payment Amount / Invoice Total) × Total COGS
-      const paymentPercentage = parseFloat(amount) / parseFloat(total);
-      const proportionalCOGS = formatAmount(totalInvoiceCOGS * paymentPercentage);
+      const paymentPercentage = divideAmounts(amount, total); // Returns precise division
+      const proportionalCOGS = multiplyAmounts(totalInvoiceCOGS.toNumber(), paymentPercentage);
 
-      // Get current COGS on invoice (accumulated from previous payments)
-      const currentInvoiceCOGS = parseFloat(invoice.cogs || 0);
-      const newCumulativeCOGS = formatAmount(currentInvoiceCOGS + proportionalCOGS);
+      // FIXED: Get current COGS on invoice using Decimal (accumulated from previous payments)
+      const currentInvoiceCOGS = new Decimal(invoice.cogs || 0);
+      const newCumulativeCOGS = formatAmount(
+        currentInvoiceCOGS.plus(new Decimal(proportionalCOGS)).toNumber()
+      );
 
       // Update invoice with new cumulative COGS
       await tx.invoice.update({
@@ -281,12 +333,21 @@ async function recordPayment(data, userId) {
         paymentAmount: formatAmount(amount),
         invoiceTotal: formatAmount(total),
         paymentPercentage: `${(paymentPercentage * 100).toFixed(2)}%`,
-        totalInvoiceCOGS: formatAmount(totalInvoiceCOGS),
+        totalInvoiceCOGS: formatAmount(totalInvoiceCOGS.toNumber()),
         proportionalCOGS: proportionalCOGS,
         previousCOGS: formatAmount(currentInvoiceCOGS),
         newCumulativeCOGS: newCumulativeCOGS,
         itemCount: invoiceItems.length
       });
+    } else {
+      logger.warn(`No COGS to recognize for payment ${paymentNumber} - all items have zero purchase price`);
+    }
+
+    // 14. CRITICAL FIX: Mark items as sold INSIDE transaction if invoice is fully paid
+    // This ensures atomic payment + inventory status update (no race condition)
+    if (wasFullyPaid) {
+      const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId, tx);
+      logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold`);
     }
 
     logger.info(`Payment recorded: ${paymentNumber}`, {
@@ -298,30 +359,6 @@ async function recordPayment(data, userId) {
 
     return createdPayment;
   });
-
-  // 10. AFTER transaction commits, mark items as sold if invoice is fully paid
-  if (wasFullyPaid) {
-    try {
-      const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId);
-      logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold`);
-    } catch (error) {
-      // CRITICAL: Log detailed error information for operations team
-      logger.error(`CRITICAL: Failed to mark items as sold for Invoice ${invoiceNumber}`, {
-        errorMessage: error.message,
-        errorStack: error.stack,
-        invoiceId,
-        invoiceNumber,
-        paymentId: payment.id,
-        paymentNumber: payment.paymentNumber,
-        requiresManualIntervention: true,
-        actionRequired: 'Operations team must manually update item inventory status to "Sold" for this invoice',
-        timestamp: new Date().toISOString()
-      });
-      // NOTE: Don't fail the payment - payment has been recorded successfully
-      // Items can be manually marked as sold later by operations team
-      // TODO: Consider adding automated alert/notification system for operations team
-    }
-  }
 
   return payment;
 }
@@ -536,7 +573,7 @@ async function voidPayment(paymentId, reason, userId) {
       );
     }
 
-    // 10. Reverse proportional COGS for voided payment
+    // 10. FIXED: Reverse proportional COGS for voided payment (CRITICAL - must succeed or rollback)
     try {
       // Get invoice items to calculate total COGS
       const invoiceItems = await tx.invoiceItem.findMany({
@@ -551,18 +588,39 @@ async function voidPayment(paymentId, reason, userId) {
         }
       });
 
+      // FIXED: Use Decimal.js for precision
       const totalInvoiceCOGS = invoiceItems.reduce((sum, invItem) => {
-        return sum + parseFloat(invItem.item.purchasePrice || 0);
-      }, 0);
+        return sum.plus(new Decimal(invItem.item.purchasePrice || 0));
+      }, new Decimal(0));
 
-      if (totalInvoiceCOGS > 0) {
-        // Calculate proportional COGS that was recognized for this payment
-        const paymentPercentage = parseFloat(payment.amount) / parseFloat(invoice.total);
-        const cogsToReverse = formatAmount(totalInvoiceCOGS * paymentPercentage);
+      if (totalInvoiceCOGS.greaterThan(0)) {
+        // FIXED: Calculate proportional COGS using Decimal
+        const paymentPercentage = divideAmounts(payment.amount, invoice.total);
+        const cogsToReverse = multiplyAmounts(totalInvoiceCOGS.toNumber(), paymentPercentage);
 
-        // Reduce invoice COGS by the reversed amount
-        const currentInvoiceCOGS = parseFloat(invoice.cogs || 0);
-        const newCOGS = formatAmount(Math.max(0, currentInvoiceCOGS - cogsToReverse));
+        // FIXED: Reduce invoice COGS by the reversed amount with validation
+        const currentInvoiceCOGS = new Decimal(invoice.cogs || 0);
+        const calculatedCOGS = currentInvoiceCOGS.minus(new Decimal(cogsToReverse));
+
+        // FIXED: Validate COGS wouldn't go negative (indicates data corruption)
+        if (calculatedCOGS.lessThan(-0.01)) {
+          logger.error('COGS reversal would result in negative COGS - possible data corruption', {
+            invoiceId: payment.invoiceId,
+            invoiceNumber: invoice.invoiceNumber,
+            paymentNumber: payment.paymentNumber,
+            currentCOGS: currentInvoiceCOGS.toNumber(),
+            reversing: cogsToReverse,
+            calculated: calculatedCOGS.toNumber()
+          });
+          throw new ValidationError(
+            `Cannot reverse COGS for payment ${payment.paymentNumber}: ` +
+            `would result in negative invoice COGS (${calculatedCOGS.toFixed(4)}). ` +
+            `Current: ${currentInvoiceCOGS.toFixed(4)}, Reversing: ${cogsToReverse.toFixed(4)}. ` +
+            `This indicates data corruption - please contact support.`
+          );
+        }
+
+        const newCOGS = formatAmount(Math.max(0, calculatedCOGS.toNumber()));
 
         await tx.invoice.update({
           where: { id: payment.invoiceId },
@@ -591,8 +649,12 @@ async function voidPayment(paymentId, reason, userId) {
         paymentNumber: payment.paymentNumber,
         error: error.message
       });
-      // Continue - COGS reversal failure is not critical enough to rollback payment void
-      // Can be manually corrected later
+      // FIXED: This IS critical - rollback the entire void operation
+      // Data integrity requires that payment void and COGS reversal happen atomically
+      throw new ValidationError(
+        `Failed to reverse COGS for voided payment: ${error.message}. ` +
+        `Payment void has been rolled back to maintain data integrity. Please contact support.`
+      );
     }
 
     logger.info(`Payment voided: ${payment.paymentNumber}`, {

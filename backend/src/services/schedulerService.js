@@ -32,7 +32,12 @@ class SchedulerService {
       try {
         logger.info('Running scheduled job: Update overdue invoices');
         const result = await invoiceService.updateOverdueInvoices();
-        logger.info(`Overdue invoice update completed: ${result.updated} invoices marked as overdue`);
+        // FIXED: Handle new response format from updateOverdueInvoices
+        if (result.skipped) {
+          logger.info('Overdue invoice update skipped - another instance is running');
+        } else {
+          logger.info(`Overdue invoice update completed: ${result.updated} invoices marked as overdue`);
+        }
       } catch (error) {
         logger.error('Error in overdue invoice update job:', {
           error: error.message,
@@ -256,7 +261,12 @@ class SchedulerService {
       switch (jobName) {
         case 'overdueInvoices':
           const invoiceResult = await invoiceService.updateOverdueInvoices();
-          logger.info(`Manual trigger completed: ${invoiceResult.updated} invoices marked as overdue`);
+          // FIXED: Handle new response format
+          if (invoiceResult.skipped) {
+            logger.info('Manual trigger skipped - another instance is running');
+          } else {
+            logger.info(`Manual trigger completed: ${invoiceResult.updated} invoices marked as overdue`);
+          }
           return invoiceResult;
 
         case 'reservationCleanup':

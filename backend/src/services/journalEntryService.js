@@ -12,7 +12,7 @@
  */
 
 const logger = require('../config/logger');
-const { formatAmount } = require('../utils/transactionWrapper');
+const { formatAmount, Decimal, compareAmounts } = require('../utils/transactionWrapper');
 
 class JournalEntryService {
   /**
@@ -28,6 +28,34 @@ class JournalEntryService {
     SALES_REVENUE: '4000',
     COGS: '5000'
   };
+
+  /**
+   * FIXED: Batch lookup account IDs by codes to prevent N+1 queries
+   * @param {Object} tx - Prisma transaction client
+   * @param {string[]} accountCodes - Array of account codes
+   * @returns {Promise<Map<string, string>>} Map of accountCode -> accountId
+   */
+  static async getAccountIdsByCodes(tx, accountCodes) {
+    const uniqueCodes = [...new Set(accountCodes)]; // Remove duplicates
+
+    const accounts = await tx.account.findMany({
+      where: { code: { in: uniqueCodes } },
+      select: { id: true, code: true }
+    });
+
+    // Validate all codes were found
+    if (accounts.length !== uniqueCodes.length) {
+      const foundCodes = accounts.map(a => a.code);
+      const missingCodes = uniqueCodes.filter(code => !foundCodes.includes(code));
+      throw new Error(
+        `Accounts not found for codes: ${missingCodes.join(', ')}. ` +
+        `Please run account seeding migration.`
+      );
+    }
+
+    // Return as Map for O(1) lookup
+    return new Map(accounts.map(a => [a.code, a.id]));
+  }
 
   /**
    * Get account ID by code (direct lookup, no caching to avoid staleness)
@@ -78,24 +106,37 @@ class JournalEntryService {
   static async createJournalEntries(tx, entries, metadata = {}) {
     const { sourceType, sourceId, reference, entryDate } = metadata;
 
-    // Validate entries balance (DR = CR)
-    const totalDebit = entries.reduce((sum, e) => sum + parseFloat(e.debit || 0), 0);
-    const totalCredit = entries.reduce((sum, e) => sum + parseFloat(e.credit || 0), 0);
+    // FIXED: Validate entries balance (DR = CR) with Decimal precision
+    const totalDebit = entries.reduce((sum, e) =>
+      sum.plus(new Decimal(e.debit || 0)), new Decimal(0)
+    ).toNumber();
+    const totalCredit = entries.reduce((sum, e) =>
+      sum.plus(new Decimal(e.credit || 0)), new Decimal(0)
+    ).toNumber();
 
-    if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    // FIXED: Use precise comparison instead of Math.abs with tolerance
+    if (!compareAmounts(totalDebit, totalCredit)) {
+      const difference = formatAmount(totalDebit - totalCredit);
       logger.error('Journal entries do not balance', {
-        totalDebit,
-        totalCredit,
-        difference: totalDebit - totalCredit,
+        totalDebit: formatAmount(totalDebit),
+        totalCredit: formatAmount(totalCredit),
+        difference,
         entries
       });
-      throw new Error(`Journal entries must balance. DR: ${totalDebit}, CR: ${totalCredit}`);
+      throw new Error(
+        `Journal entries must balance. DR: ${formatAmount(totalDebit)}, ` +
+        `CR: ${formatAmount(totalCredit)}, Difference: ${difference}`
+      );
     }
+
+    // FIXED: Batch lookup account IDs to prevent N+1 queries
+    const accountCodes = entries.map(e => e.accountCode);
+    const accountMap = await this.getAccountIdsByCodes(tx, accountCodes);
 
     // Create all journal entries
     const createdEntries = [];
     for (const entry of entries) {
-      const accountId = await this.getAccountIdByCode(tx, entry.accountCode);
+      const accountId = accountMap.get(entry.accountCode);
 
       const journalEntry = await tx.journalEntry.create({
         data: {
@@ -145,17 +186,19 @@ class JournalEntryService {
       throw new Error(`Account ${accountId} not found`);
     }
 
-    // Calculate new balance based on account type
+    // FIXED: Calculate new balance based on account type with Decimal precision
     // Assets and Expenses: increase with Debit, decrease with Credit
     // Liabilities, Income, Equity: increase with Credit, decrease with Debit
-    let balanceChange = 0;
+    let balanceChange;
     if (['Asset', 'Expense'].includes(account.type)) {
-      balanceChange = parseFloat(debit) - parseFloat(credit);
+      balanceChange = new Decimal(debit || 0).minus(new Decimal(credit || 0));
     } else {
-      balanceChange = parseFloat(credit) - parseFloat(debit);
+      balanceChange = new Decimal(credit || 0).minus(new Decimal(debit || 0));
     }
 
-    const newBalance = parseFloat(account.currentBalance) + balanceChange;
+    const newBalance = formatAmount(
+      new Decimal(account.currentBalance || 0).plus(balanceChange).toNumber()
+    );
 
     await tx.account.update({
       where: { id: accountId },
@@ -561,28 +604,30 @@ class JournalEntryService {
 
     if (amount === 0) return; // No entry needed for zero balance
 
-    const accountsReceivable = await this.getAccountByCode(tx, '1200'); // A/R
-    const openingBalanceEquity = await this.getAccountByCode(tx, '3900'); // Opening Balance Equity
+    // FIXED: Batch lookup accounts to prevent sequential queries
+    const accountMap = await this.getAccountIdsByCodes(tx, ['1200', '3900']);
+    const accountsReceivableId = accountMap.get('1200'); // A/R
+    const openingBalanceEquityId = accountMap.get('3900'); // Opening Balance Equity
 
     const absAmount = Math.abs(amount);
     const isDebit = amount > 0; // Positive = customer owes us
 
     const entries = [
       {
+        accountCode: '1200',
         entryDate,
         reference: customerId,
         description: `Opening balance for customer: ${customerName}`,
-        accountId: accountsReceivable.id,
         debit: isDebit ? absAmount : 0,
         credit: isDebit ? 0 : absAmount,
         sourceType: 'Customer',
         sourceId: customerId
       },
       {
+        accountCode: '3900',
         entryDate,
         reference: customerId,
         description: `Opening balance for customer: ${customerName}`,
-        accountId: openingBalanceEquity.id,
         debit: isDebit ? 0 : absAmount,
         credit: isDebit ? absAmount : 0,
         sourceType: 'Customer',
@@ -615,28 +660,26 @@ class JournalEntryService {
 
     if (amount === 0) return; // No entry needed for zero balance
 
-    const accountsPayable = await this.getAccountByCode(tx, '2000'); // A/P
-    const openingBalanceEquity = await this.getAccountByCode(tx, '3900'); // Opening Balance Equity
-
+    // FIXED: Batch lookup accounts to prevent sequential queries (now handled by createJournalEntries)
     const absAmount = Math.abs(amount);
     const isCredit = amount > 0; // Positive = we owe vendor
 
     const entries = [
       {
+        accountCode: '2000',
         entryDate,
         reference: vendorId,
         description: `Opening balance for vendor: ${vendorName}`,
-        accountId: accountsPayable.id,
         debit: isCredit ? 0 : absAmount,
         credit: isCredit ? absAmount : 0,
         sourceType: 'Vendor',
         sourceId: vendorId
       },
       {
+        accountCode: '3900',
         entryDate,
         reference: vendorId,
         description: `Opening balance for vendor: ${vendorName}`,
-        accountId: openingBalanceEquity.id,
         debit: isCredit ? absAmount : 0,
         credit: isCredit ? 0 : absAmount,
         sourceType: 'Vendor',

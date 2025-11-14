@@ -18,7 +18,8 @@ const {
   InsufficientBalanceError,
   compareAmounts,
   addAmounts,
-  formatAmount
+  formatAmount,
+  Decimal
 } = require('../utils/transactionWrapper');
 const { generateBillNumber } = require('../utils/generateId');
 const JournalEntryService = require('./journalEntryService');
@@ -26,6 +27,12 @@ const ValidationService = require('./validationService');
 
 /**
  * Create a bill against a Purchase Order
+ *
+ * CONCURRENCY SAFETY:
+ * - Uses serializable transaction and row-level locking to prevent race conditions
+ * - Bill number uniqueness enforced by database constraint (@unique on billNumber)
+ * - If bill number collision occurs, Prisma throws P2002 error - caller should retry
+ * - Manual duplicate checks removed to prevent TOCTOU race condition
  *
  * @param {Object} data - Bill data
  * @param {string} data.purchaseOrderId - PO ID
@@ -37,6 +44,7 @@ const ValidationService = require('./validationService');
  * @param {number} data.total - Total amount
  * @param {string} userId - User creating the bill
  * @returns {Promise<Object>} Created bill
+ * @throws {Error} P2002 if bill number already exists (caller should retry with new number)
  */
 async function createBill(data, userId) {
   return withTransaction(async (tx) => {
@@ -70,6 +78,17 @@ async function createBill(data, userId) {
     const taxAmount = formatAmount(data.taxAmount || 0);
     const total = formatAmount(data.total);
 
+    // FIXED: Validate positive amounts
+    if (new Decimal(subtotal).lessThanOrEqualTo(0)) {
+      throw new ValidationError('Bill subtotal must be greater than zero');
+    }
+    if (new Decimal(total).lessThanOrEqualTo(0)) {
+      throw new ValidationError('Bill total must be greater than zero');
+    }
+    if (new Decimal(taxAmount).lessThan(0)) {
+      throw new ValidationError('Bill tax amount cannot be negative');
+    }
+
     // Use ValidationService for total calculation validation
     ValidationService.validateTotalCalculation(subtotal, taxAmount, 0, total, 'Bill');
 
@@ -88,6 +107,9 @@ async function createBill(data, userId) {
     }
 
     // 6. Generate bill number
+    // FIXED: Removed manual duplicate check - database unique constraint will enforce uniqueness
+    // This prevents TOCTOU race condition where two transactions could pass the check before either commits
+    // If uniqueness is violated, Prisma will throw P2002 error which can be caught and retried
     const billNumber = await generateBillNumber();
 
     // 7. Validate and prepare bill line items (if provided)
@@ -140,14 +162,15 @@ async function createBill(data, userId) {
         });
       }
 
-      // Validate sum of line items equals bill subtotal
+      // FIXED: Validate sum of line items equals bill subtotal using Decimal for precision
       const lineItemsTotal = billItemsData.reduce(
-        (sum, item) => sum + parseFloat(item.lineTotal),
-        0
+        (sum, item) => sum.plus(new Decimal(item.lineTotal)),
+        new Decimal(0)
       );
-      if (!compareAmounts(lineItemsTotal, subtotal)) {
+      const lineItemsTotalNumber = lineItemsTotal.toNumber();
+      if (!compareAmounts(lineItemsTotalNumber, subtotal)) {
         throw new ValidationError(
-          `Sum of bill line items (${lineItemsTotal}) does not match bill subtotal (${subtotal})`
+          `Sum of bill line items (${lineItemsTotalNumber}) does not match bill subtotal (${subtotal})`
         );
       }
     }
@@ -185,7 +208,8 @@ async function createBill(data, userId) {
     }
 
     // 10. Update PO billed amount and status
-    const updatedBilledAmount = formatAmount(parseFloat(po.billedAmount) + total);
+    // FIXED: Use Decimal for precise addition
+    const updatedBilledAmount = formatAmount(new Decimal(po.billedAmount || 0).plus(new Decimal(total)).toNumber());
     let newPOStatus = po.status;
 
     // Auto-transition to Partial if first bill created
@@ -211,7 +235,8 @@ async function createBill(data, userId) {
       where: { id: data.vendorId }
     });
 
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) + total);
+    // FIXED: Use Decimal for precise vendor balance calculation
+    const newVendorBalance = formatAmount(new Decimal(vendor.currentBalance || 0).plus(new Decimal(total)).toNumber());
 
     await tx.vendorLedger.create({
       data: {
@@ -241,12 +266,12 @@ async function createBill(data, userId) {
         billId: bill.id,
         beforeState: {
           poStatus: po.status,
-          billedAmount: parseFloat(po.billedAmount)
+          billedAmount: new Decimal(po.billedAmount || 0).toNumber()
         },
         afterState: {
           poStatus: newPOStatus,
           billedAmount: updatedBilledAmount,
-          billTotal: total
+          billTotal: formatAmount(total)
         },
         performedBy: userId,
         metadata: {
@@ -304,7 +329,8 @@ async function cancelBill(billId, reason, userId) {
       );
     }
 
-    if (parseFloat(bill.paidAmount) > 0) {
+    // FIXED: Use Decimal for comparison
+    if (new Decimal(bill.paidAmount || 0).greaterThan(0)) {
       throw new ValidationError(
         `Cannot cancel bill with payments. Bill has ${bill.paidAmount} paid.`
       );
@@ -327,16 +353,20 @@ async function cancelBill(billId, reason, userId) {
     });
 
     // 5. Update PO billed amount
-    const newBilledAmount = formatAmount(parseFloat(po.billedAmount) - parseFloat(bill.total));
+    // FIXED: Use Decimal for precise subtraction
+    const newBilledAmount = formatAmount(new Decimal(po.billedAmount || 0).minus(new Decimal(bill.total)).toNumber());
     let newPOStatus = po.status;
 
     // Revert from Paid if needed
-    if (po.status === 'Paid' && newBilledAmount < parseFloat(po.total)) {
+    // FIXED: Use Decimal for comparison
+    const poTotalDec = new Decimal(po.total);
+    const newBilledDec = new Decimal(newBilledAmount);
+    if (po.status === 'Paid' && newBilledDec.lessThan(poTotalDec)) {
       newPOStatus = 'Partial';
     }
 
     // Revert from Partial if all bills cancelled
-    if (po.status === 'Partial' && newBilledAmount === 0) {
+    if (po.status === 'Partial' && newBilledDec.isZero()) {
       newPOStatus = 'Sent';
     }
 
@@ -353,7 +383,8 @@ async function cancelBill(billId, reason, userId) {
       where: { id: bill.vendorId }
     });
 
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) - parseFloat(bill.total));
+    // FIXED: Use Decimal for precise vendor balance calculation
+    const newVendorBalance = formatAmount(new Decimal(vendor.currentBalance || 0).minus(new Decimal(bill.total)).toNumber());
 
     await tx.vendorLedger.create({
       data: {
@@ -361,7 +392,7 @@ async function cancelBill(billId, reason, userId) {
         entryDate: new Date(),
         description: `Bill ${bill.billNumber} cancelled: ${reason}`,
         debit: 0,
-        credit: parseFloat(bill.total),
+        credit: formatAmount(bill.total),
         balance: newVendorBalance,
         billId: bill.id
       }
@@ -384,7 +415,7 @@ async function cancelBill(billId, reason, userId) {
         beforeState: {
           billStatus: bill.status,
           poStatus: po.status,
-          billedAmount: parseFloat(po.billedAmount)
+          billedAmount: formatAmount(po.billedAmount || 0)
         },
         afterState: {
           billStatus: 'Cancelled',
@@ -409,7 +440,7 @@ async function cancelBill(billId, reason, userId) {
     logger.info(`Bill cancelled: ${bill.billNumber}`, {
       billId,
       reason,
-      refundedToPO: parseFloat(bill.total)
+      refundedToPO: formatAmount(bill.total)
     });
 
     return cancelled;
@@ -425,9 +456,8 @@ async function cancelBill(billId, reason, userId) {
  * @returns {Promise<string>} New status
  */
 async function updateBillStatus(tx, billId) {
-  const bill = await tx.bill.findUnique({
-    where: { id: billId }
-  });
+  // FIXED: Add row-level lock to prevent race condition
+  const bill = await lockForUpdate(tx, 'Bill', billId);
 
   if (!bill) {
     throw new ValidationError('Bill not found');
@@ -437,7 +467,7 @@ async function updateBillStatus(tx, billId) {
 
   if (compareAmounts(bill.paidAmount, bill.total)) {
     newStatus = 'Paid';
-  } else if (parseFloat(bill.paidAmount) > 0) {
+  } else if (new Decimal(bill.paidAmount || 0).greaterThan(0)) {
     newStatus = 'Partial';
   }
 
@@ -475,10 +505,12 @@ async function getBill(billId) {
   }
 
   // Add computed fields
-  bill.remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
+  // FIXED: Use Decimal for precise remaining amount calculation
+  bill.remainingAmount = formatAmount(new Decimal(bill.total).minus(new Decimal(bill.paidAmount || 0)).toNumber());
   bill.isCancelled = !!bill.cancelledAt;
   bill.canBePaid = !bill.cancelledAt && bill.remainingAmount > 0;
-  bill.canBeCancelled = !bill.cancelledAt && bill.status === 'Unpaid' && parseFloat(bill.paidAmount) === 0;
+  // FIXED: Use Decimal for comparison
+  bill.canBeCancelled = !bill.cancelledAt && bill.status === 'Unpaid' && new Decimal(bill.paidAmount || 0).isZero();
 
   return bill;
 }
@@ -523,6 +555,8 @@ async function getBills(filters = {}) {
   const skip = (page - 1) * limit;
 
   // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  // FIXED: Add performance monitoring
+  const queryStartTime = Date.now();
   const [bills, totalCount, statistics] = await Promise.all([
     // Get paginated bills with selective field loading
     db.prisma.bill.findMany({
@@ -583,7 +617,9 @@ async function getBills(filters = {}) {
 
   // Add computed fields
   const billsWithFields = bills.map(bill => {
-    const remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
+    const remainingAmount = formatAmount(
+      new Decimal(bill.total || 0).minus(new Decimal(bill.paidAmount || 0)).toNumber()
+    );
     return {
       ...bill,
       remainingAmount,
@@ -601,8 +637,8 @@ async function getBills(filters = {}) {
   };
 
   statistics.forEach(stat => {
-    const total = parseFloat(stat._sum.total || 0);
-    const paid = parseFloat(stat._sum.paidAmount || 0);
+    const total = new Decimal(stat._sum.total || 0).toNumber();
+    const paid = new Decimal(stat._sum.paidAmount || 0).toNumber();
 
     stats.totalAmount += total;
     stats.paidAmount += paid;
@@ -615,6 +651,17 @@ async function getBills(filters = {}) {
   });
 
   stats.remainingAmount = formatAmount(stats.totalAmount - stats.paidAmount);
+
+  // FIXED: Log slow queries for performance optimization
+  const queryTime = Date.now() - queryStartTime;
+  if (queryTime > 1000) {
+    logger.warn('Slow bill query detected', {
+      queryTime,
+      filters,
+      resultCount: bills.length,
+      totalCount
+    });
+  }
 
   return {
     bills: billsWithFields,
@@ -645,7 +692,7 @@ async function updateBill(billId, updates, userId) {
       throw new ValidationError('Can only update unpaid bills');
     }
 
-    if (parseFloat(bill.paidAmount) > 0) {
+    if (new Decimal(bill.paidAmount || 0).greaterThan(0)) {
       throw new ValidationError('Cannot update bill with payments');
     }
 
@@ -672,14 +719,14 @@ async function updateBill(billId, updates, userId) {
         billId,
         action: 'BILL_UPDATED',
         beforeState: {
-          total: parseFloat(bill.total),
-          subtotal: parseFloat(bill.subtotal),
-          taxAmount: parseFloat(bill.taxAmount)
+          total: new Decimal(bill.total || 0).toNumber(),
+          subtotal: new Decimal(bill.subtotal || 0).toNumber(),
+          taxAmount: new Decimal(bill.taxAmount || 0).toNumber()
         },
         afterState: {
-          total: parseFloat(updated.total),
-          subtotal: parseFloat(updated.subtotal),
-          taxAmount: parseFloat(updated.taxAmount)
+          total: new Decimal(updated.total || 0).toNumber(),
+          subtotal: new Decimal(updated.subtotal || 0).toNumber(),
+          taxAmount: new Decimal(updated.taxAmount || 0).toNumber()
         },
         performedBy: userId
       }

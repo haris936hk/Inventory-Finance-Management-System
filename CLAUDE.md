@@ -160,7 +160,7 @@ Two specialized audit models track financial operations:
 - Tax calculations maintain 4 decimal places
 - Final invoice/bill totals use 4 decimal places
 
-## Environment Configuration
+## Environment Configurationwdwwa
 
 ### Backend Environment Variables
 - `DATABASE_URL`: PostgreSQL connection string (Supabase)

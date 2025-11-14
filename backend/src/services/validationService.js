@@ -10,7 +10,8 @@
  */
 
 const logger = require('../config/logger');
-const { formatAmount, compareAmounts } = require('../utils/transactionWrapper');
+const { formatAmount, compareAmounts, Decimal } = require('../utils/transactionWrapper');
+const db = require('../config/database');
 
 class ValidationService {
   /**
@@ -442,9 +443,100 @@ class ValidationService {
 
   /**
    * Reconcile customer ledger balance with customer.currentBalance
+   * FIXED: Recalculates balance from complete ledger history instead of just checking latest entry
    */
-  static async reconcileCustomerBalance(tx, customerId) {
+  static async reconcileCustomerBalance(customerId) {
+    // Use db.prisma for non-transactional read
+    const prisma = db.prisma;
+
     // Get customer
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId }
+    });
+
+    if (!customer) {
+      throw new Error(`Customer not found: ${customerId}`);
+    }
+
+    // FIXED: Calculate balance from SUM of all ledger entries (more reliable)
+    const ledgerAggregate = await prisma.customerLedger.aggregate({
+      where: { customerId },
+      _sum: {
+        debit: true,
+        credit: true
+      }
+    });
+
+    // Calculate expected balance using Decimal for precision
+    const openingBalance = new Decimal(customer.openingBalance || 0);
+    const totalDebit = new Decimal(ledgerAggregate._sum.debit || 0);
+    const totalCredit = new Decimal(ledgerAggregate._sum.credit || 0);
+    const calculatedBalance = openingBalance.plus(totalDebit).minus(totalCredit);
+    const expectedBalance = parseFloat(calculatedBalance.toFixed(4));
+
+    const customerBalance = parseFloat(customer.currentBalance);
+
+    // Allow 1 cent tolerance
+    const isReconciled = Math.abs(expectedBalance - customerBalance) <= 0.01;
+
+    if (!isReconciled) {
+      logger.warn('Customer ledger balance mismatch', {
+        customerId,
+        customerName: customer.name,
+        openingBalance: customer.openingBalance,
+        totalDebit: ledgerAggregate._sum.debit,
+        totalCredit: ledgerAggregate._sum.credit,
+        calculatedBalance: expectedBalance,
+        customerBalance,
+        difference: customerBalance - expectedBalance
+      });
+
+      return {
+        isReconciled: false,
+        customerBalance: customerBalance,
+        ledgerBalance: expectedBalance,
+        difference: customerBalance - expectedBalance
+      };
+    }
+
+    return {
+      isReconciled: true,
+      customerBalance: customerBalance,
+      ledgerBalance: expectedBalance,
+      difference: 0
+    };
+  }
+
+  /**
+   * Auto-fix customer balance by recalculating from ledger
+   *
+   * CRITICAL WARNINGS:
+   * - Only use this in a transaction to prevent race conditions
+   * - This function modifies balance WITHOUT creating compensating ledger entries
+   * - Use ONLY in data repair scenarios, not normal operations
+   * - Violates audit trail integrity (balance change without ledger entry)
+   *
+   * WHEN TO USE:
+   * - Database corruption detected (balance drift from ledger)
+   * - Data migration/import corrections
+   * - Manual fixes after system errors
+   *
+   * RECOMMENDED: After calling this, create a "Balance Adjustment" ledger entry:
+   * ```
+   * const adjustment = newBalance - oldBalance;
+   * await tx.customerLedger.create({
+   *   data: {
+   *     customerId,
+   *     entryDate: new Date(),
+   *     description: 'Balance adjustment - System auto-fix',
+   *     debit: adjustment > 0 ? adjustment : 0,
+   *     credit: adjustment < 0 ? Math.abs(adjustment) : 0,
+   *     balance: newBalance
+   *   }
+   * });
+   * ```
+   */
+  static async autoFixCustomerBalance(tx, customerId) {
     const customer = await tx.customer.findUnique({
       where: { id: customerId }
     });
@@ -453,67 +545,139 @@ class ValidationService {
       throw new Error(`Customer not found: ${customerId}`);
     }
 
-    // Get latest ledger entry
-    const latestLedgerEntry = await tx.customerLedger.findFirst({
+    // Calculate correct balance from ledger
+    const ledgerAggregate = await tx.customerLedger.aggregate({
       where: { customerId },
-      orderBy: { entryDate: 'desc' }
+      _sum: {
+        debit: true,
+        credit: true
+      }
     });
 
-    if (!latestLedgerEntry) {
-      // No ledger entries, balance should be opening balance
-      const expectedBalance = parseFloat(customer.openingBalance || 0);
-      const actualBalance = parseFloat(customer.currentBalance);
+    const openingBalance = new Decimal(customer.openingBalance || 0);
+    const totalDebit = new Decimal(ledgerAggregate._sum.debit || 0);
+    const totalCredit = new Decimal(ledgerAggregate._sum.credit || 0);
+    const correctBalance = openingBalance.plus(totalDebit).minus(totalCredit);
+    const correctBalanceNumber = parseFloat(correctBalance.toFixed(4));
 
-      if (Math.abs(actualBalance - expectedBalance) > 0.01) {
-        logger.warn('Customer balance mismatch (no ledger entries)', {
-          customerId,
-          expectedBalance,
-          actualBalance,
-          difference: actualBalance - expectedBalance
-        });
+    // Update customer balance
+    await tx.customer.update({
+      where: { id: customerId },
+      data: { currentBalance: correctBalanceNumber }
+    });
 
-        return {
-          isBalanced: false,
-          expected: expectedBalance,
-          actual: actualBalance,
-          difference: actualBalance - expectedBalance
-        };
-      }
+    logger.info(`Auto-fixed customer balance`, {
+      customerId,
+      customerName: customer.name,
+      oldBalance: customer.currentBalance,
+      newBalance: correctBalanceNumber,
+      difference: correctBalanceNumber - customer.currentBalance
+    });
 
-      return { isBalanced: true, expected: expectedBalance, actual: actualBalance };
-    }
-
-    // Compare ledger balance with customer balance
-    const ledgerBalance = parseFloat(latestLedgerEntry.balance);
-    const customerBalance = parseFloat(customer.currentBalance);
-
-    if (Math.abs(ledgerBalance - customerBalance) > 0.01) {
-      logger.warn('Customer ledger balance mismatch', {
-        customerId,
-        customerName: customer.name,
-        ledgerBalance,
-        customerBalance,
-        difference: customerBalance - ledgerBalance,
-        lastLedgerEntry: latestLedgerEntry.id,
-        lastLedgerDate: latestLedgerEntry.entryDate
-      });
-
-      return {
-        isBalanced: false,
-        expected: ledgerBalance,
-        actual: customerBalance,
-        difference: customerBalance - ledgerBalance
-      };
-    }
-
-    return { isBalanced: true, expected: ledgerBalance, actual: customerBalance };
+    return {
+      customerId,
+      oldBalance: customer.currentBalance,
+      newBalance: correctBalanceNumber,
+      fixed: true
+    };
   }
 
   /**
    * Reconcile vendor ledger balance with vendor.currentBalance
+   * FIXED: Recalculates balance from complete ledger history instead of just checking latest entry
    */
-  static async reconcileVendorBalance(tx, vendorId) {
+  static async reconcileVendorBalance(vendorId) {
+    // Use db.prisma for non-transactional read
+    const prisma = db.prisma;
+
     // Get vendor
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: vendorId }
+    });
+
+    if (!vendor) {
+      throw new Error(`Vendor not found: ${vendorId}`);
+    }
+
+    // FIXED: Calculate balance from SUM of all ledger entries (more reliable)
+    const ledgerAggregate = await prisma.vendorLedger.aggregate({
+      where: { vendorId },
+      _sum: {
+        debit: true,
+        credit: true
+      }
+    });
+
+    // Calculate expected balance using Decimal for precision
+    const openingBalance = new Decimal(vendor.openingBalance || 0);
+    const totalDebit = new Decimal(ledgerAggregate._sum.debit || 0);
+    const totalCredit = new Decimal(ledgerAggregate._sum.credit || 0);
+    const calculatedBalance = openingBalance.plus(totalDebit).minus(totalCredit);
+    const expectedBalance = parseFloat(calculatedBalance.toFixed(4));
+
+    const vendorBalance = parseFloat(vendor.currentBalance);
+
+    // Allow 1 cent tolerance
+    const isReconciled = Math.abs(expectedBalance - vendorBalance) <= 0.01;
+
+    if (!isReconciled) {
+      logger.warn('Vendor ledger balance mismatch', {
+        vendorId,
+        vendorName: vendor.name,
+        openingBalance: vendor.openingBalance,
+        totalDebit: ledgerAggregate._sum.debit,
+        totalCredit: ledgerAggregate._sum.credit,
+        calculatedBalance: expectedBalance,
+        vendorBalance,
+        difference: vendorBalance - expectedBalance
+      });
+
+      return {
+        isReconciled: false,
+        vendorBalance: vendorBalance,
+        ledgerBalance: expectedBalance,
+        difference: vendorBalance - expectedBalance
+      };
+    }
+
+    return {
+      isReconciled: true,
+      vendorBalance: vendorBalance,
+      ledgerBalance: expectedBalance,
+      difference: 0
+    };
+  }
+
+  /**
+   * Auto-fix vendor balance by recalculating from ledger
+   *
+   * CRITICAL WARNINGS:
+   * - Only use this in a transaction to prevent race conditions
+   * - This function modifies balance WITHOUT creating compensating ledger entries
+   * - Use ONLY in data repair scenarios, not normal operations
+   * - Violates audit trail integrity (balance change without ledger entry)
+   *
+   * WHEN TO USE:
+   * - Database corruption detected (balance drift from ledger)
+   * - Data migration/import corrections
+   * - Manual fixes after system errors
+   *
+   * RECOMMENDED: After calling this, create a "Balance Adjustment" ledger entry:
+   * ```
+   * const adjustment = newBalance - oldBalance;
+   * await tx.vendorLedger.create({
+   *   data: {
+   *     vendorId,
+   *     entryDate: new Date(),
+   *     description: 'Balance adjustment - System auto-fix',
+   *     debit: adjustment > 0 ? adjustment : 0,
+   *     credit: adjustment < 0 ? Math.abs(adjustment) : 0,
+   *     balance: newBalance
+   *   }
+   * });
+   * ```
+   */
+  static async autoFixVendorBalance(tx, vendorId) {
     const vendor = await tx.vendor.findUnique({
       where: { id: vendorId }
     });
@@ -522,60 +686,41 @@ class ValidationService {
       throw new Error(`Vendor not found: ${vendorId}`);
     }
 
-    // Get latest ledger entry
-    const latestLedgerEntry = await tx.vendorLedger.findFirst({
+    // Calculate correct balance from ledger
+    const ledgerAggregate = await tx.vendorLedger.aggregate({
       where: { vendorId },
-      orderBy: { entryDate: 'desc' }
+      _sum: {
+        debit: true,
+        credit: true
+      }
     });
 
-    if (!latestLedgerEntry) {
-      // No ledger entries, balance should be opening balance
-      const expectedBalance = parseFloat(vendor.openingBalance || 0);
-      const actualBalance = parseFloat(vendor.currentBalance);
+    const openingBalance = new Decimal(vendor.openingBalance || 0);
+    const totalDebit = new Decimal(ledgerAggregate._sum.debit || 0);
+    const totalCredit = new Decimal(ledgerAggregate._sum.credit || 0);
+    const correctBalance = openingBalance.plus(totalDebit).minus(totalCredit);
+    const correctBalanceNumber = parseFloat(correctBalance.toFixed(4));
 
-      if (Math.abs(actualBalance - expectedBalance) > 0.01) {
-        logger.warn('Vendor balance mismatch (no ledger entries)', {
-          vendorId,
-          expectedBalance,
-          actualBalance,
-          difference: actualBalance - expectedBalance
-        });
+    // Update vendor balance
+    await tx.vendor.update({
+      where: { id: vendorId },
+      data: { currentBalance: correctBalanceNumber }
+    });
 
-        return {
-          isBalanced: false,
-          expected: expectedBalance,
-          actual: actualBalance,
-          difference: actualBalance - expectedBalance
-        };
-      }
+    logger.info(`Auto-fixed vendor balance`, {
+      vendorId,
+      vendorName: vendor.name,
+      oldBalance: vendor.currentBalance,
+      newBalance: correctBalanceNumber,
+      difference: correctBalanceNumber - vendor.currentBalance
+    });
 
-      return { isBalanced: true, expected: expectedBalance, actual: actualBalance };
-    }
-
-    // Compare ledger balance with vendor balance
-    const ledgerBalance = parseFloat(latestLedgerEntry.balance);
-    const vendorBalance = parseFloat(vendor.currentBalance);
-
-    if (Math.abs(ledgerBalance - vendorBalance) > 0.01) {
-      logger.warn('Vendor ledger balance mismatch', {
-        vendorId,
-        vendorName: vendor.name,
-        ledgerBalance,
-        vendorBalance,
-        difference: vendorBalance - ledgerBalance,
-        lastLedgerEntry: latestLedgerEntry.id,
-        lastLedgerDate: latestLedgerEntry.entryDate
-      });
-
-      return {
-        isBalanced: false,
-        expected: ledgerBalance,
-        actual: vendorBalance,
-        difference: vendorBalance - ledgerBalance
-      };
-    }
-
-    return { isBalanced: true, expected: ledgerBalance, actual: vendorBalance };
+    return {
+      vendorId,
+      oldBalance: vendor.currentBalance,
+      newBalance: correctBalanceNumber,
+      fixed: true
+    };
   }
 }
 

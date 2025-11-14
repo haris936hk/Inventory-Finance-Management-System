@@ -10,6 +10,7 @@ const logger = require('../config/logger');
 const {
   withTransaction,
   lockForUpdate,
+  acquireAdvisoryLock,
   ValidationError,
   ConcurrencyError,
   InsufficientBalanceError,
@@ -56,13 +57,13 @@ function calculateInvoiceStatus(invoice) {
     return 'Paid';
   }
 
-  // Check if overdue (past due date and not fully paid)
-  if (dueDate < now && paid < total) {
+  // FIXED: Check if overdue (past due date and not fully paid) using Decimal comparison
+  if (dueDate < now && new Decimal(paid).lessThan(total)) {
     return 'Overdue';
   }
 
-  // Check if partially paid
-  if (paid > 0 && paid < total) {
+  // FIXED: Check if partially paid using Decimal comparison
+  if (new Decimal(paid).greaterThan(0) && new Decimal(paid).lessThan(total)) {
     return 'Partial';
   }
 
@@ -159,8 +160,9 @@ async function createInvoice(data, userId) {
     }
 
     // CRITICAL FIX: Validate all items have purchase price for COGS calculation
+    // FIXED: Use Decimal for precise comparison
     const itemsWithoutPrice = items.filter(item =>
-      !item.purchasePrice || parseFloat(item.purchasePrice) <= 0
+      !item.purchasePrice || new Decimal(item.purchasePrice || 0).lessThanOrEqualTo(0)
     );
     if (itemsWithoutPrice.length > 0) {
       const itemsDetails = itemsWithoutPrice.map(item => ({
@@ -780,6 +782,8 @@ async function getInvoices(filters = {}) {
   const skip = (page - 1) * limit;
 
   // PERFORMANCE OPTIMIZATION: Parallel queries for data + count + statistics
+  // FIXED: Add performance monitoring
+  const queryStartTime = Date.now();
   const [invoices, totalCount, statistics] = await Promise.all([
     // Get paginated invoices with selective field loading
     db.prisma.invoice.findMany({
@@ -855,6 +859,17 @@ async function getInvoices(filters = {}) {
 
   stats.pendingAmount = stats.totalAmount - stats.paidAmount;
 
+  // FIXED: Log slow queries for performance optimization
+  const queryTime = Date.now() - queryStartTime;
+  if (queryTime > 1000) {
+    logger.warn('Slow invoice query detected', {
+      queryTime,
+      filters,
+      resultCount: invoices.length,
+      totalCount
+    });
+  }
+
   return {
     invoices,
     pagination: {
@@ -869,39 +884,61 @@ async function getInvoices(filters = {}) {
 
 /**
  * Auto-update overdue invoices (batch job)
+ * FIXED: Uses advisory lock to prevent concurrent execution across multiple Electron instances
+ * FIXED: Uses atomic UPDATE query instead of loop to prevent race conditions
  * Should be run daily via cron
  *
- * @returns {Promise<number>} Number of invoices updated
+ * @returns {Promise<Object>} Update result with count and skipped flag
  */
 async function updateOverdueInvoices() {
-  const now = new Date();
+  return withTransaction(async (tx) => {
+    // FIXED: Acquire advisory lock to prevent concurrent execution
+    // This is critical for Electron desktop app where multiple instances may run the same scheduler
+    const lockKey = 'overdue_invoice_update_job';
+    const locked = await acquireAdvisoryLock(tx, lockKey);
 
-  const overdueInvoices = await db.prisma.invoice.findMany({
-    where: {
-      status: { in: ['Sent', 'Partial'] },
-      dueDate: { lt: now },
-      cancelledAt: null,
-      deletedAt: null,
-      paidAmount: { lt: db.prisma.invoice.fields.total }
+    if (!locked) {
+      logger.info('Another instance is already running overdue invoice update job - skipping');
+      return { updated: 0, skipped: true };
     }
-  });
 
-  let updated = 0;
+    const now = new Date();
 
-  for (const invoice of overdueInvoices) {
-    try {
-      await db.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'Overdue' }
+    // FIXED: Use Prisma's $queryRaw for safe parameterized query with field comparison
+    // This approach prevents SQL injection while supporting paidAmount < total comparison
+    const invoicesToUpdate = await tx.$queryRaw`
+      SELECT id, "invoiceNumber"
+      FROM "Invoice"
+      WHERE status IN ('Sent', 'Partial')
+        AND "dueDate" < ${now}
+        AND "cancelledAt" IS NULL
+        AND "deletedAt" IS NULL
+        AND "paidAmount" < total
+    `;
+
+    const updated = invoicesToUpdate.length;
+
+    // FIXED: Use atomic updateMany for efficiency
+    if (updated > 0) {
+      await tx.invoice.updateMany({
+        where: {
+          id: { in: invoicesToUpdate.map(inv => inv.id) }
+        },
+        data: {
+          status: 'Overdue',
+          updatedAt: now
+        }
       });
-      updated++;
-    } catch (error) {
-      logger.error(`Failed to mark invoice ${invoice.invoiceNumber} as overdue`, error);
     }
-  }
 
-  logger.info(`Marked ${updated} invoices as overdue`);
-  return updated;
+    const updatedInvoices = invoicesToUpdate;
+
+    logger.info(`Marked ${updated} invoices as overdue`, {
+      invoiceNumbers: updatedInvoices.map(inv => inv.invoiceNumber).slice(0, 10) // Log first 10
+    });
+
+    return { updated, skipped: false };
+  });
 }
 
 module.exports = {

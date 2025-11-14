@@ -55,14 +55,29 @@ class InventoryLifecycleService {
     // Execute within provided transaction or create a new one
     const execute = async (prisma) => {
       // CRITICAL FIX: Use SELECT FOR UPDATE to lock items and prevent race conditions
+      // FIXED: Add error context for lock failures
       // Lock items in consistent order (by ID) to prevent deadlocks
-      await prisma.$executeRaw`
-        SELECT * FROM "Item"
-        WHERE id = ANY(${itemIds}::uuid[])
-        AND "deletedAt" IS NULL
-        ORDER BY id ASC
-        FOR UPDATE
-      `;
+      try {
+        await prisma.$executeRaw`
+          SELECT * FROM "Item"
+          WHERE id = ANY(${itemIds}::uuid[])
+          AND "deletedAt" IS NULL
+          ORDER BY id ASC
+          FOR UPDATE
+        `;
+      } catch (error) {
+        logger.error('Failed to lock items for reservation', {
+          itemIds,
+          invoiceId,
+          sessionId,
+          errorCode: error.code,
+          errorMessage: error.message
+        });
+        throw new ValidationError(
+          `Failed to lock inventory items for reservation: ${error.message}. ` +
+          `This may indicate a deadlock or invalid item IDs. Please try again.`
+        );
+      }
 
       // Now fetch the locked items
       const items = await prisma.item.findMany({
@@ -174,8 +189,26 @@ class InventoryLifecycleService {
         orderBy: { id: 'asc' }
       });
 
+      // FIXED: Enhanced empty result handling with diagnostic information
       if (reservedItems.length === 0) {
-        logger.warn(`No reserved items found for Invoice ${invoiceId}`);
+        // Check if invoice exists and get its status for better diagnostics
+        const invoice = await prisma.invoice.findUnique({
+          where: { id: invoiceId },
+          select: { invoiceNumber: true, status: true }
+        });
+
+        logger.warn(`No reserved items found for Invoice ${invoiceId}`, {
+          invoiceNumber: invoice?.invoiceNumber,
+          invoiceStatus: invoice?.status,
+          invoiceExists: !!invoice,
+          possibleReasons: [
+            'Items may have already been released',
+            'Items may have been confirmed (sold)',
+            'Invoice may not have had any items reserved',
+            'Items may have been manually modified'
+          ]
+        });
+
         return {
           releasedItems: [],
           releaseCount: 0,
@@ -233,10 +266,11 @@ class InventoryLifecycleService {
    * Mark items as sold when invoice is fully paid (Reserved → Sold)
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User processing the payment
+   * @param {Object} tx - Optional Prisma transaction client (if null, creates new transaction)
    * @returns {Promise<Object>} Sale result
    */
-  async markItemsAsSoldForInvoice(invoiceId, userId) {
-    return await db.transaction(async (prisma) => {
+  async markItemsAsSoldForInvoice(invoiceId, userId, tx = null) {
+    const executeFn = async (prisma) => {
       // Find all items reserved for this invoice
       const reservedItems = await prisma.item.findMany({
         where: {
@@ -248,8 +282,26 @@ class InventoryLifecycleService {
         orderBy: { id: 'asc' }
       });
 
+      // FIXED: Enhanced empty result handling with diagnostic information
       if (reservedItems.length === 0) {
-        logger.warn(`No reserved items found for Invoice ${invoiceId}`);
+        // Check if invoice exists and get its status for better diagnostics
+        const invoice = await prisma.invoice.findUnique({
+          where: { id: invoiceId },
+          select: { invoiceNumber: true, status: true }
+        });
+
+        logger.warn(`No reserved items found for confirmation (Invoice ${invoiceId})`, {
+          invoiceNumber: invoice?.invoiceNumber,
+          invoiceStatus: invoice?.status,
+          invoiceExists: !!invoice,
+          possibleReasons: [
+            'Items may have already been confirmed (sold)',
+            'Items may have been released back to Available',
+            'Invoice may not have had any items reserved',
+            'Items may have been manually modified'
+          ]
+        });
+
         return {
           soldItems: [],
           saleCount: 0,
@@ -297,7 +349,14 @@ class InventoryLifecycleService {
         saleCount: reservedItems.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeFn(tx);
+    } else {
+      return await db.transaction(executeFn);
+    }
   }
 
   /**
@@ -320,8 +379,25 @@ class InventoryLifecycleService {
         orderBy: { id: 'asc' }
       });
 
+      // FIXED: Enhanced error message with diagnostic information
       if (soldItems.length === 0) {
-        throw new Error(`No sold items found for Invoice ${invoiceId}`);
+        // Check invoice status for better error message
+        const invoice = await prisma.invoice.findUnique({
+          where: { id: invoiceId },
+          select: { invoiceNumber: true, status: true }
+        });
+
+        logger.error(`No sold items found for Invoice ${invoiceId} during void operation`, {
+          invoiceNumber: invoice?.invoiceNumber,
+          invoiceStatus: invoice?.status,
+          invoiceExists: !!invoice
+        });
+
+        throw new Error(
+          `No sold items found for Invoice ${invoice?.invoiceNumber || invoiceId}. ` +
+          `This invoice may have already been voided, or items were never marked as sold. ` +
+          `Invoice status: ${invoice?.status || 'UNKNOWN'}`
+        );
       }
 
       // Update all items to Delivered status
