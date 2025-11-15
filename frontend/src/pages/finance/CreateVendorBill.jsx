@@ -145,10 +145,9 @@ const CreateVendorBill = () => {
   };
 
   // Filter purchase orders for selected vendor
-  const filteredPurchaseOrders = React.useMemo(() => {
-    if (!selectedVendor || !purchaseOrders) return [];
-    return purchaseOrders.filter(po => po.vendorId === selectedVendor);
-  }, [selectedVendor, purchaseOrders]);
+  const filteredPurchaseOrders = !selectedVendor || !purchaseOrders
+    ? []
+    : purchaseOrders.filter(po => po.vendorId === selectedVendor);
 
   const lineItemColumns = [
     {

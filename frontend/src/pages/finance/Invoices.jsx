@@ -25,11 +25,10 @@ const Invoices = () => {
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  // PERFORMANCE OPTIMIZATION: Add pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // PERFORMANCE OPTIMIZATION: Fetch paginated invoices from backend
+  // Fetch invoices
   const { data: response, isLoading } = useQuery(
     ['invoices', filters, page, pageSize],
     async () => {
@@ -40,41 +39,34 @@ const Invoices = () => {
     }
   );
 
-  // Extract data from paginated response
   const invoicesData = response?.invoices || [];
   const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
   const backendStatistics = response?.statistics || {};
 
-  // Fetch customers for filter
+  // Fetch customers
   const { data: customersResponse } = useQuery('customers', async () => {
     const response = await axios.get('/finance/customers', { params: { limit: 1000 } });
     return response.data.data;
   });
   const customers = customersResponse?.customers || [];
 
-  // PERFORMANCE OPTIMIZATION: Use backend statistics instead of client-side calculations
-  const statistics = React.useMemo(() => {
-    if (!backendStatistics.byStatus) {
-      return { total: 0, paid: 0, pending: 0, overdue: 0 };
-    }
+  // Simple statistics calculation
+  const paid = backendStatistics.byStatus?.Paid?.total || 0;
+  const overdue = (backendStatistics.byStatus?.Overdue?.total || 0) -
+                  (backendStatistics.byStatus?.Overdue?.paid || 0);
+  const partial = (backendStatistics.byStatus?.Partial?.total || 0) -
+                  (backendStatistics.byStatus?.Partial?.paid || 0);
+  const sent = (backendStatistics.byStatus?.Sent?.total || 0) -
+               (backendStatistics.byStatus?.Sent?.paid || 0);
+  const draft = (backendStatistics.byStatus?.Draft?.total || 0) -
+                (backendStatistics.byStatus?.Draft?.paid || 0);
 
-    const paid = backendStatistics.byStatus.Paid?.total || 0;
-    const overdue = (backendStatistics.byStatus.Overdue?.total || 0) -
-                    (backendStatistics.byStatus.Overdue?.paid || 0);
-    const partial = (backendStatistics.byStatus.Partial?.total || 0) -
-                    (backendStatistics.byStatus.Partial?.paid || 0);
-    const sent = (backendStatistics.byStatus.Sent?.total || 0) -
-                 (backendStatistics.byStatus.Sent?.paid || 0);
-    const draft = (backendStatistics.byStatus.Draft?.total || 0) -
-                  (backendStatistics.byStatus.Draft?.paid || 0);
-
-    return {
-      total: backendStatistics.totalAmount || 0,
-      paid: paid,
-      pending: partial + sent + draft,
-      overdue: overdue
-    };
-  }, [backendStatistics]);
+  const statistics = {
+    total: backendStatistics.totalAmount || 0,
+    paid: paid,
+    pending: partial + sent + draft,
+    overdue: overdue
+  };
 
   // Update status mutation
   const updateStatusMutation = useMutation(

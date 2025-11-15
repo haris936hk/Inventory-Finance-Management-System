@@ -40,42 +40,14 @@ const CreateInvoice = () => {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [total, setTotal] = useState(0);
 
-  // Fetch customers for dropdown - direct fresh fetch without caching
-  const { data: customersData, refetch: refetchCustomers, isLoading: customersLoading } = useQuery(
-    ['customers-invoice-dropdown'],
+  // Fetch customers
+  const { data: customers = [], refetch: refetchCustomers, isLoading: customersLoading } = useQuery(
+    'customers',
     async () => {
-      const response = await axios.get('/finance/customers', {
-        params: { limit: 100 } // Max allowed by API validation
-      });
-
-      // Extract customers from paginated response
-      const customersArray = response.data?.data?.customers;
-
-      // Always return an array
-      if (!Array.isArray(customersArray)) {
-        console.error('Invalid customers data:', response.data);
-        return [];
-      }
-
-      return customersArray;
-    },
-    {
-      staleTime: 0, // Always fetch fresh data
-      cacheTime: 0, // Don't cache
-      refetchOnMount: true,
-      refetchOnWindowFocus: false,
-      initialData: [], // Provide initial empty array to prevent undefined
-      onError: (error) => {
-        console.error('Failed to fetch customers:', error);
-        message.error('Failed to load customers');
-      }
+      const response = await axios.get('/finance/customers');
+      return response.data?.data?.customers || [];
     }
   );
-
-  // Ensure customers is always an array (defense against cache pollution)
-  const customers = React.useMemo(() => {
-    return Array.isArray(customersData) ? customersData : [];
-  }, [customersData]);
 
   // Fetch settings for default tax rate
   const { data: settings } = useQuery('settings', async () => {
@@ -208,11 +180,10 @@ const CreateInvoice = () => {
                     showSearch
                     loading={customersLoading}
                     optionFilterProp="children"
-                    notFoundContent={customersLoading ? 'Loading...' : 'No customers found'}
                   >
-                    {Array.isArray(customers) && customers.map(customer => (
+                    {customers.map(customer => (
                       <Select.Option key={customer.id} value={customer.id}>
-                        {customer.name} - {customer.phone}
+                        {customer.name}
                       </Select.Option>
                     ))}
                   </Select>

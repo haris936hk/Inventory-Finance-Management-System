@@ -26,11 +26,10 @@ const VendorPayments = () => {
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  // PERFORMANCE OPTIMIZATION: Add pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // PERFORMANCE OPTIMIZATION: Fetch paginated vendor payments from backend
+  // Fetch vendor payments
   const { data: response, isLoading } = useQuery(
     ['vendor-payments', filters, page, pageSize],
     async () => {
@@ -41,48 +40,44 @@ const VendorPayments = () => {
     }
   );
 
-  // Extract data from paginated response
   const vendorPaymentsData = response?.payments || [];
   const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
   const backendStatistics = response?.statistics || {};
 
-  // Fetch vendors for filter and form
+  // Fetch vendors
   const { data: vendors } = useQuery('vendors', async () => {
     const response = await axios.get('/inventory/vendors', { params: { limit: 1000 } });
     return response.data.data;
   });
 
-  // PERFORMANCE OPTIMIZATION: Use backend statistics for total amount
-  // Method breakdown still calculated client-side from current page
-  const statistics = React.useMemo(() => {
-    const pageStats = vendorPaymentsData.reduce((acc, payment) => {
-      if (payment.voidedAt) return acc; // Skip voided payments
+  // Simple statistics calculation
+  const pageStats = vendorPaymentsData.reduce((acc, payment) => {
+    if (payment.voidedAt) return acc;
 
-      const amount = parseFloat(payment.amount);
-      acc.pageTotal += amount;
+    const amount = parseFloat(payment.amount);
+    acc.pageTotal += amount;
 
-      switch (payment.method) {
-        case 'Cash':
-          acc.cash += amount;
-          break;
-        case 'Bank Transfer':
-          acc.bank += amount;
-          break;
-        case 'Cheque':
-          acc.cheque += amount;
-          break;
-      }
-      return acc;
-    }, { pageTotal: 0, cash: 0, bank: 0, cheque: 0 });
+    switch (payment.method) {
+      case 'Cash':
+        acc.cash += amount;
+        break;
+      case 'Bank Transfer':
+        acc.bank += amount;
+        break;
+      case 'Cheque':
+        acc.cheque += amount;
+        break;
+    }
+    return acc;
+  }, { pageTotal: 0, cash: 0, bank: 0, cheque: 0 });
 
-    return {
-      total: backendStatistics.effectiveAmount || backendStatistics.totalAmount || 0,
-      cash: pageStats.cash,
-      bank: pageStats.bank,
-      cheque: pageStats.cheque,
-      count: pagination.totalCount || 0
-    };
-  }, [vendorPaymentsData, backendStatistics, pagination]);
+  const statistics = {
+    total: backendStatistics.effectiveAmount || backendStatistics.totalAmount || 0,
+    cash: pageStats.cash,
+    bank: pageStats.bank,
+    cheque: pageStats.cheque,
+    count: pagination.totalCount || 0
+  };
 
   // Void Payment mutation
   const voidPaymentMutation = useMutation(
