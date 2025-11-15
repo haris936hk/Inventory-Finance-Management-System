@@ -7,6 +7,7 @@
 
 const db = require('../config/database');
 const logger = require('../config/logger');
+const Decimal = require('decimal.js');
 const {
   withTransaction,
   lockForUpdate,
@@ -189,24 +190,13 @@ async function createInvoice(data, userId) {
         discountType: data.discountType || null,
         discountValue: formatAmount(data.discountValue || 0),
 
-        // Tax
+        // Tax (Simple system)
         taxType: data.taxType || 'GST',
         taxRate: data.taxRate || 0,
         taxAmount,
-        cgstRate: data.cgstRate || 0,
-        cgstAmount: formatAmount(data.cgstAmount || 0),
-        sgstRate: data.sgstRate || 0,
-        sgstAmount: formatAmount(data.sgstAmount || 0),
-        igstRate: data.igstRate || 0,
-        igstAmount: formatAmount(data.igstAmount || 0),
 
         total,
         paidAmount: 0,
-
-        // Tax compliance
-        placeOfSupply: data.placeOfSupply || null,
-        hsn: data.hsn || null,
-        gstinNumber: data.gstinNumber || customer.gstinNumber || null,
 
         // Terms
         terms: data.terms || null,
@@ -446,15 +436,9 @@ async function updateInvoice(invoiceId, updates, userId) {
         discountValue: updates.discountValue ? formatAmount(updates.discountValue) : undefined,
 
         taxAmount: updates.taxAmount ? formatAmount(updates.taxAmount) : undefined,
-        cgstAmount: updates.cgstAmount ? formatAmount(updates.cgstAmount) : undefined,
-        sgstAmount: updates.sgstAmount ? formatAmount(updates.sgstAmount) : undefined,
-        igstAmount: updates.igstAmount ? formatAmount(updates.igstAmount) : undefined,
 
         total: updates.total ? formatAmount(updates.total) : undefined,
 
-        placeOfSupply: updates.placeOfSupply,
-        hsn: updates.hsn,
-        gstinNumber: updates.gstinNumber,
         terms: updates.terms,
         notes: updates.notes,
 

@@ -82,25 +82,6 @@ const getAccountsReceivableAging = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Generate GST Report
-// @route   GET /api/reports/gst
-// @access  Private
-const getGSTReport = asyncHandler(async (req, res) => {
-  const { year, month } = req.query;
-
-  if (!year || !month) {
-    res.status(400);
-    throw new Error('Year and month are required');
-  }
-
-  const report = await financialReportsService.generateGSTReport(parseInt(year), parseInt(month));
-
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
 // @desc    Get Enhanced Financial Dashboard Summary
 // @route   GET /api/reports/financial-dashboard
 // @access  Private
@@ -235,7 +216,6 @@ module.exports = {
   getBalanceSheet,
   getCashFlowStatement,
   getAccountsReceivableAging,
-  getGSTReport,
   getFinancialDashboard,
   getVendorBillsAging,
   getInventoryTurnover,

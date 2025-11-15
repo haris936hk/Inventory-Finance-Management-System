@@ -4,7 +4,119 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Seeding credentials only...');
+  console.log('🌱 Seeding database...');
+
+  // ==================== SEED CHART OF ACCOUNTS ====================
+  console.log('\n📊 Seeding Chart of Accounts...');
+
+  // Assets (1xxx)
+  await prisma.account.upsert({
+    where: { code: '1100' },
+    update: {},
+    create: {
+      code: '1100',
+      name: 'Cash',
+      type: 'Asset',
+      currentBalance: 0
+    }
+  });
+
+  await prisma.account.upsert({
+    where: { code: '1200' },
+    update: {},
+    create: {
+      code: '1200',
+      name: 'Accounts Receivable',
+      type: 'Asset',
+      currentBalance: 0
+    }
+  });
+
+  await prisma.account.upsert({
+    where: { code: '1210' },
+    update: {},
+    create: {
+      code: '1210',
+      name: 'Input Tax Receivable',
+      type: 'Asset',
+      currentBalance: 0
+    }
+  });
+
+  await prisma.account.upsert({
+    where: { code: '1300' },
+    update: {},
+    create: {
+      code: '1300',
+      name: 'Inventory',
+      type: 'Asset',
+      currentBalance: 0
+    }
+  });
+
+  // Liabilities (2xxx)
+  await prisma.account.upsert({
+    where: { code: '2000' },
+    update: {},
+    create: {
+      code: '2000',
+      name: 'Accounts Payable',
+      type: 'Liability',
+      currentBalance: 0
+    }
+  });
+
+  await prisma.account.upsert({
+    where: { code: '2100' },
+    update: {},
+    create: {
+      code: '2100',
+      name: 'Sales Tax Payable',
+      type: 'Liability',
+      currentBalance: 0
+    }
+  });
+
+  // Equity (3xxx)
+  await prisma.account.upsert({
+    where: { code: '3900' },
+    update: {},
+    create: {
+      code: '3900',
+      name: 'Opening Balance Equity',
+      type: 'Equity',
+      currentBalance: 0
+    }
+  });
+
+  // Revenue (4xxx)
+  await prisma.account.upsert({
+    where: { code: '4000' },
+    update: {},
+    create: {
+      code: '4000',
+      name: 'Sales Revenue',
+      type: 'Income',
+      currentBalance: 0
+    }
+  });
+
+  // Expenses (5xxx)
+  await prisma.account.upsert({
+    where: { code: '5000' },
+    update: {},
+    create: {
+      code: '5000',
+      name: 'Cost of Goods Sold',
+      type: 'Expense',
+      currentBalance: 0
+    }
+  });
+
+  console.log('✅ Chart of Accounts seeded (9 accounts)');
+
+  // ==================== SEED ROLES AND USERS ====================
+  console.log('\n👥 Seeding Roles and Users...');
 
   // Create roles
   const inventoryRole = await prisma.role.upsert({
@@ -148,8 +260,15 @@ async function main() {
   console.log('✅ SEEDING COMPLETED SUCCESSFULLY!');
   console.log('========================================');
   console.log('\n📊 Summary:');
+  console.log(`   - 9 Chart of Accounts (Assets, Liabilities, Equity, Income, Expenses)`);
   console.log(`   - 3 Roles (Admin, Inventory Operator, Financial + Inventory Operator)`);
   console.log(`   - 3 Users (admin, inventory, operator)`);
+  console.log('\n💰 Chart of Accounts:');
+  console.log('   Assets: Cash (1100), A/R (1200), Input Tax (1210), Inventory (1300)');
+  console.log('   Liabilities: A/P (2000), Sales Tax Payable (2100)');
+  console.log('   Equity: Opening Balance Equity (3900)');
+  console.log('   Income: Sales Revenue (4000)');
+  console.log('   Expenses: COGS (5000)');
   console.log('\n🔐 Login Credentials:');
   console.log('   Username: admin     | Password: admin123 | Role: Admin');
   console.log('   Username: inventory | Password: admin123 | Role: Inventory Operator');

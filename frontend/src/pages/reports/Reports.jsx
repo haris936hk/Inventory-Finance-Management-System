@@ -10,7 +10,6 @@ import CashFlowReport from '../../components/reports/CashFlowReport';
 import TrialBalanceReport from '../../components/reports/TrialBalanceReport';
 import ARAgingReport from '../../components/reports/ARAgingReport';
 import VendorBillsAgingReport from '../../components/reports/VendorBillsAgingReport';
-import GSTReport from '../../components/reports/GSTReport';
 import InventoryTurnoverReport from '../../components/reports/InventoryTurnoverReport';
 import GrossProfitMarginReport from '../../components/reports/GrossProfitMarginReport';
 
@@ -51,11 +50,6 @@ const Reports = () => {
 
         <TabPane tab="Vendor Bills Aging" key="vendor-bills-aging">
           <VendorBillsAgingReport />
-        </TabPane>
-
-        {/* Tax & Compliance */}
-        <TabPane tab="GST Report" key="gst">
-          <GSTReport />
         </TabPane>
 
         {/* Business Analytics */}

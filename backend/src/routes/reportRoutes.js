@@ -36,11 +36,6 @@ router.get('/accounts-receivable-aging',
   reportController.getAccountsReceivableAging
 );
 
-router.get('/gst',
-  hasPermission(['reports.view']),
-  reportController.getGSTReport
-);
-
 router.get('/financial-dashboard',
   hasPermission(['reports.view']),
   reportController.getFinancialDashboard
