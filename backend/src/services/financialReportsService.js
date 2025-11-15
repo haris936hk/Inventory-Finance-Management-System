@@ -1165,6 +1165,221 @@ class FinancialReportsService {
     return Array.from(productMap.values()).sort((a, b) => b.margin - a.margin);
   }
 
+  // ===================== DASHBOARD =====================
+  /**
+   * Get Dashboard Data
+   * Provides overview metrics for inventory, financial, customers, and sales
+   * @returns {Promise<Object>} Dashboard metrics
+   */
+  async getDashboardData() {
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+      // Get inventory metrics
+      const totalItems = await prisma.item.count({
+        where: {
+          deletedAt: null,
+          NOT: {
+            repaired: 'Returned'
+          }
+        }
+      });
+
+      const availableItems = await prisma.item.count({
+        where: {
+          deletedAt: null,
+          status: {
+            in: ['In Store', 'In Hand', 'In Lab']
+          },
+          NOT: {
+            repaired: 'Returned'
+          }
+        }
+      });
+
+      const soldThisMonth = await prisma.item.count({
+        where: {
+          inventoryStatus: 'Sold',
+          outboundDate: {
+            gte: startOfMonth
+          }
+        }
+      });
+
+      // Get financial metrics
+      const totalRevenue = await prisma.invoice.aggregate({
+        where: {
+          deletedAt: null,
+          status: {
+            in: ['Paid', 'Partial']
+          }
+        },
+        _sum: {
+          paidAmount: true
+        }
+      });
+
+      const monthlyRevenue = await prisma.invoice.aggregate({
+        where: {
+          deletedAt: null,
+          invoiceDate: {
+            gte: startOfMonth
+          }
+        },
+        _sum: {
+          total: true
+        }
+      });
+
+      const outstandingAmount = await prisma.invoice.aggregate({
+        where: {
+          deletedAt: null,
+          status: {
+            in: ['Sent', 'Partial', 'Overdue']
+          }
+        },
+        _sum: {
+          total: true,
+          paidAmount: true
+        }
+      });
+
+      const outstanding = (outstandingAmount._sum.total || 0) - (outstandingAmount._sum.paidAmount || 0);
+
+      // Get customer metrics
+      const totalCustomers = await prisma.customer.count({
+        where: { deletedAt: null }
+      });
+
+      const newCustomersThisMonth = await prisma.customer.count({
+        where: {
+          deletedAt: null,
+          createdAt: {
+            gte: startOfMonth
+          }
+        }
+      });
+
+      // Get top selling products
+      const topProducts = await prisma.item.groupBy({
+        by: ['modelId'],
+        where: {
+          inventoryStatus: 'Sold',
+          outboundDate: {
+            gte: startOfMonth
+          }
+        },
+        _count: {
+          id: true
+        },
+        orderBy: {
+          _count: {
+            id: 'desc'
+          }
+        },
+        take: 5
+      });
+
+      // Fetch model details for top products
+      const topProductDetails = await Promise.all(
+        topProducts.map(async (product) => {
+          try {
+            const model = await prisma.productModel.findUnique({
+              where: { id: product.modelId },
+              include: {
+                company: true,
+                category: true
+              }
+            });
+            return {
+              model,
+              count: product._count.id
+            };
+          } catch (error) {
+            console.error('Error fetching model details:', error);
+            return {
+              model: null,
+              count: product._count.id
+            };
+          }
+        })
+      );
+
+      // Get recent transactions
+      const recentInvoices = await prisma.invoice.findMany({
+        where: { deletedAt: null },
+        include: {
+          customer: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      const recentPayments = await prisma.payment.findMany({
+        where: { deletedAt: null },
+        include: {
+          customer: true
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      return {
+        inventory: {
+          totalItems,
+          availableItems,
+          soldThisMonth,
+          utilizationRate: totalItems > 0 ? ((totalItems - availableItems) / totalItems * 100).toFixed(2) : 0
+        },
+        financial: {
+          totalRevenue: totalRevenue._sum.paidAmount || 0,
+          monthlyRevenue: monthlyRevenue._sum.total || 0,
+          outstandingAmount: outstanding,
+          averageInvoiceValue: (monthlyRevenue._sum.total && soldThisMonth > 0) ?
+            (monthlyRevenue._sum.total / soldThisMonth).toFixed(2) : 0
+        },
+        customers: {
+          total: totalCustomers,
+          newThisMonth: newCustomersThisMonth
+        },
+        topProducts: topProductDetails,
+        recentTransactions: {
+          invoices: recentInvoices,
+          payments: recentPayments
+        }
+      };
+    } catch (error) {
+      console.error('Error in getDashboardData:', error);
+      // Return default dashboard data in case of error
+      return {
+        inventory: {
+          totalItems: 0,
+          availableItems: 0,
+          soldThisMonth: 0,
+          utilizationRate: 0
+        },
+        financial: {
+          totalRevenue: 0,
+          monthlyRevenue: 0,
+          outstandingAmount: 0,
+          averageInvoiceValue: 0
+        },
+        customers: {
+          total: 0,
+          newThisMonth: 0
+        },
+        topProducts: [],
+        recentTransactions: {
+          invoices: [],
+          payments: []
+        }
+      };
+    }
+  }
+
   // ===================== CHART OF ACCOUNTS & JOURNAL ENTRIES =====================
 
   /**

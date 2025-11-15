@@ -1,5 +1,4 @@
 const db = require('../config/database');
-const cache = require('../config/simpleCache');
 
 /**
  * Dashboard Service - Completely Refactored
@@ -8,17 +7,10 @@ const cache = require('../config/simpleCache');
 
 /**
  * Get comprehensive dashboard statistics
- * PERFORMANCE OPTIMIZATION: Cached with 5-minute TTL for 5x faster loading
+ * Direct database query for fresh, reliable data
  */
 const getDashboardStats = async () => {
-  // Use cache wrapper - automatically handles cache miss
-  return await cache.wrap(
-    cache.config.KEYS.DASHBOARD + 'stats',
-    async () => {
-      return await fetchDashboardStatsFromDB();
-    },
-    cache.config.TTL.DASHBOARD
-  );
+  return await fetchDashboardStatsFromDB();
 };
 
 /**

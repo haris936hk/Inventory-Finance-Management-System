@@ -40,11 +40,39 @@ const CreateInvoice = () => {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [total, setTotal] = useState(0);
 
-  // Fetch customers
-  const { data: customers, refetch: refetchCustomers } = useQuery('customers', async () => {
-    const response = await axios.get('/finance/customers');
-    return response.data.data;
-  });
+  // Fetch customers for dropdown - direct fresh fetch without caching
+  const { data: customersData, refetch: refetchCustomers, isLoading: customersLoading } = useQuery(
+    ['customers-invoice-dropdown'],
+    async () => {
+      const response = await axios.get('/finance/customers', {
+        params: { limit: 100 } // Max allowed by API validation
+      });
+
+      // Extract customers from paginated response
+      const customersArray = response.data?.data?.customers;
+
+      // Always return an array
+      if (!Array.isArray(customersArray)) {
+        console.error('Invalid customers data:', response.data);
+        return [];
+      }
+
+      return customersArray;
+    },
+    {
+      staleTime: 0, // Always fetch fresh data
+      cacheTime: 0, // Don't cache
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
+      onError: (error) => {
+        console.error('Failed to fetch customers:', error);
+        message.error('Failed to load customers');
+      }
+    }
+  );
+
+  // Ensure customers is always an array (defense against cache pollution)
+  const customers = Array.isArray(customersData) ? customersData : [];
 
   // Fetch settings for default tax rate
   const { data: settings } = useQuery('settings', async () => {
@@ -175,23 +203,11 @@ const CreateInvoice = () => {
                   <Select
                     placeholder="Select customer"
                     showSearch
+                    loading={customersLoading}
                     optionFilterProp="children"
-                    dropdownRender={(menu) => (
-                      <>
-                        {menu}
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Button
-                          type="text"
-                          icon={<UserAddOutlined />}
-                          onClick={() => setCustomerModalVisible(true)}
-                          style={{ width: '100%' }}
-                        >
-                          Add New Customer
-                        </Button>
-                      </>
-                    )}
+                    notFoundContent={customersLoading ? 'Loading...' : 'No customers found'}
                   >
-                    {customers?.map(customer => (
+                    {customers.map(customer => (
                       <Select.Option key={customer.id} value={customer.id}>
                         {customer.name} - {customer.phone}
                       </Select.Option>
@@ -268,9 +284,12 @@ const CreateInvoice = () => {
                       <InputNumber
                         style={{ width: '100%' }}
                         min={0}
+                        parser={(value) => value.replace(/[^\d.]/g, '')}
+                        precision={2}
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}
+                        placeholder="0"
                       />
                     </Form.Item>
                   </Col>
@@ -286,9 +305,12 @@ const CreateInvoice = () => {
                         style={{ width: '100%' }}
                         min={0}
                         max={100}
+                        parser={(value) => value.replace(/[^\d.]/g, '')}
+                        precision={2}
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}
+                        placeholder="0"
                       />
                     </Form.Item>
                   </Col>

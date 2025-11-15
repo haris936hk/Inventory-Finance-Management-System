@@ -1,6 +1,7 @@
 // This is your Prisma schema file for Inventory & Finance Management System
 // Using PostgreSQL via Supabase
 
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,6 +11,7 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+        
 
 // ==================== USER & ACCESS MANAGEMENT ====================
 

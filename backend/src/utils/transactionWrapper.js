@@ -65,12 +65,16 @@ async function withTransaction(callback, options = {}) {
 
   let lastError;
 
+  // Check if using Supabase transaction pooler (pgbouncer mode)
+  // Transaction pooler doesn't support SET TRANSACTION ISOLATION LEVEL
+  const isSupabasePooler = process.env.DATABASE_URL?.includes('pgbouncer=true');
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await db.prisma.$transaction(
         async (tx) => {
-          // Set transaction isolation level
-          if (isolationLevel === 'Serializable') {
+          // Set transaction isolation level (skip for Supabase transaction pooler)
+          if (isolationLevel === 'Serializable' && !isSupabasePooler) {
             await tx.$executeRaw`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`;
           }
 

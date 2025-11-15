@@ -106,6 +106,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
 
     message.success(`Added ${selectedItemsFromGroup.length} items to invoice (items will be reserved when you click "Create Invoice")`);
     setGroupModalVisible(false);
+    setSelectedGroup(null); // Clear selected group to prevent quantity modal from opening
     // Reset all filters after successful selection
     setConditionFilter('');
     setCategoryFilter('');
@@ -195,10 +196,12 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
           <Text strong>{record.description}</Text>
           <br />
           <Space size={4}>
-            <Tag color="blue">{record.condition}</Tag>
+            <Tag color={record.condition === 'New' ? 'green' : record.condition === 'Used' ? 'orange' : 'blue'}>
+              {record.condition}
+            </Tag>
             {record.specifications && Object.keys(record.specifications).length > 0 && (
               <Tooltip title={JSON.stringify(record.specifications, null, 2)}>
-                <Tag color="green"><TagOutlined /> Specs</Tag>
+                <Tag color="cyan"><TagOutlined /> Specs</Tag>
               </Tooltip>
             )}
           </Space>
@@ -229,6 +232,8 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
               handleGroupPriceChange(record.items, newPrice);
             }}
             min={0}
+            parser={(value) => value.replace(/[^\d.]/g, '')}
+            precision={2}
             prefix="PKR"
             style={{ width: '100%' }}
             placeholder="0"
@@ -310,6 +315,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
         open={groupModalVisible}
         onCancel={() => {
           setGroupModalVisible(false);
+          setSelectedGroup(null); // Clear selected group
           // Reset all filters when modal closes
           setConditionFilter('');
           setCategoryFilter('');
@@ -347,7 +353,6 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
                 <Option value="">All Conditions</Option>
                 <Option value="New">New</Option>
                 <Option value="Used">Used</Option>
-                <Option value="Refurbished">Refurbished</Option>
               </Select>
             </Col>
 
@@ -438,7 +443,9 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
                 title={
                   <Space>
                     <Text strong>{group.model.company.name} {group.model.name}</Text>
-                    <Tag color="blue">{group.condition}</Tag>
+                    <Tag color={group.condition === 'New' ? 'green' : group.condition === 'Used' ? 'orange' : 'blue'}>
+                      {group.condition}
+                    </Tag>
                     <Tag color="green">{group.availableCount} available</Tag>
                   </Space>
                 }

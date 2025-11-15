@@ -1,6 +1,5 @@
 // ========== src/services/inventoryService.js ==========
 const db = require('../config/database');
-const cache = require('../config/simpleCache');
 const logger = require('../config/logger');
 const { generateSerialNumber } = require('../utils/generateId');
 const { withTransaction, formatAmount } = require('../utils/transactionWrapper');
@@ -31,9 +30,6 @@ class InventoryService {
         data
       });
 
-      // Invalidate cache after mutation
-      await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
-
       return category;
     } catch (error) {
       // Handle Prisma constraint errors
@@ -47,32 +43,23 @@ class InventoryService {
   }
 
   async getCategories(includeDeleted = false) {
-    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
-    const cacheKey = cache.config.KEYS.CATEGORIES + `all:${includeDeleted}`;
-
-    return await cache.wrap(
-      cacheKey,
-      async () => {
-        // Include models for list display
-        return await db.findMany('productCategory', {
-          includeDeleted,
-          orderBy: { name: 'asc' },
+    // Direct database query - no caching for fresh data
+    return await db.findMany('productCategory', {
+      includeDeleted,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        isActive: true,
+        models: {
           select: {
-            id: true,
-            name: true,
-            code: true,
-            description: true,
-            isActive: true,
-            models: {
-              select: {
-                id: true
-              }
-            }
+            id: true
           }
-        });
-      },
-      cache.config.TTL.DROPDOWN
-    );
+        }
+      }
+    });
   }
 
   async getCategoryById(id) {
@@ -93,9 +80,6 @@ class InventoryService {
       where: { id },
       data
     });
-
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
 
     return category;
   }
@@ -135,9 +119,6 @@ class InventoryService {
       data: { deletedAt: new Date() }
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.CATEGORIES + '*');
-
     return category;
   }
 
@@ -164,39 +145,27 @@ class InventoryService {
       data
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
-
     return company;
   }
 
   async getCompanies(includeDeleted = false) {
-    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
-    const cacheKey = cache.config.KEYS.COMPANIES + `all:${includeDeleted}`;
-
-    return await cache.wrap(
-      cacheKey,
-      async () => {
-        // Include models for list display
-        return await db.findMany('company', {
-          includeDeleted,
-          orderBy: { name: 'asc' },
+    // Direct database query - no caching for fresh data
+    return await db.findMany('company', {
+      includeDeleted,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        isActive: true,
+        models: {
           select: {
-            id: true,
-            name: true,
-            code: true,
-            description: true,
-            isActive: true,
-            models: {
-              select: {
-                id: true
-              }
-            }
+            id: true
           }
-        });
-      },
-      cache.config.TTL.DROPDOWN
-    );
+        }
+      }
+    });
   }
 
   async getCompanyById(id) {
@@ -217,9 +186,6 @@ class InventoryService {
       where: { id },
       data
     });
-
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
 
     return company;
   }
@@ -253,9 +219,6 @@ class InventoryService {
       data: { deletedAt: new Date() }
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.COMPANIES + '*');
-
     return company;
   }
 
@@ -287,58 +250,46 @@ class InventoryService {
       }
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.MODELS + '*');
-
     return model;
   }
 
   async getModels(filters = {}) {
-    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
-    const filterKey = `${filters.categoryId || 'all'}:${filters.companyId || 'all'}`;
-    const cacheKey = cache.config.KEYS.MODELS + filterKey;
+    // Direct database query - no caching for fresh data
+    const where = { deletedAt: null };
 
-    return await cache.wrap(
-      cacheKey,
-      async () => {
-        const where = { deletedAt: null };
+    if (filters.categoryId) {
+      where.categoryId = filters.categoryId;
+    }
 
-        if (filters.categoryId) {
-          where.categoryId = filters.categoryId;
-        }
+    if (filters.companyId) {
+      where.companyId = filters.companyId;
+    }
 
-        if (filters.companyId) {
-          where.companyId = filters.companyId;
-        }
-
-        // Include items for list display
-        return await db.prisma.productModel.findMany({
-          where,
+    // Include items for list display
+    return await db.prisma.productModel.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        isActive: true,
+        categoryId: true,
+        companyId: true,
+        category: {
+          select: { id: true, name: true, code: true }
+        },
+        company: {
+          select: { id: true, name: true, code: true }
+        },
+        items: {
           select: {
-            id: true,
-            name: true,
-            code: true,
-            description: true,
-            isActive: true,
-            categoryId: true,
-            companyId: true,
-            category: {
-              select: { id: true, name: true, code: true }
-            },
-            company: {
-              select: { id: true, name: true, code: true }
-            },
-            items: {
-              select: {
-                id: true
-              }
-            }
-          },
-          orderBy: { name: 'asc' }
-        });
+            id: true
+          }
+        }
       },
-      cache.config.TTL.DROPDOWN
-    );
+      orderBy: { name: 'asc' }
+    });
   }
 
   async updateModel(id, data) {
@@ -382,9 +333,6 @@ class InventoryService {
       }
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.MODELS + '*');
-
     return model;
   }
 
@@ -418,16 +366,14 @@ class InventoryService {
       data: { deletedAt: new Date() }
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.MODELS + '*');
-
     return model;
   }
 
   /**
    * Item Management (Core Inventory)
    */
-  async createItem(itemData, userId) {
+  async createItem(itemData, userId, options = {}) {
+    const { skipCacheInvalidation = false } = options;
     // Validate required fields
     if (!itemData.modelId || !itemData.condition) {
       const error = new Error('Model ID and condition are required');
@@ -1110,41 +1056,28 @@ class InventoryService {
       return newVendor;
     });
 
-    // Invalidate cache after mutation
-    await cache.delPattern(cache.config.KEYS.VENDORS + '*');
-
     return vendor;
   }
 
   async getVendors(includeDeleted = false) {
-    // PERFORMANCE OPTIMIZATION: Cache dropdown data for 15 minutes
-    const cacheKey = cache.config.KEYS.VENDORS + `all:${includeDeleted}`;
-
-    return await cache.wrap(
-      cacheKey,
-      async () => {
-        // OPTIMIZED: Removed _count include for better performance on dropdown endpoints
-        // Only return fields needed for dropdowns/lists
-        return await db.findMany('vendor', {
-          includeDeleted,
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            contactPerson: true,
-            email: true,
-            phone: true,
-            address: true,
-            taxNumber: true,
-            paymentTerms: true,
-            openingBalance: true,
-            currentBalance: true
-          },
-          orderBy: { name: 'asc' }
-        });
+    // Direct database query - no caching for fresh data
+    return await db.findMany('vendor', {
+      includeDeleted,
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        contactPerson: true,
+        email: true,
+        phone: true,
+        address: true,
+        taxNumber: true,
+        paymentTerms: true,
+        openingBalance: true,
+        currentBalance: true
       },
-      cache.config.TTL.DROPDOWN
-    );
+      orderBy: { name: 'asc' }
+    });
   }
 
   async getVendorById(id) {
@@ -1222,7 +1155,7 @@ class InventoryService {
     // This reduces total time from N*T to T (where T is average create time)
     const promises = itemsData.map(async (itemData) => {
       try {
-        const item = await this.createItem(itemData, userId);
+        const item = await this.createItem(itemData, userId, { skipCacheInvalidation: true });
         return {
           success: true,
           serialNumber: item.serialNumber,
@@ -1304,7 +1237,7 @@ class InventoryService {
             vendorId: po.vendorId
           };
 
-          const item = await this.createItem(itemWithPO, userId);
+          const item = await this.createItem(itemWithPO, userId, { skipCacheInvalidation: true });
 
           results.success.push({
             serialNumber: item.serialNumber,

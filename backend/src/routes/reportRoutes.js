@@ -15,28 +15,6 @@ router.get('/dashboard',
   reportController.getDashboard
 );
 
-// Inventory Reports
-router.get('/inventory',
-  hasPermission(['reports.view']),
-  reportController.getInventoryReport
-);
-
-router.get('/stock-valuation',
-  hasPermission(['reports.view']),
-  reportController.getStockValuation
-);
-
-// Financial Reports
-router.get('/financial-summary',
-  hasPermission(['reports.view']),
-  reportController.getFinancialSummary
-);
-
-router.get('/sales',
-  hasPermission(['reports.view']),
-  reportController.getSalesReport
-);
-
 // =========== COMPREHENSIVE FINANCIAL REPORTS ===========
 router.get('/profit-loss',
   hasPermission(['reports.view']),
@@ -83,25 +61,9 @@ router.get('/gross-profit-margin',
   reportController.getGrossProfitMargin
 );
 
-// =========== DOUBLE-ENTRY ACCOUNTING REPORTS ===========
-router.get('/accounting/trial-balance',
+router.get('/trial-balance',
   hasPermission(['reports.view']),
   reportController.getTrialBalance
-);
-
-router.get('/accounting/balance-sheet',
-  hasPermission(['reports.view']),
-  reportController.getAccountingBalanceSheet
-);
-
-router.get('/accounting/profit-loss',
-  hasPermission(['reports.view']),
-  reportController.getAccountingProfitLoss
-);
-
-router.get('/accounting/tax-summary',
-  hasPermission(['reports.view']),
-  reportController.getTaxSummary
 );
 
 module.exports = router;

@@ -8,7 +8,6 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 const db = require('./config/database');
-const cache = require('./config/simpleCache');
 const logger = require('./config/logger');
 const schedulerService = require('./services/schedulerService');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
@@ -83,10 +82,6 @@ const startServer = async () => {
     // Connect to database
     await db.connect();
 
-    // PERFORMANCE OPTIMIZATION: Initialize in-memory cache (per Electron instance)
-    await cache.connect();
-    cache.startPeriodicCleanup(); // Clean expired entries every 5 minutes
-
     // Start background scheduler for automated tasks
     schedulerService.start();
 
@@ -104,18 +99,14 @@ const startServer = async () => {
 process.on('SIGINT', async () => {
   logger.info('SIGINT received. Shutting down gracefully...');
   schedulerService.stop();
-  cache.stopPeriodicCleanup();
   await db.disconnect();
-  await cache.disconnect();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received. Shutting down gracefully...');
   schedulerService.stop();
-  cache.stopPeriodicCleanup();
   await db.disconnect();
-  await cache.disconnect();
   process.exit(0);
 });
 

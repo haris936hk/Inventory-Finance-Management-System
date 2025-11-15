@@ -122,8 +122,7 @@ async function createInvoice(data, userId) {
     // Check that all items exist and are available
     const items = await tx.item.findMany({
       where: {
-        id: { in: itemIds },
-        deletedAt: null
+        id: { in: itemIds }
       },
       select: {
         id: true,

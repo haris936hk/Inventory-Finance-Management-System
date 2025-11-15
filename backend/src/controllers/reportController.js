@@ -1,78 +1,16 @@
 // ========== src/controllers/reportController.js ==========
 const asyncHandler = require('express-async-handler');
-const reportService = require('../services/reportService');
-const dashboardService = require('../services/dashboardService');
 const financialReportsService = require('../services/financialReportsService');
-const FinancialReportService = require('../services/financialReportService');
 
 // @desc    Get dashboard KPIs
 // @route   GET /api/reports/dashboard
 // @access  Private
 const getDashboard = asyncHandler(async (req, res) => {
-  try {
-    const dashboard = await dashboardService.getDashboardStats();
+  const dashboard = await financialReportsService.getDashboardData();
 
-    res.json({
-      success: true,
-      data: dashboard
-    });
-  } catch (error) {
-    console.error('Dashboard error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to load dashboard data',
-      error: error.message
-    });
-  }
-});
-
-// @desc    Get inventory report
-// @route   GET /api/reports/inventory
-// @access  Private
-const getInventoryReport = asyncHandler(async (req, res) => {
-  const report = await reportService.getInventoryReport(req.query);
-  
   res.json({
     success: true,
-    data: report
-  });
-});
-
-// @desc    Get financial summary
-// @route   GET /api/reports/financial-summary
-// @access  Private
-const getFinancialSummary = asyncHandler(async (req, res) => {
-  const { startDate, endDate } = req.query;
-  const summary = await reportService.getFinancialSummary(startDate, endDate);
-  
-  res.json({
-    success: true,
-    data: summary
-  });
-});
-
-// @desc    Get sales report
-// @route   GET /api/reports/sales
-// @access  Private
-const getSalesReport = asyncHandler(async (req, res) => {
-  const { startDate, endDate, groupBy } = req.query;
-  const report = await reportService.getSalesReport(startDate, endDate, groupBy);
-  
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get stock valuation report
-// @route   GET /api/reports/stock-valuation
-// @access  Private
-const getStockValuation = asyncHandler(async (req, res) => {
-  const valuation = await reportService.getStockValuation();
-  
-  res.json({
-    success: true,
-    data: valuation
+    data: dashboard
   });
 });
 
@@ -277,67 +215,13 @@ const getGrossProfitMargin = asyncHandler(async (req, res) => {
   });
 });
 
-// ===================== DOUBLE-ENTRY ACCOUNTING REPORTS =====================
-
 // @desc    Get Trial Balance (all accounts with debit/credit balances)
-// @route   GET /api/reports/accounting/trial-balance
+// @route   GET /api/reports/trial-balance
 // @access  Private
 const getTrialBalance = asyncHandler(async (req, res) => {
   const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
 
-  const report = await FinancialReportService.getTrialBalance(new Date(asOfDate));
-
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get Balance Sheet (double-entry based)
-// @route   GET /api/reports/accounting/balance-sheet
-// @access  Private
-const getAccountingBalanceSheet = asyncHandler(async (req, res) => {
-  const { asOfDate = new Date().toISOString().split('T')[0] } = req.query;
-
-  const report = await FinancialReportService.getBalanceSheet(new Date(asOfDate));
-
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get Profit & Loss (double-entry based)
-// @route   GET /api/reports/accounting/profit-loss
-// @access  Private
-const getAccountingProfitLoss = asyncHandler(async (req, res) => {
-  const { startDate, endDate = new Date().toISOString().split('T')[0] } = req.query;
-
-  if (!startDate) {
-    res.status(400);
-    throw new Error('Start date is required');
-  }
-
-  const report = await FinancialReportService.getProfitAndLoss(new Date(startDate), new Date(endDate));
-
-  res.json({
-    success: true,
-    data: report
-  });
-});
-
-// @desc    Get Tax Summary (GST collected vs paid)
-// @route   GET /api/reports/accounting/tax-summary
-// @access  Private
-const getTaxSummary = asyncHandler(async (req, res) => {
-  const { startDate, endDate = new Date().toISOString().split('T')[0] } = req.query;
-
-  if (!startDate) {
-    res.status(400);
-    throw new Error('Start date is required');
-  }
-
-  const report = await FinancialReportService.getTaxSummary(new Date(startDate), new Date(endDate));
+  const report = await financialReportsService.generateTrialBalance(new Date(asOfDate));
 
   res.json({
     success: true,
@@ -347,11 +231,6 @@ const getTaxSummary = asyncHandler(async (req, res) => {
 
 module.exports = {
   getDashboard,
-  getInventoryReport,
-  getFinancialSummary,
-  getSalesReport,
-  getStockValuation,
-  // New comprehensive financial reports
   getProfitLossStatement,
   getBalanceSheet,
   getCashFlowStatement,
@@ -361,9 +240,5 @@ module.exports = {
   getVendorBillsAging,
   getInventoryTurnover,
   getGrossProfitMargin,
-  // Double-entry accounting reports
-  getTrialBalance,
-  getAccountingBalanceSheet,
-  getAccountingProfitLoss,
-  getTaxSummary
+  getTrialBalance
 };

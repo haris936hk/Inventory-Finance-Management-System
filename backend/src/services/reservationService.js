@@ -78,10 +78,16 @@ class ReservationService {
    * Get grouped available items for selection
    */
   async getGroupedAvailableItems(filters = {}) {
+    // Build where clause to include both new items (In Store) and repaired items (In Lab + Repaired=Yes)
     const where = {
-      status: 'In Store',
       inventoryStatus: 'Available', // CRITICAL: Only show truly available items (not Reserved or Sold)
-      deletedAt: null
+      OR: [
+        { status: 'In Store' }, // New items in store
+        {
+          status: 'In Lab',
+          repaired: 'Yes' // Only repaired items from lab
+        }
+      ]
     };
 
     // Apply filters
