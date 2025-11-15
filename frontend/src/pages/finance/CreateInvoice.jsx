@@ -64,6 +64,7 @@ const CreateInvoice = () => {
       cacheTime: 0, // Don't cache
       refetchOnMount: true,
       refetchOnWindowFocus: false,
+      initialData: [], // Provide initial empty array to prevent undefined
       onError: (error) => {
         console.error('Failed to fetch customers:', error);
         message.error('Failed to load customers');
@@ -72,7 +73,9 @@ const CreateInvoice = () => {
   );
 
   // Ensure customers is always an array (defense against cache pollution)
-  const customers = Array.isArray(customersData) ? customersData : [];
+  const customers = React.useMemo(() => {
+    return Array.isArray(customersData) ? customersData : [];
+  }, [customersData]);
 
   // Fetch settings for default tax rate
   const { data: settings } = useQuery('settings', async () => {
@@ -207,7 +210,7 @@ const CreateInvoice = () => {
                     optionFilterProp="children"
                     notFoundContent={customersLoading ? 'Loading...' : 'No customers found'}
                   >
-                    {customers.map(customer => (
+                    {Array.isArray(customers) && customers.map(customer => (
                       <Select.Option key={customer.id} value={customer.id}>
                         {customer.name} - {customer.phone}
                       </Select.Option>
