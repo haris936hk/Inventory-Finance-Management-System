@@ -36,11 +36,10 @@ const PurchaseOrders = () => {
   const [subtotal, setSubtotal] = useState(0);
   const [taxAmount, setTaxAmount] = useState(0);
   const [total, setTotal] = useState(0);
-  // PERFORMANCE OPTIMIZATION: Add pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // PERFORMANCE OPTIMIZATION: Fetch paginated purchase orders from backend
+  // Fetch purchase orders
   const { data: response, isLoading } = useQuery(
     ['purchase-orders', filters, page, pageSize],
     async () => {
@@ -51,38 +50,31 @@ const PurchaseOrders = () => {
     }
   );
 
-  // Extract data from paginated response
   const purchaseOrdersData = response?.purchaseOrders || [];
   const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
   const backendStatistics = response?.statistics || {};
 
-  // Fetch vendors for filter and form
+  // Fetch vendors
   const { data: vendors } = useQuery('vendors', async () => {
     const response = await axios.get('/inventory/vendors', { params: { limit: 1000 } });
     return response.data.data;
   });
 
-  // Fetch settings for default tax rate
+  // Fetch settings
   const { data: settings } = useQuery('settings', async () => {
     const response = await axios.get('/settings');
     return response.data.data;
   });
 
-  // PERFORMANCE OPTIMIZATION: Use backend statistics instead of client-side calculations
-  const statistics = React.useMemo(() => {
-    if (!backendStatistics.byStatus) {
-      return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
-    }
-
-    return {
-      total: backendStatistics.totalAmount || 0,
-      draft: backendStatistics.byStatus.Draft?.total || 0,
-      sent: (backendStatistics.byStatus.Sent?.total || 0) + (backendStatistics.byStatus.Partial?.total || 0),
-      paid: backendStatistics.byStatus.Paid?.total || 0,
-      delivered: backendStatistics.byStatus.Delivered?.total || 0,
-      cancelled: backendStatistics.byStatus.Cancelled?.total || 0
-    };
-  }, [backendStatistics]);
+  // Simple statistics calculation
+  const statistics = {
+    total: backendStatistics.totalAmount || 0,
+    draft: backendStatistics.byStatus?.Draft?.total || 0,
+    sent: (backendStatistics.byStatus?.Sent?.total || 0) + (backendStatistics.byStatus?.Partial?.total || 0),
+    paid: backendStatistics.byStatus?.Paid?.total || 0,
+    delivered: backendStatistics.byStatus?.Delivered?.total || 0,
+    cancelled: backendStatistics.byStatus?.Cancelled?.total || 0
+  };
 
   // Create/Update PO mutation
   const poMutation = useMutation(
@@ -142,11 +134,6 @@ const PurchaseOrders = () => {
     setTaxAmount(tax);
     setTotal(currentSubtotal + tax);
   };
-
-  // Recalculate totals when tax rate changes
-  React.useEffect(() => {
-    calculateTotals();
-  }, [form.getFieldValue('taxRate')]);
 
   const getStatusColor = (status) => {
     const colors = {

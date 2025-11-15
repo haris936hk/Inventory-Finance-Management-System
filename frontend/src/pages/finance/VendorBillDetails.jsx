@@ -127,10 +127,9 @@ const VendorBillDetails = () => {
     }
   };
 
-  const filteredPurchaseOrders = React.useMemo(() => {
-    if (!selectedVendorId || !purchaseOrders) return [];
-    return purchaseOrders.filter(po => po.vendorId === selectedVendorId);
-  }, [selectedVendorId, purchaseOrders]);
+  const filteredPurchaseOrders = !selectedVendorId || !purchaseOrders
+    ? []
+    : purchaseOrders.filter(po => po.vendorId === selectedVendorId);
 
   const handleEdit = () => {
     if (!vendorBill) return;

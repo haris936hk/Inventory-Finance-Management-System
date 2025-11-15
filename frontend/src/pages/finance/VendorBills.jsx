@@ -34,11 +34,10 @@ const VendorBills = () => {
   const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState(null);
   const [selectedVendorId, setSelectedVendorId] = useState(null);
   const [form] = Form.useForm();
-  // PERFORMANCE OPTIMIZATION: Add pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // PERFORMANCE OPTIMIZATION: Fetch paginated vendor bills from backend
+  // Fetch vendor bills
   const { data: response, isLoading } = useQuery(
     ['vendor-bills', filters, page, pageSize],
     async () => {
@@ -49,51 +48,43 @@ const VendorBills = () => {
     }
   );
 
-  // Extract data from paginated response
   const vendorBillsData = response?.bills || [];
   const pagination = response?.pagination || { page: 1, limit: 50, totalCount: 0, totalPages: 0 };
   const backendStatistics = response?.statistics || {};
 
-  // Fetch vendors for filter and form
+  // Fetch vendors
   const { data: vendors } = useQuery('vendors', async () => {
     const response = await axios.get('/inventory/vendors', { params: { limit: 1000 } });
     return response.data.data;
   });
 
-  // Fetch purchase orders for form (only Sent and Partial)
+  // Fetch purchase orders
   const { data: purchaseOrdersResponse } = useQuery('purchase-orders-for-bills', async () => {
     const response = await axios.get('/finance/purchase-orders', {
       params: {
-        include: 'lineItems', // Request line items to be included
+        include: 'lineItems',
         limit: 1000
       }
     });
     return response.data.data;
   });
 
-  // Only show Sent and Partial purchase orders
   const purchaseOrders = purchaseOrdersResponse?.purchaseOrders?.filter(po =>
     po.status === 'Sent' || po.status === 'Partial'
   ) || [];
 
-  // PERFORMANCE OPTIMIZATION: Use backend statistics instead of client-side calculations
-  const statistics = React.useMemo(() => {
-    if (!backendStatistics.byStatus) {
-      return { total: 0, unpaid: 0, partial: 0, paid: 0, overdue: 0 };
-    }
+  // Simple statistics calculation
+  const unpaidRemaining = backendStatistics.byStatus?.Unpaid?.remaining || 0;
+  const partialRemaining = backendStatistics.byStatus?.Partial?.remaining || 0;
+  const paidTotal = backendStatistics.byStatus?.Paid?.total || 0;
 
-    const unpaidRemaining = backendStatistics.byStatus.Unpaid?.remaining || 0;
-    const partialRemaining = backendStatistics.byStatus.Partial?.remaining || 0;
-    const paidTotal = backendStatistics.byStatus.Paid?.total || 0;
-
-    return {
-      total: backendStatistics.totalAmount || 0,
-      unpaid: unpaidRemaining,
-      partial: partialRemaining,
-      paid: paidTotal,
-      overdue: unpaidRemaining + partialRemaining // Simplified - actual overdue would need date filtering
-    };
-  }, [backendStatistics]);
+  const statistics = {
+    total: backendStatistics.totalAmount || 0,
+    unpaid: unpaidRemaining,
+    partial: partialRemaining,
+    paid: paidTotal,
+    overdue: unpaidRemaining + partialRemaining
+  };
 
   // Create/Update Bill mutation
   const billMutation = useMutation(
@@ -197,10 +188,9 @@ const VendorBills = () => {
   };
 
   // Filter purchase orders for selected vendor
-  const filteredPurchaseOrders = React.useMemo(() => {
-    if (!selectedVendorId || !purchaseOrders) return [];
-    return purchaseOrders.filter(po => po.vendorId === selectedVendorId);
-  }, [selectedVendorId, purchaseOrders]);
+  const filteredPurchaseOrders = !selectedVendorId || !purchaseOrders
+    ? []
+    : purchaseOrders.filter(po => po.vendorId === selectedVendorId);
 
   const getStatusColor = (status) => {
     const colors = {
