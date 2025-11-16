@@ -12,14 +12,11 @@ import {
   Col,
   Space,
   message,
-  Divider,
-  Typography,
-  Modal
+  Typography
 } from 'antd';
 import {
   SaveOutlined,
-  ArrowLeftOutlined,
-  UserAddOutlined
+  ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useMutation, useQuery } from 'react-query';
 import axios from 'axios';
@@ -33,15 +30,13 @@ const CreateInvoice = () => {
   const navigate = useNavigate();
   const [form] = Form.useForm();
   const [selectedItems, setSelectedItems] = useState([]);
-  const [customerModalVisible, setCustomerModalVisible] = useState(false);
-  const [customerForm] = Form.useForm();
   const [subtotal, setSubtotal] = useState(0);
   const [taxAmount, setTaxAmount] = useState(0);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [total, setTotal] = useState(0);
 
   // Fetch customers
-  const { data: customers, refetch: refetchCustomers } = useQuery('customers', async () => {
+  const { data: customers } = useQuery('customers', async () => {
     const response = await axios.get('/finance/customers');
     return response.data.data;
   });
@@ -62,23 +57,6 @@ const CreateInvoice = () => {
       },
       onError: (error) => {
         message.error(error.response?.data?.message || 'Failed to create invoice');
-      }
-    }
-  );
-
-  // Create customer mutation
-  const createCustomerMutation = useMutation(
-    (data) => axios.post('/finance/customers', data),
-    {
-      onSuccess: (response) => {
-        message.success('Customer created successfully');
-        form.setFieldsValue({ customerId: response.data.data.id });
-        refetchCustomers();
-        setCustomerModalVisible(false);
-        customerForm.resetFields();
-      },
-      onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to create customer');
       }
     }
   );
@@ -176,20 +154,6 @@ const CreateInvoice = () => {
                     placeholder="Select customer"
                     showSearch
                     optionFilterProp="children"
-                    dropdownRender={(menu) => (
-                      <>
-                        {menu}
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Button
-                          type="text"
-                          icon={<UserAddOutlined />}
-                          onClick={() => setCustomerModalVisible(true)}
-                          style={{ width: '100%' }}
-                        >
-                          Add New Customer
-                        </Button>
-                      </>
-                    )}
                   >
                     {customers?.map(customer => (
                       <Select.Option key={customer.id} value={customer.id}>
@@ -326,78 +290,6 @@ const CreateInvoice = () => {
           </div>
         </Form>
       </Card>
-
-      <Modal
-        title="Add New Customer"
-        open={customerModalVisible}
-        onCancel={() => setCustomerModalVisible(false)}
-        footer={null}
-      >
-        <Form
-          form={customerForm}
-          layout="vertical"
-          onFinish={(values) => createCustomerMutation.mutate(values)}
-        >
-          <Form.Item
-            label="Name"
-            name="name"
-            rules={[{ required: true, message: 'Name is required' }]}
-          >
-            <Input placeholder="Customer name" />
-          </Form.Item>
-
-          <Form.Item
-            label="Phone"
-            name="phone"
-            rules={[
-              { required: true, message: 'Phone is required' },
-              { pattern: /^\d{11}$/, message: 'Phone must be 11 digits' }
-            ]}
-          >
-            <Input placeholder="03001234567" />
-          </Form.Item>
-
-          <Form.Item label="Company" name="company">
-            <Input placeholder="Company name (optional)" />
-          </Form.Item>
-
-          <Form.Item label="Email" name="email">
-            <Input type="email" placeholder="email@example.com" />
-          </Form.Item>
-
-          <Form.Item label="NIC" name="nic">
-            <Input placeholder="National ID Card" />
-          </Form.Item>
-
-          <Form.Item label="Address" name="address">
-            <TextArea rows={2} placeholder="Full address" />
-          </Form.Item>
-
-          <Form.Item label="Credit Limit" name="creditLimit" initialValue={0}>
-            <InputNumber
-              min={0}
-              style={{ width: '100%' }}
-              prefix="PKR"
-              placeholder="0 for no limit"
-            />
-          </Form.Item>
-
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => setCustomerModalVisible(false)}>
-                Cancel
-              </Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={createCustomerMutation.isLoading}
-              >
-                Add Customer
-              </Button>
-            </Space>
-          </div>
-        </Form>
-      </Modal>
     </>
   );
 };
