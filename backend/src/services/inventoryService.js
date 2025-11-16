@@ -365,8 +365,9 @@ class InventoryService {
     const condition = itemData.condition || 'New';
     const autoStatus = condition === 'Used' ? 'In Lab' : 'In Store';
 
-    // Set repaired status for "In Lab" items
+    // Set repaired status and inventory status based on condition
     const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
+    const inventoryStatus = condition === 'Used' ? 'Under Repair' : 'Available';
 
     // Create item with initial status
     try {
@@ -375,6 +376,7 @@ class InventoryService {
           serialNumber: itemData.serialNumber,
           condition: condition,
           status: autoStatus,
+          inventoryStatus: inventoryStatus,
           repaired: repairedStatus,
           statusHistory: [{
             status: autoStatus,
@@ -462,13 +464,6 @@ class InventoryService {
 
   async getItems(filters = {}) {
     const where = { deletedAt: null };
-
-    // Exclude "Returned" items by default (unless explicitly filtering for them)
-    if (!filters.includeReturned) {
-      where.NOT = {
-        repaired: 'Returned'
-      };
-    }
 
     // Filter for invoice-available items only
     if (filters.availableForInvoice) {
@@ -722,13 +717,18 @@ class InventoryService {
       throw new Error(`Cannot change repaired status from "${currentRepaired}" to "${repairedStatus}"`);
     }
 
+    // Determine inventoryStatus and physical status based on repaired status
+    // Yes → Available + In Store, No/Returned → Under Repair + In Lab
+    const inventoryStatus = repairedStatus === 'Yes' ? 'Available' : 'Under Repair';
+    const physicalStatus = repairedStatus === 'Yes' ? 'In Store' : 'In Lab';
+
     // Build status history entry
     const historyEntry = {
-      status: item.status,
+      status: physicalStatus,
       repaired: repairedStatus,
       date: new Date(),
       userId,
-      notes: `Repaired status changed from "${currentRepaired}" to "${repairedStatus}"`
+      notes: `Repaired status changed from "${currentRepaired}" to "${repairedStatus}"${repairedStatus === 'Yes' ? '. Item moved to store.' : ''}`
     };
 
     // Update item
@@ -736,6 +736,8 @@ class InventoryService {
       where: { serialNumber },
       data: {
         repaired: repairedStatus,
+        status: physicalStatus,
+        inventoryStatus: inventoryStatus,
         statusHistory: [...(item.statusHistory || []), historyEntry]
       },
       include: {

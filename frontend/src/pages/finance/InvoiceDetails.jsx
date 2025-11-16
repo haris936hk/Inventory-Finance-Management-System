@@ -313,12 +313,6 @@ const InvoiceDetails = () => {
                             {invoice.customer.phone}
                           </Space>
                         )}
-                        {invoice.customer?.email && (
-                          <Space>
-                            <MailOutlined />
-                            {invoice.customer.email}
-                          </Space>
-                        )}
                         {invoice.customer?.address && (
                           <Space align="start">
                             <EnvironmentOutlined />

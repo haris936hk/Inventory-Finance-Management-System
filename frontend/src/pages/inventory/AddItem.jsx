@@ -8,7 +8,7 @@ import {
 import {
   SaveOutlined, ArrowLeftOutlined, PlusOutlined, ScanOutlined
 } from '@ant-design/icons';
-import { useMutation, useQuery } from 'react-query';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import dayjs from 'dayjs';
@@ -18,6 +18,7 @@ const { TextArea } = Input;
 
 const AddItem = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -70,6 +71,7 @@ const AddItem = () => {
     {
       onSuccess: () => {
         message.success('Item added successfully');
+        queryClient.invalidateQueries('items');
         navigate('/app/inventory/items');
       },
       onError: (error) => {

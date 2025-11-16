@@ -18,6 +18,7 @@ const {
   formatAmount
 } = require('../utils/transactionWrapper');
 const { generateInvoiceNumber } = require('../utils/generateId');
+const inventoryLifecycleService = require('./inventoryLifecycleService');
 
 /**
  * Valid Invoice status transitions
@@ -88,11 +89,21 @@ async function createInvoice(data, userId) {
     const taxAmount = formatAmount(data.taxAmount || 0);
     const total = formatAmount(data.total);
 
-    // Verify total = subtotal + tax (allow discount logic)
-    const expectedTotal = formatAmount(subtotal + taxAmount - (data.discountValue || 0));
+    // Calculate discount based on type (Percentage or Fixed)
+    let discountAmount = 0;
+    if (data.discountType === 'Percentage') {
+      discountAmount = formatAmount((subtotal * (data.discountValue || 0)) / 100);
+    } else if (data.discountType === 'Fixed') {
+      discountAmount = formatAmount(data.discountValue || 0);
+    }
+
+    // Verify total = subtotal - discount + tax
+    const taxableAmount = formatAmount(subtotal - discountAmount);
+    const expectedTotal = formatAmount(taxableAmount + taxAmount);
     if (!compareAmounts(total, expectedTotal, 0.01)) {
       throw new ValidationError(
-        `Total (${total}) calculation mismatch. Expected: ${expectedTotal}`
+        `Total (${total}) calculation mismatch. Expected: ${expectedTotal} ` +
+        `(Subtotal: ${subtotal}, Discount: ${discountAmount}, Tax: ${taxAmount})`
       );
     }
 
@@ -136,20 +147,9 @@ async function createInvoice(data, userId) {
         taxType: data.taxType || 'GST',
         taxRate: data.taxRate || 0,
         taxAmount,
-        cgstRate: data.cgstRate || 0,
-        cgstAmount: formatAmount(data.cgstAmount || 0),
-        sgstRate: data.sgstRate || 0,
-        sgstAmount: formatAmount(data.sgstAmount || 0),
-        igstRate: data.igstRate || 0,
-        igstAmount: formatAmount(data.igstAmount || 0),
 
         total,
         paidAmount: 0,
-
-        // Tax compliance
-        placeOfSupply: data.placeOfSupply || null,
-        hsn: data.hsn || null,
-        gstinNumber: data.gstinNumber || customer.gstinNumber || null,
 
         // Terms
         terms: data.terms || null,
@@ -161,9 +161,9 @@ async function createInvoice(data, userId) {
         items: {
           create: data.items.map(item => ({
             itemId: item.itemId,
-            quantity: item.quantity,
+            quantity: item.quantity || 1,
             unitPrice: formatAmount(item.unitPrice),
-            total: formatAmount(item.total),
+            total: formatAmount(item.unitPrice * (item.quantity || 1)),
             description: item.description || null
           }))
         }
@@ -199,6 +199,16 @@ async function createInvoice(data, userId) {
       data: {
         currentBalance: newCustomerBalance
       }
+    // Reserve items and set customer reference
+    const itemIds = data.items.map(item => item.itemId);
+
+    // Call lifecycle service to reserve items (updates inventoryStatus to 'Reserved')
+    await inventoryLifecycleService.reserveItemsForInvoice(itemIds, invoice.id, userId);
+
+    // Set customer reference on items for direct lookup in inventory list
+    await tx.item.updateMany({
+      where: { id: { in: itemIds } },
+      data: { customerId: data.customerId }
     });
 
     // Create audit log
@@ -445,7 +455,8 @@ async function cancelInvoice(invoiceId, reason, userId) {
             reservedAt: null,
             reservedBy: null,
             reservedForType: null,
-            reservedForId: null
+            reservedForId: null,
+            customerId: null
           }
         });
 

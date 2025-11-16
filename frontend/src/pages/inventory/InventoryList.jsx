@@ -77,7 +77,8 @@ const InventoryList = () => {
       'Available': 'success',
       'Reserved': 'warning',
       'Sold': 'processing',
-      'Delivered': 'success'
+      'Delivered': 'success',
+      'Under Repair': 'orange'
     };
     return colors[status] || 'default';
   };
@@ -137,6 +138,7 @@ const InventoryList = () => {
         { text: 'Reserved', value: 'Reserved' },
         { text: 'Sold', value: 'Sold' },
         { text: 'Delivered', value: 'Delivered' },
+        { text: 'Under Repair', value: 'Under Repair' },
       ],
       onFilter: (value, record) => (record.inventoryStatus || 'Available') === value,
       render: (status) => (
@@ -171,7 +173,7 @@ const InventoryList = () => {
         const colors = {
           'No': 'orange',
           'Yes': 'green',
-          'Returned': 'default'
+          'Returned': 'red'
         };
         return <Tag color={colors[status]}>{status}</Tag>;
       }
@@ -270,6 +272,7 @@ const InventoryList = () => {
         const isSold = (record.inventoryStatus === 'Sold' || record.inventoryStatus === 'Delivered');
         const isInLab = record.status === 'In Lab';
         const isReturned = record.repaired === 'Returned';
+        const isReserved = record.inventoryStatus === 'Reserved';
 
         const menuItems = [
           {
@@ -281,7 +284,7 @@ const InventoryList = () => {
               setDrawerVisible(true);
             }
           },
-          {
+          ...(isReserved ? [{
             key: 'handover',
             label: 'Handover',
             icon: <TruckOutlined />,
@@ -289,9 +292,9 @@ const InventoryList = () => {
               setSelectedItem(record);
               setHandoverModalVisible(true);
             },
-            disabled: !hasPermission('inventory.edit') || isReturned
-          },
-          ...(isInLab ? [{
+            disabled: !hasPermission('inventory.edit')
+          }] : []),
+          ...(isInLab && !isAvailable ? [{
             key: 'repaired',
             label: 'Update Repaired Status',
             icon: <EditOutlined />,
@@ -328,7 +331,7 @@ const InventoryList = () => {
               icon={<EyeOutlined />}
               onClick={() => navigate(`/app/inventory/items/${record.serialNumber}`)}
             />
-            {hasPermission('inventory.edit') && !isReturned && (
+            {hasPermission('inventory.edit') && isReserved && (
               <Button
                 type="link"
                 size="small"
@@ -634,21 +637,23 @@ const InventoryList = () => {
 
             <div style={{ marginTop: 24 }}>
               <Space>
-                <Button 
+                <Button
                   type="primary"
                   onClick={() => navigate(`/app/inventory/items/${selectedItem.serialNumber}`)}
                 >
                   View Full Details
                 </Button>
-                {hasPermission('inventory.edit') && selectedItem?.repaired !== 'Returned' && (
+                {hasPermission('inventory.edit') && (
                   <>
-                    <Button onClick={() => {
-                      setHandoverModalVisible(true);
-                      setDrawerVisible(false);
-                    }}>
-                      Handover
-                    </Button>
-                    {selectedItem?.status === 'In Lab' && (
+                    {selectedItem?.inventoryStatus === 'Reserved' && (
+                      <Button onClick={() => {
+                        setHandoverModalVisible(true);
+                        setDrawerVisible(false);
+                      }}>
+                        Handover
+                      </Button>
+                    )}
+                    {selectedItem?.status === 'In Lab' && selectedItem?.inventoryStatus !== 'Available' && (
                       <Button onClick={() => {
                         setRepairedModalVisible(true);
                         setDrawerVisible(false);
