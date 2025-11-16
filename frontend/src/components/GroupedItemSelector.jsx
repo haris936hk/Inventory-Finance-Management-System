@@ -106,6 +106,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
 
     message.success(`Added ${selectedItemsFromGroup.length} items to invoice (items will be reserved when you click "Create Invoice")`);
     setGroupModalVisible(false);
+    setSelectedGroup(null); // Reset selected group
     // Reset all filters after successful selection
     setConditionFilter('');
     setCategoryFilter('');
@@ -286,7 +287,10 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() => setGroupModalVisible(true)}
+            onClick={() => {
+              setSelectedGroup(null); // Reset selected group to start fresh
+              setGroupModalVisible(true);
+            }}
             disabled={!groupedItems || groupedItems.length === 0}
           >
             Add Items
@@ -310,6 +314,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
         open={groupModalVisible}
         onCancel={() => {
           setGroupModalVisible(false);
+          setSelectedGroup(null); // Reset selected group
           // Reset all filters when modal closes
           setConditionFilter('');
           setCategoryFilter('');
