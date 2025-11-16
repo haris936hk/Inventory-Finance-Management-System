@@ -8,7 +8,7 @@ import {
 import {
   SaveOutlined, ArrowLeftOutlined, ScanOutlined
 } from '@ant-design/icons';
-import { useMutation, useQuery } from 'react-query';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
@@ -19,6 +19,7 @@ const { Text } = Typography;
 
 const BulkAddItems = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
@@ -87,6 +88,7 @@ const BulkAddItems = () => {
       onSuccess: (response) => {
         const count = response.data.data?.count || serialNumbers.length;
         message.success(`${count} items added successfully`);
+        queryClient.invalidateQueries('items');
         navigate('/app/inventory/items');
       },
       onError: (error) => {

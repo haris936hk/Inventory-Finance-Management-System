@@ -106,7 +106,7 @@ const RecordPayment = () => {
   const handleSubmit = (values) => {
     const paymentData = {
       ...values,
-      paymentDate: values.paymentDate.format('YYYY-MM-DD'),
+      paymentDate: values.paymentDate.toISOString(),
       method: values.paymentMethod, // Map paymentMethod to method
       reference: values.referenceNumber, // Map referenceNumber to reference
     };

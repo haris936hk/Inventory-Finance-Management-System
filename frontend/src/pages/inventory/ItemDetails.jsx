@@ -103,7 +103,8 @@ const ItemDetails = () => {
       'Available': 'green',
       'Reserved': 'orange',
       'Sold': 'blue',
-      'Delivered': 'cyan'
+      'Delivered': 'cyan',
+      'Under Repair': 'red'
     };
     return colors[status] || 'default';
   };
@@ -122,7 +123,8 @@ const ItemDetails = () => {
       'Available': <CheckCircleOutlined />,
       'Reserved': <ClockCircleOutlined />,
       'Sold': <DollarOutlined />,
-      'Delivered': <TruckOutlined />
+      'Delivered': <TruckOutlined />,
+      'Under Repair': <WarningOutlined />
     };
     return icons[status] || <CheckCircleOutlined />;
   };
@@ -214,16 +216,18 @@ const ItemDetails = () => {
             <Button icon={<PrinterOutlined />}>
               Print Details
             </Button>
-            {hasPermission('inventory.update') && item?.repaired !== 'Returned' && (
+            {hasPermission('inventory.update') && (
               <>
-                <Button
-                  type="primary"
-                  icon={<TruckOutlined />}
-                  onClick={() => setHandoverModalVisible(true)}
-                >
-                  Handover
-                </Button>
-                {item?.status === 'In Lab' && (
+                {item?.inventoryStatus === 'Reserved' && (
+                  <Button
+                    type="primary"
+                    icon={<TruckOutlined />}
+                    onClick={() => setHandoverModalVisible(true)}
+                  >
+                    Handover
+                  </Button>
+                )}
+                {item?.status === 'In Lab' && item?.inventoryStatus !== 'Available' && (
                   <Button
                     icon={<EditOutlined />}
                     onClick={() => setRepairedModalVisible(true)}

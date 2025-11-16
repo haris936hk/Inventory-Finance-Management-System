@@ -1,14 +1,17 @@
 // This is your Prisma schema file for Inventory & Finance Management System
 // Using PostgreSQL via Supabase
 
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
+        
 
 // ==================== USER & ACCESS MANAGEMENT ====================
 
@@ -142,7 +145,7 @@ model Item {
   condition    String @default("New") // "New", "Used"
 
   // Enhanced inventory status tracking
-  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered"
+  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered", "Under Repair"
   status          String // "In Store", "In Lab", "Handover" (physical location)
   statusHistory   Json[] // Array of {status, date, userId, notes}
   repaired        String? // "No", "Yes", "Returned" (only for "In Lab" items)

@@ -55,19 +55,22 @@ async function withTransaction(callback, options = {}) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      // Build transaction options
+      const transactionOptions = {
+        maxWait: 5000, // Max wait to get a connection
+        timeout: timeout
+      };
+
+      // Add isolation level if Serializable (Prisma must set it before transaction starts)
+      if (isolationLevel === 'Serializable') {
+        transactionOptions.isolationLevel = 'Serializable';
+      }
+
       return await db.prisma.$transaction(
         async (tx) => {
-          // Set transaction isolation level
-          if (isolationLevel === 'Serializable') {
-            await tx.$executeRaw`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`;
-          }
-
           return await callback(tx);
         },
-        {
-          maxWait: 5000, // Max wait to get a connection
-          timeout: timeout
-        }
+        transactionOptions
       );
     } catch (error) {
       lastError = error;

@@ -1,6 +1,5 @@
 // ========== src/services/pdfService.js ==========
 const PDFDocument = require('pdfkit');
-const supabaseStorage = require('../config/supabase');
 const settingsService = require('./settingsService');
 
 class PDFService {
@@ -16,25 +15,10 @@ class PDFService {
 
         // Collect PDF data
         doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', async () => {
+        doc.on('end', () => {
           const pdfBuffer = Buffer.concat(chunks);
-
-          // Upload to Supabase
           const filename = `invoice_${invoice.invoiceNumber}.pdf`;
-          await supabaseStorage.upload(
-            supabaseStorage.buckets.invoices,
-            filename,
-            pdfBuffer,
-            { contentType: 'application/pdf' }
-          );
-
-          const url = await supabaseStorage.createSignedUrl(
-            supabaseStorage.buckets.invoices,
-            filename,
-            3600
-          );
-
-          resolve({ filename, url, buffer: pdfBuffer });
+          resolve({ filename, buffer: pdfBuffer });
         });
 
         // Company header
@@ -213,24 +197,10 @@ class PDFService {
         const chunks = [];
 
         doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', async () => {
+        doc.on('end', () => {
           const pdfBuffer = Buffer.concat(chunks);
-          
           const filename = `receipt_${payment.paymentNumber}.pdf`;
-          await supabaseStorage.upload(
-            supabaseStorage.buckets.receipts,
-            filename,
-            pdfBuffer,
-            { contentType: 'application/pdf' }
-          );
-
-          const url = await supabaseStorage.createSignedUrl(
-            supabaseStorage.buckets.receipts,
-            filename,
-            3600
-          );
-
-          resolve({ filename, url, buffer: pdfBuffer });
+          resolve({ filename, buffer: pdfBuffer });
         });
 
         // Header
@@ -308,24 +278,10 @@ class PDFService {
         const chunks = [];
 
         doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', async () => {
+        doc.on('end', () => {
           const pdfBuffer = Buffer.concat(chunks);
-
           const filename = `handover_${item.serialNumber}_${Date.now()}.pdf`;
-          await supabaseStorage.upload(
-            supabaseStorage.buckets.receipts,
-            filename,
-            pdfBuffer,
-            { contentType: 'application/pdf' }
-          );
-
-          const url = await supabaseStorage.createSignedUrl(
-            supabaseStorage.buckets.receipts,
-            filename,
-            3600
-          );
-
-          resolve({ filename, url, buffer: pdfBuffer });
+          resolve({ filename, buffer: pdfBuffer });
         });
 
         // Header
@@ -403,25 +359,10 @@ class PDFService {
 
         // Collect PDF data
         doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', async () => {
+        doc.on('end', () => {
           const pdfBuffer = Buffer.concat(chunks);
-
-          // Upload to Supabase
           const filename = `purchase_order_${purchaseOrder.poNumber}.pdf`;
-          await supabaseStorage.upload(
-            supabaseStorage.buckets.purchaseOrders,
-            filename,
-            pdfBuffer,
-            { contentType: 'application/pdf' }
-          );
-
-          const url = await supabaseStorage.createSignedUrl(
-            supabaseStorage.buckets.purchaseOrders,
-            filename,
-            3600
-          );
-
-          resolve({ filename, url, buffer: pdfBuffer });
+          resolve({ filename, buffer: pdfBuffer });
         });
 
         // Company header
@@ -584,25 +525,10 @@ class PDFService {
 
         // Collect PDF data
         doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', async () => {
+        doc.on('end', () => {
           const pdfBuffer = Buffer.concat(chunks);
-
-          // Upload to Supabase
           const filename = `vendor_bill_${bill.billNumber}.pdf`;
-          await supabaseStorage.upload(
-            supabaseStorage.buckets.bills,
-            filename,
-            pdfBuffer,
-            { contentType: 'application/pdf' }
-          );
-
-          const url = await supabaseStorage.createSignedUrl(
-            supabaseStorage.buckets.bills,
-            filename,
-            3600
-          );
-
-          resolve({ filename, url, buffer: pdfBuffer });
+          resolve({ filename, buffer: pdfBuffer });
         });
 
         // Company header
