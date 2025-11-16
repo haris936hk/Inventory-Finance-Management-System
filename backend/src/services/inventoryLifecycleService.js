@@ -69,7 +69,7 @@ class InventoryLifecycleService {
         logger.error('Failed to lock items for reservation', {
           itemIds,
           invoiceId,
-          sessionId,
+          userId,
           errorCode: error.code,
           errorMessage: error.message
         });
