@@ -205,13 +205,15 @@ const CreatePurchaseOrder = () => {
                 >
                   <InputNumber
                     style={{ width: '100%' }}
-                    precision={2}
                     min={0}
-                    max={100}
+                    max={99.99}
+                    precision={2}
+                    step={0.01}
                     placeholder="0.00"
                     onChange={() => {
                       setTimeout(() => calculateTotals(), 0);
                     }}
+                    parser={(value) => value.replace(/[^\d.]/g, '')}
                   />
                 </Form.Item>
 

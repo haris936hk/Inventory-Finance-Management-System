@@ -204,9 +204,12 @@ const PurchaseOrderItemSelector = ({ selectedItems, onItemsChange, onTotalChange
           value={record.unitPrice}
           onChange={(value) => updateItem(record.id, 'unitPrice', value || 0)}
           min={0}
-          precision={2}
+          precision={0}
+          step={1}
           style={{ width: '100%' }}
-          placeholder="0.00"
+          placeholder="0"
+          parser={(value) => value.replace(/[^\d]/g, '')}
+          formatter={(value) => value ? `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : ''}
         />
       )
     },
