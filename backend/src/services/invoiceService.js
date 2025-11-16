@@ -199,6 +199,8 @@ async function createInvoice(data, userId) {
       data: {
         currentBalance: newCustomerBalance
       }
+    });
+
     // Reserve items and set customer reference
     const itemIds = data.items.map(item => item.itemId);
 
