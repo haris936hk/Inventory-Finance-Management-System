@@ -228,14 +228,27 @@ const CreateInvoice = () => {
                     </Form.Item>
                   </Col>
                   <Col span={8}>
-                    <Form.Item name="discountValue" noStyle>
-                      <InputNumber
-                        style={{ width: '100%' }}
-                        min={0}
-                        onChange={() => {
-                          setTimeout(() => calculateTotals(), 0);
-                        }}
-                      />
+                    <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.discountType !== currentValues.discountType}>
+                      {({ getFieldValue }) => {
+                        const discountType = getFieldValue('discountType');
+                        const isPercentage = discountType === 'Percentage';
+
+                        return (
+                          <Form.Item name="discountValue" noStyle>
+                            <InputNumber
+                              style={{ width: '100%' }}
+                              min={0}
+                              max={isPercentage ? 99.99 : subtotal}
+                              precision={isPercentage ? 2 : 0}
+                              step={isPercentage ? 0.01 : 1}
+                              onChange={() => {
+                                setTimeout(() => calculateTotals(), 0);
+                              }}
+                              parser={(value) => isPercentage ? value.replace(/[^\d.]/g, '') : value.replace(/[^\d]/g, '')}
+                            />
+                          </Form.Item>
+                        );
+                      }}
                     </Form.Item>
                   </Col>
                   <Col span={8}>
@@ -249,10 +262,13 @@ const CreateInvoice = () => {
                       <InputNumber
                         style={{ width: '100%' }}
                         min={0}
-                        max={100}
+                        max={99.99}
+                        precision={2}
+                        step={0.01}
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}
+                        parser={(value) => value.replace(/[^\d.]/g, '')}
                       />
                     </Form.Item>
                   </Col>
