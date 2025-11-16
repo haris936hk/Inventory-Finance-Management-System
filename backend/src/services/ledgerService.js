@@ -59,10 +59,20 @@ class LedgerService {
 
     // Convert ledger entries to display format
     for (const entry of ledgerEntries) {
+      // Determine transaction type based on description and debit/credit
+      let type;
+      if (entry.description.toLowerCase().includes('cancelled')) {
+        type = 'Credit Note'; // Invoice cancellation creates credit entry
+      } else if (entry.description.toLowerCase().includes('voided')) {
+        type = 'Payment Void'; // Payment void creates debit entry
+      } else {
+        type = entry.debit > 0 ? 'Invoice' : 'Payment';
+      }
+
       entries.push({
         id: entry.id,
         date: entry.entryDate,
-        type: entry.debit > 0 ? 'Invoice' : 'Payment',
+        type: type,
         reference: entry.invoice?.invoiceNumber || entry.description.split(' ')[1],
         description: entry.description,
         debit: parseFloat(entry.debit),
@@ -121,10 +131,20 @@ class LedgerService {
 
     // Convert ledger entries to display format
     for (const entry of ledgerEntries) {
+      // Determine transaction type based on description and debit/credit
+      let type;
+      if (entry.description.toLowerCase().includes('cancelled')) {
+        type = 'Credit Note'; // Bill cancellation creates credit entry
+      } else if (entry.description.toLowerCase().includes('voided')) {
+        type = 'Payment Void'; // Payment void creates debit entry (if implemented)
+      } else {
+        type = entry.debit > 0 ? 'Bill' : 'Payment';
+      }
+
       entries.push({
         id: entry.id,
         date: entry.entryDate,
-        type: entry.debit > 0 ? 'Bill' : 'Payment',
+        type: type,
         reference: entry.bill?.billNumber || entry.description.split(' ')[1],
         description: entry.description,
         debit: parseFloat(entry.debit),
