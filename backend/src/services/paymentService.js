@@ -119,20 +119,12 @@ async function recordPayment(data, userId) {
     // 10. Update bill status based on new paid amount
     const newBillStatus = await updateBillStatus(tx, data.billId);
 
-    // 11. Update vendor balance (decrease payable)
-    await tx.vendor.update({
-      where: { id: data.vendorId },
-      data: {
-        currentBalance: {
-          decrement: paymentAmount
-        }
-      }
-    });
-
-    // 12. Create vendor ledger entry
+    // 11. Create vendor ledger entry (matches customer payment pattern)
     const vendor = await tx.vendor.findUnique({
       where: { id: data.vendorId }
     });
+
+    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) - paymentAmount);
 
     await tx.vendorLedger.create({
       data: {
@@ -141,8 +133,16 @@ async function recordPayment(data, userId) {
         description: `Payment ${paymentNumber} for Bill ${bill.billNumber}`,
         debit: 0,
         credit: paymentAmount,
-        balance: parseFloat(vendor.currentBalance),
+        balance: newVendorBalance,
         billId: data.billId
+      }
+    });
+
+    // 12. Update vendor balance
+    await tx.vendor.update({
+      where: { id: data.vendorId },
+      data: {
+        currentBalance: newVendorBalance
       }
     });
 
