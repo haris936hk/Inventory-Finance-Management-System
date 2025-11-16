@@ -28,80 +28,50 @@ class LedgerService {
       throw error;
     }
 
-    // Get all financial transactions for this customer
-    const ledgerEntries = [];
-
-    // Get invoices (exclude cancelled ones)
-    const invoices = await db.prisma.invoice.findMany({
-      where: {
-        customerId,
-        deletedAt: null,
-        cancelledAt: null  // Exclude cancelled invoices
+    // Get all ledger entries from CustomerLedger table (single source of truth)
+    const ledgerEntries = await db.prisma.customerLedger.findMany({
+      where: { customerId },
+      include: {
+        invoice: {
+          select: {
+            invoiceNumber: true,
+            status: true
+          }
+        }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { entryDate: 'asc' }
     });
-
-    for (const invoice of invoices) {
-      ledgerEntries.push({
-        id: `invoice-${invoice.id}`,
-        date: invoice.createdAt,
-        type: 'Invoice',
-        reference: invoice.invoiceNumber,
-        description: `Invoice ${invoice.invoiceNumber}`,
-        amount: parseFloat(invoice.total),
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Get payments (exclude voided ones)
-    const payments = await db.prisma.payment.findMany({
-      where: {
-        customerId,
-        deletedAt: null,
-        voidedAt: null  // Exclude voided payments
-      },
-      orderBy: { paymentDate: 'asc' }
-    });
-
-    for (const payment of payments) {
-      ledgerEntries.push({
-        id: `payment-${payment.id}`,
-        date: payment.paymentDate,
-        type: 'Payment',
-        reference: payment.paymentNumber,
-        description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Sort by date and calculate running balance
-    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    let runningBalance = parseFloat(customer.openingBalance) || 0;
 
     // Add opening balance entry if it exists
+    const entries = [];
     if (customer.openingBalance && customer.openingBalance !== 0) {
-      ledgerEntries.unshift({
+      entries.push({
         id: 'opening-balance',
         date: customer.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: parseFloat(customer.openingBalance),
+        debit: parseFloat(customer.openingBalance),
+        credit: 0,
         balance: parseFloat(customer.openingBalance)
       });
     }
 
-    // Calculate running balance for each entry
+    // Convert ledger entries to display format
     for (const entry of ledgerEntries) {
-      if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
-      }
-      entry.balance = runningBalance;
+      entries.push({
+        id: entry.id,
+        date: entry.entryDate,
+        type: entry.debit > 0 ? 'Invoice' : 'Payment',
+        reference: entry.invoice?.invoiceNumber || entry.description.split(' ')[1],
+        description: entry.description,
+        debit: parseFloat(entry.debit),
+        credit: parseFloat(entry.credit),
+        balance: parseFloat(entry.balance)
+      });
     }
 
-    return ledgerEntries;
+    return entries;
   }
 
   /**
@@ -120,75 +90,50 @@ class LedgerService {
       throw error;
     }
 
-    // Get all financial transactions for this vendor
-    const ledgerEntries = [];
-
-    // Get vendor bills (not POs - bills represent the actual financial obligation)
-    const bills = await db.prisma.bill.findMany({
-      where: {
-        vendorId,
-        deletedAt: null
+    // Get all ledger entries from VendorLedger table (single source of truth)
+    const ledgerEntries = await db.prisma.vendorLedger.findMany({
+      where: { vendorId },
+      include: {
+        bill: {
+          select: {
+            billNumber: true,
+            status: true
+          }
+        }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { entryDate: 'asc' }
     });
-
-    for (const bill of bills) {
-      ledgerEntries.push({
-        date: bill.createdAt,
-        type: 'Bill',
-        reference: bill.billNumber,
-        description: `Bill ${bill.billNumber}`,
-        amount: parseFloat(bill.total),
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Get vendor payments
-    const payments = await db.prisma.vendorPayment.findMany({
-      where: {
-        vendorId,
-        deletedAt: null
-      },
-      orderBy: { paymentDate: 'asc' }
-    });
-
-    for (const payment of payments) {
-      ledgerEntries.push({
-        date: payment.paymentDate,
-        type: 'Payment',
-        reference: payment.paymentNumber,
-        description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments (reduces what we owe)
-        balance: 0 // Will be calculated below
-      });
-    }
-
-    // Sort by date and calculate running balance
-    ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    let runningBalance = parseFloat(vendor.openingBalance) || 0;
 
     // Add opening balance entry if it exists
+    const entries = [];
     if (vendor.openingBalance && vendor.openingBalance !== 0) {
-      ledgerEntries.unshift({
+      entries.push({
+        id: 'opening-balance',
         date: vendor.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: parseFloat(vendor.openingBalance),
+        debit: parseFloat(vendor.openingBalance),
+        credit: 0,
         balance: parseFloat(vendor.openingBalance)
       });
     }
 
-    // Calculate running balance for each entry
+    // Convert ledger entries to display format
     for (const entry of ledgerEntries) {
-      if (entry.type !== 'Opening Balance') {
-        runningBalance += entry.amount;
-      }
-      entry.balance = runningBalance;
+      entries.push({
+        id: entry.id,
+        date: entry.entryDate,
+        type: entry.debit > 0 ? 'Bill' : 'Payment',
+        reference: entry.bill?.billNumber || entry.description.split(' ')[1],
+        description: entry.description,
+        debit: parseFloat(entry.debit),
+        credit: parseFloat(entry.credit),
+        balance: parseFloat(entry.balance)
+      });
     }
 
-    return ledgerEntries;
+    return entries;
   }
 
   /**

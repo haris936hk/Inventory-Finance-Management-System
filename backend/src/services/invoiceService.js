@@ -178,6 +178,29 @@ async function createInvoice(data, userId) {
       }
     });
 
+    // Create customer ledger entry (debit - increases receivable)
+    const newCustomerBalance = formatAmount(parseFloat(customer.currentBalance) + total);
+
+    await tx.customerLedger.create({
+      data: {
+        customerId: data.customerId,
+        entryDate: data.invoiceDate || new Date(),
+        description: `Invoice ${invoiceNumber}`,
+        debit: total,
+        credit: 0,
+        balance: newCustomerBalance,
+        invoiceId: invoice.id
+      }
+    });
+
+    // Update customer balance
+    await tx.customer.update({
+      where: { id: data.customerId },
+      data: {
+        currentBalance: newCustomerBalance
+      }
+    });
+
     // Create audit log
     await tx.invoicePaymentAudit.create({
       data: {
