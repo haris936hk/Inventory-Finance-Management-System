@@ -221,7 +221,16 @@ const CreateInvoice = () => {
                 <Row gutter={8} style={{ marginBottom: 16 }}>
                   <Col span={8}>
                     <Form.Item name="discountType" noStyle>
-                      <Select placeholder="Discount">
+                      <Select
+                        placeholder="Discount"
+                        allowClear
+                        onChange={(value) => {
+                          if (!value) {
+                            form.setFieldsValue({ discountValue: 0 });
+                            setTimeout(() => calculateTotals(), 0);
+                          }
+                        }}
+                      >
                         <Select.Option value="Percentage">%</Select.Option>
                         <Select.Option value="Fixed">Fixed</Select.Option>
                       </Select>
@@ -231,6 +240,11 @@ const CreateInvoice = () => {
                     <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.discountType !== currentValues.discountType}>
                       {({ getFieldValue }) => {
                         const discountType = getFieldValue('discountType');
+
+                        if (!discountType) {
+                          return null;
+                        }
+
                         const isPercentage = discountType === 'Percentage';
 
                         return (
