@@ -12,7 +12,8 @@ import {
   Col,
   Space,
   message,
-  Typography
+  Typography,
+  Divider
 } from 'antd';
 import {
   SaveOutlined,

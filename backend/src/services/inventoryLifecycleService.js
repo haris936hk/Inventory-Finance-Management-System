@@ -104,8 +104,7 @@ class InventoryLifecycleService {
             reservedAt: new Date(),
             reservedBy: userId,
             reservedForType: 'Invoice',
-            reservedForId: invoiceId,
-            reservationExpiry: null // Permanent reservation for invoices
+            reservedForId: invoiceId
           }
         })
       );
@@ -178,8 +177,7 @@ class InventoryLifecycleService {
             reservedAt: null,
             reservedBy: null,
             reservedForType: null,
-            reservedForId: null,
-            reservationExpiry: null
+            reservedForId: null
           }
         })
       );
@@ -409,10 +407,19 @@ class InventoryLifecycleService {
 
   /**
    * Cleanup expired temporary reservations
+   * Note: Since reservationExpiry field doesn't exist in schema,
+   * this method is kept for future use if expiry feature is added
    * @returns {Promise<Object>} Cleanup result
    */
   async cleanupExpiredReservations() {
     return await db.transaction(async (prisma) => {
+      // Note: reservationExpiry field doesn't exist in current schema
+      // This method will return empty results until field is added
+      logger.info('cleanupExpiredReservations: reservationExpiry field not in schema, skipping cleanup');
+
+      return { cleanedCount: 0, expiredItems: [] };
+
+      /* Original code - commented out until reservationExpiry field is added to schema
       const expiredItems = await prisma.item.findMany({
         where: {
           inventoryStatus: 'Reserved',
@@ -436,8 +443,7 @@ class InventoryLifecycleService {
             reservedAt: null,
             reservedBy: null,
             reservedForType: null,
-            reservedForId: null,
-            reservationExpiry: null
+            reservedForId: null
           }
         })
       );
@@ -466,6 +472,7 @@ class InventoryLifecycleService {
         cleanedCount: expiredItems.length,
         expiredItems: cleanedItems
       };
+      */
     });
   }
 
