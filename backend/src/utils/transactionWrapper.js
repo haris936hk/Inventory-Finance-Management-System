@@ -183,7 +183,10 @@ function addAmounts(...amounts) {
  * Format amount to fixed precision for storage
  */
 function formatAmount(amount, precision = 4) {
-  return parseFloat(parseFloat(amount).toFixed(precision));
+  // Use Math.round to avoid floating-point precision errors
+  // Multiply by 10^precision, round, then divide back
+  const factor = Math.pow(10, precision);
+  return Math.round(amount * factor) / factor;
 }
 
 module.exports = {
