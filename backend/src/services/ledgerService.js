@@ -1,6 +1,7 @@
 // ========== src/services/ledgerService.js ==========
 const db = require('../config/database');
 const logger = require('../config/logger');
+const { formatAmount } = require('../utils/transactionWrapper');
 
 /**
  * Ledger Service
@@ -9,11 +10,31 @@ const logger = require('../config/logger');
  * - Customer ledger retrieval
  * - Vendor ledger retrieval
  * - Customer statement generation
+ *
+ * IMPORTANT - DUAL LEDGER SYSTEM:
+ * This service provides TWO ways to view ledger data:
+ *
+ * 1. getCustomerLedger() / getVendorLedger()
+ *    - Computes ledger ON-THE-FLY from invoices/bills and payments
+ *    - Excludes cancelled invoices/bills and voided payments
+ *    - Used for real-time ledger display in UI
+ *    - Always accurate but requires computation
+ *
+ * 2. getCustomerStatement() (uses CustomerLedger table)
+ *    - Reads from pre-created ledger entries in database
+ *    - Ledger entries created by services (invoiceService, paymentService, etc.)
+ *    - Used for historical statements and reports
+ *    - Fast but depends on services creating entries correctly
+ *
+ * CONSISTENCY REQUIREMENT:
+ * Both methods MUST return the same results for the same customer/vendor.
+ * Services MUST create CustomerLedger/VendorLedger entries when creating/cancelling
+ * invoices, bills, and payments.
  */
 
 class LedgerService {
   /**
-   * Get customer ledger with all financial transactions
+   * Get customer ledger with all financial transactions (COMPUTED)
    * @param {string} customerId - Customer ID
    * @returns {Promise<Array>} Ledger entries with running balance
    */
@@ -48,7 +69,7 @@ class LedgerService {
         type: 'Invoice',
         reference: invoice.invoiceNumber,
         description: `Invoice ${invoice.invoiceNumber}`,
-        amount: parseFloat(invoice.total),
+        amount: formatAmount(invoice.total),  // FIX: Use formatAmount for precision
         balance: 0 // Will be calculated below
       });
     }
@@ -70,7 +91,7 @@ class LedgerService {
         type: 'Payment',
         reference: payment.paymentNumber,
         description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments
+        amount: -formatAmount(payment.amount), // FIX: Use formatAmount - Negative for payments
         balance: 0 // Will be calculated below
       });
     }
@@ -78,18 +99,19 @@ class LedgerService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = parseFloat(customer.openingBalance) || 0;
+    let runningBalance = formatAmount(customer.openingBalance || 0);  // FIX: Use formatAmount
 
     // Add opening balance entry if it exists
     if (customer.openingBalance && customer.openingBalance !== 0) {
+      const openingAmount = formatAmount(customer.openingBalance);  // FIX: Use formatAmount
       ledgerEntries.unshift({
         id: 'opening-balance',
         date: customer.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: parseFloat(customer.openingBalance),
-        balance: parseFloat(customer.openingBalance)
+        amount: openingAmount,
+        balance: openingAmount
       });
     }
 
@@ -124,30 +146,34 @@ class LedgerService {
     const ledgerEntries = [];
 
     // Get vendor bills (not POs - bills represent the actual financial obligation)
+    // CRITICAL FIX: Exclude cancelled bills from ledger
     const bills = await db.prisma.bill.findMany({
       where: {
         vendorId,
-        deletedAt: null
+        deletedAt: null,
+        cancelledAt: null  // FIX: Exclude cancelled bills
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { billDate: 'asc' }  // FIX: Use billDate instead of createdAt for chronological accuracy
     });
 
     for (const bill of bills) {
       ledgerEntries.push({
-        date: bill.createdAt,
+        date: bill.billDate,  // FIX: Use billDate for consistency
         type: 'Bill',
         reference: bill.billNumber,
         description: `Bill ${bill.billNumber}`,
-        amount: parseFloat(bill.total),
+        amount: formatAmount(bill.total),  // FIX: Use formatAmount for precision
         balance: 0 // Will be calculated below
       });
     }
 
     // Get vendor payments
+    // CRITICAL FIX: Exclude voided payments from ledger
     const payments = await db.prisma.vendorPayment.findMany({
       where: {
         vendorId,
-        deletedAt: null
+        deletedAt: null,
+        voidedAt: null  // FIX: Exclude voided payments
       },
       orderBy: { paymentDate: 'asc' }
     });
@@ -158,7 +184,7 @@ class LedgerService {
         type: 'Payment',
         reference: payment.paymentNumber,
         description: `Payment ${payment.method}`,
-        amount: -parseFloat(payment.amount), // Negative for payments (reduces what we owe)
+        amount: -formatAmount(payment.amount), // FIX: Use formatAmount - Negative for payments (reduces what we owe)
         balance: 0 // Will be calculated below
       });
     }
@@ -166,17 +192,18 @@ class LedgerService {
     // Sort by date and calculate running balance
     ledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    let runningBalance = parseFloat(vendor.openingBalance) || 0;
+    let runningBalance = formatAmount(vendor.openingBalance || 0);  // FIX: Use formatAmount
 
     // Add opening balance entry if it exists
     if (vendor.openingBalance && vendor.openingBalance !== 0) {
+      const openingAmount = formatAmount(vendor.openingBalance);  // FIX: Use formatAmount
       ledgerEntries.unshift({
         date: vendor.createdAt,
         type: 'Opening Balance',
         reference: 'OB',
         description: 'Opening Balance',
-        amount: parseFloat(vendor.openingBalance),
-        balance: parseFloat(vendor.openingBalance)
+        amount: openingAmount,
+        balance: openingAmount
       });
     }
 

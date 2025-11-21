@@ -51,6 +51,21 @@ async function recordPayment(data, userId) {
       throw new ValidationError('Vendor must match bill vendor');
     }
 
+    // CRITICAL FIX: Validate bill's PO is not cancelled
+    const po = await tx.purchaseOrder.findUnique({
+      where: { id: bill.purchaseOrderId }
+    });
+
+    if (!po) {
+      throw new ValidationError('Purchase Order not found');
+    }
+
+    if (po.status === 'Cancelled') {
+      throw new ValidationError(
+        'Cannot record payment for bill from cancelled Purchase Order'
+      );
+    }
+
     // 4. Format and validate payment amount
     const paymentAmount = formatAmount(data.amount);
 
@@ -119,21 +134,22 @@ async function recordPayment(data, userId) {
     // 10. Update bill status based on new paid amount
     const newBillStatus = await updateBillStatus(tx, data.billId);
 
-    // 11. Update vendor balance (decrease payable)
-    await tx.vendor.update({
-      where: { id: data.vendorId },
-      data: {
-        currentBalance: {
-          decrement: paymentAmount
-        }
-      }
-    });
-
-    // 12. Create vendor ledger entry
+    // 11. CRITICAL FIX: Fetch vendor BEFORE balance update, calculate explicitly
     const vendor = await tx.vendor.findUnique({
       where: { id: data.vendorId }
     });
 
+    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) - paymentAmount);
+
+    // 12. Update vendor balance (decrease payable) with explicit value
+    await tx.vendor.update({
+      where: { id: data.vendorId },
+      data: {
+        currentBalance: newVendorBalance  // FIX: Explicit value instead of decrement
+      }
+    });
+
+    // 13. Create vendor ledger entry with correct new balance
     await tx.vendorLedger.create({
       data: {
         vendorId: data.vendorId,
@@ -141,7 +157,7 @@ async function recordPayment(data, userId) {
         description: `Payment ${paymentNumber} for Bill ${bill.billNumber}`,
         debit: 0,
         credit: paymentAmount,
-        balance: parseFloat(vendor.currentBalance),
+        balance: newVendorBalance,  // FIX: Use new balance, not stale balance
         billId: data.billId
       }
     });
@@ -230,8 +246,8 @@ async function voidPayment(paymentId, reason, userId) {
       }
     });
 
-    // 5. Reverse bill paid amount
-    const newPaidAmount = formatAmount(parseFloat(bill.paidAmount) - parseFloat(payment.amount));
+    // 5. Reverse bill paid amount (FIX: Use formatAmount for precision)
+    const newPaidAmount = formatAmount(formatAmount(bill.paidAmount) - formatAmount(payment.amount));
 
     await tx.bill.update({
       where: { id: payment.billId },
@@ -243,34 +259,36 @@ async function voidPayment(paymentId, reason, userId) {
     // 6. Update bill status
     const newBillStatus = await updateBillStatus(tx, payment.billId);
 
-    // 7. Reverse vendor balance
-    await tx.vendor.update({
-      where: { id: payment.vendorId },
-      data: {
-        currentBalance: {
-          increment: parseFloat(payment.amount)
-        }
-      }
-    });
-
-    // 8. Create reverse ledger entry
+    // 7. CRITICAL FIX: Fetch vendor BEFORE balance update, calculate explicitly
     const vendor = await tx.vendor.findUnique({
       where: { id: payment.vendorId }
     });
 
+    const paymentAmountFormatted = formatAmount(payment.amount);
+    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) + paymentAmountFormatted);
+
+    // 8. Reverse vendor balance with explicit value
+    await tx.vendor.update({
+      where: { id: payment.vendorId },
+      data: {
+        currentBalance: newVendorBalance  // FIX: Explicit value instead of increment
+      }
+    });
+
+    // 9. Create reverse ledger entry with correct new balance
     await tx.vendorLedger.create({
       data: {
         vendorId: payment.vendorId,
         entryDate: new Date(),
         description: `Payment ${payment.paymentNumber} voided: ${reason}`,
-        debit: parseFloat(payment.amount),
+        debit: paymentAmountFormatted,  // FIX: Use formatAmount
         credit: 0,
-        balance: parseFloat(vendor.currentBalance),
+        balance: newVendorBalance,  // FIX: Use new balance, not stale balance
         billId: payment.billId
       }
     });
 
-    // 9. Create audit trail
+    // 10. Create audit trail (FIX: Use formatAmount for consistency)
     await tx.pOBillAudit.create({
       data: {
         purchaseOrderId: bill.purchaseOrderId,
@@ -279,7 +297,7 @@ async function voidPayment(paymentId, reason, userId) {
         paymentId: payment.id,
         beforeState: {
           billStatus: bill.status,
-          paidAmount: parseFloat(bill.paidAmount)
+          paidAmount: formatAmount(bill.paidAmount)  // FIX: formatAmount for precision
         },
         afterState: {
           billStatus: newBillStatus,
@@ -288,7 +306,7 @@ async function voidPayment(paymentId, reason, userId) {
         performedBy: userId,
         metadata: {
           reason,
-          voidedAmount: parseFloat(payment.amount)
+          voidedAmount: paymentAmountFormatted  // FIX: Use already formatted amount
         }
       }
     });
@@ -296,7 +314,7 @@ async function voidPayment(paymentId, reason, userId) {
     logger.info(`Payment voided: ${payment.paymentNumber}`, {
       paymentId,
       reason,
-      reversedAmount: parseFloat(payment.amount)
+      reversedAmount: paymentAmountFormatted  // FIX: Use already formatted amount
     });
 
     return voided;

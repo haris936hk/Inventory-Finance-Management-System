@@ -52,14 +52,21 @@ class InventoryLifecycleService {
     }
 
     return await db.transaction(async (prisma) => {
-      // Lock items for update to prevent race conditions
+      // CRITICAL FIX: Acquire row-level locks to prevent race conditions
+      // Lock items in sorted order to prevent deadlocks
+      const sortedItemIds = [...itemIds].sort();
+
+      for (const itemId of sortedItemIds) {
+        await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+      }
+
+      // Now fetch the locked items
       const items = await prisma.item.findMany({
         where: {
           id: { in: itemIds },
           deletedAt: null
         },
-        // Add explicit row-level locking
-        orderBy: { id: 'asc' } // Consistent ordering to prevent deadlocks
+        orderBy: { id: 'asc' }
       });
 
       // Validate all items exist
@@ -149,18 +156,19 @@ class InventoryLifecycleService {
    */
   async releaseItemsForInvoiceCancellation(invoiceId, userId) {
     return await db.transaction(async (prisma) => {
-      // Find all items reserved for this invoice
-      const reservedItems = await prisma.item.findMany({
+      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
+      const itemIdsResult = await prisma.item.findMany({
         where: {
           reservedForType: 'Invoice',
           reservedForId: invoiceId,
           inventoryStatus: 'Reserved',
           deletedAt: null
         },
+        select: { id: true },
         orderBy: { id: 'asc' }
       });
 
-      if (reservedItems.length === 0) {
+      if (itemIdsResult.length === 0) {
         logger.warn(`No reserved items found for Invoice ${invoiceId}`);
         return {
           releasedItems: [],
@@ -168,6 +176,21 @@ class InventoryLifecycleService {
           invoiceId
         };
       }
+
+      // Lock items in sorted order to prevent deadlocks
+      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      for (const itemId of sortedItemIds) {
+        await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+      }
+
+      // Now fetch the locked items with full data
+      const reservedItems = await prisma.item.findMany({
+        where: {
+          id: { in: sortedItemIds },
+          deletedAt: null
+        },
+        orderBy: { id: 'asc' }
+      });
 
       // Update all items back to Available status
       const updatePromises = reservedItems.map(item =>
@@ -219,22 +242,25 @@ class InventoryLifecycleService {
    * Mark items as sold when invoice is fully paid (Reserved → Sold)
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User processing the payment
+   * @param {Object} tx - Optional transaction object (for use within existing transaction)
    * @returns {Promise<Object>} Sale result
    */
-  async markItemsAsSoldForInvoice(invoiceId, userId) {
-    return await db.transaction(async (prisma) => {
-      // Find all items reserved for this invoice
-      const reservedItems = await prisma.item.findMany({
+  async markItemsAsSoldForInvoice(invoiceId, userId, tx = null) {
+    // CRITICAL FIX: Support both standalone and within-transaction usage
+    const executeOperation = async (prisma) => {
+      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
+      const itemIdsResult = await prisma.item.findMany({
         where: {
           reservedForType: 'Invoice',
           reservedForId: invoiceId,
           inventoryStatus: 'Reserved',
           deletedAt: null
         },
+        select: { id: true },
         orderBy: { id: 'asc' }
       });
 
-      if (reservedItems.length === 0) {
+      if (itemIdsResult.length === 0) {
         logger.warn(`No reserved items found for Invoice ${invoiceId}`);
         return {
           soldItems: [],
@@ -242,6 +268,21 @@ class InventoryLifecycleService {
           invoiceId
         };
       }
+
+      // Lock items in sorted order to prevent deadlocks
+      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      for (const itemId of sortedItemIds) {
+        await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+      }
+
+      // Now fetch the locked items with full data
+      const reservedItems = await prisma.item.findMany({
+        where: {
+          id: { in: sortedItemIds },
+          deletedAt: null
+        },
+        orderBy: { id: 'asc' }
+      });
 
       // Update all items to Sold status
       const updatePromises = reservedItems.map(item =>
@@ -283,18 +324,27 @@ class InventoryLifecycleService {
         saleCount: reservedItems.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
   }
 
   /**
-   * Mark items as delivered (Sold → Delivered)
+   * Reverse items from Sold back to Reserved (when payment voided)
+   * CRITICAL FIX: Prevents inventory permanently locked as "Sold"
    * @param {string} invoiceId - Invoice ID
-   * @param {string} userId - User processing the delivery
-   * @param {Object} deliveryInfo - Delivery information
-   * @returns {Promise<Object>} Delivery result
+   * @param {string} userId - User voiding the payment
+   * @param {Object} tx - Optional transaction object (for use within existing transaction)
+   * @returns {Promise<Object>} Reversal result
    */
-  async markItemsAsDeliveredForInvoice(invoiceId, userId, deliveryInfo = {}) {
-    return await db.transaction(async (prisma) => {
+  async reverseItemsFromSoldToReserved(invoiceId, userId, tx = null) {
+    // Support both standalone and within-transaction usage
+    const executeOperation = async (prisma) => {
       // Find all items sold for this invoice
       const soldItems = await prisma.item.findMany({
         where: {
@@ -307,8 +357,103 @@ class InventoryLifecycleService {
       });
 
       if (soldItems.length === 0) {
+        logger.warn(`No sold items found for Invoice ${invoiceId} to reverse`);
+        return {
+          reversedItems: [],
+          reversalCount: 0,
+          invoiceId
+        };
+      }
+
+      // Reverse items back to Reserved status
+      const updatePromises = soldItems.map(item =>
+        prisma.item.update({
+          where: { id: item.id },
+          data: {
+            inventoryStatus: 'Reserved',
+            status: 'In Store', // Reset physical status back
+            outboundDate: null  // Clear outbound date
+          }
+        })
+      );
+
+      const reversedItems = await Promise.all(updatePromises);
+
+      // Record status change history
+      const historyPromises = soldItems.map(item =>
+        prisma.inventoryStatusHistory.create({
+          data: {
+            itemId: item.id,
+            fromStatus: 'Sold',
+            toStatus: 'Reserved',
+            changeReason: 'PAYMENT_VOIDED',
+            referenceType: 'Invoice',
+            referenceId: invoiceId,
+            changedBy: userId,
+            notes: `Reversed from Sold to Reserved due to payment void for Invoice ${invoiceId}`
+          }
+        })
+      );
+
+      const historyEntries = await Promise.all(historyPromises);
+
+      logger.info(`Reversed ${soldItems.length} items from Sold to Reserved for Invoice ${invoiceId} by user ${userId}`);
+
+      return {
+        reversedItems,
+        historyEntries,
+        reversalCount: soldItems.length,
+        invoiceId
+      };
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
+  }
+
+  /**
+   * Mark items as delivered (Sold → Delivered)
+   * @param {string} invoiceId - Invoice ID
+   * @param {string} userId - User processing the delivery
+   * @param {Object} deliveryInfo - Delivery information
+   * @returns {Promise<Object}> Delivery result
+   */
+  async markItemsAsDeliveredForInvoice(invoiceId, userId, deliveryInfo = {}) {
+    return await db.transaction(async (prisma) => {
+      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
+      const itemIdsResult = await prisma.item.findMany({
+        where: {
+          reservedForType: 'Invoice',
+          reservedForId: invoiceId,
+          inventoryStatus: 'Sold',
+          deletedAt: null
+        },
+        select: { id: true },
+        orderBy: { id: 'asc' }
+      });
+
+      if (itemIdsResult.length === 0) {
         throw new Error(`No sold items found for Invoice ${invoiceId}`);
       }
+
+      // Lock items in sorted order to prevent deadlocks
+      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      for (const itemId of sortedItemIds) {
+        await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+      }
+
+      // Now fetch the locked items with full data
+      const soldItems = await prisma.item.findMany({
+        where: {
+          id: { in: sortedItemIds },
+          deletedAt: null
+        },
+        orderBy: { id: 'asc' }
+      });
 
       // Update all items to Delivered status
       const updatePromises = soldItems.map(item =>

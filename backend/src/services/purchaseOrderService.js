@@ -3,6 +3,39 @@
  *
  * Implements strict lifecycle: Draft → Sent → Partial → Paid → Delivered
  * with proper concurrency controls and data integrity
+ *
+ * ========== PURCHASE ORDER LIFECYCLE ==========
+ *
+ * Expected Flow (User Requirements):
+ * 1. PO Created (Draft) → No inventory, no vendor balance change
+ * 2. PO Sent to Vendor → Still no inventory/balance change
+ * 3. Bill Received from Vendor → Vendor balance INCREASES (payable recorded)
+ * 4. Items Physically Received → Inventory added incrementally (partial deliveries supported)
+ * 5. Payment Made to Vendor → Vendor balance DECREASES
+ *
+ * Key Business Rules:
+ * - Bills must be created BEFORE items can be received (vendor balance increases first)
+ * - Multiple bills can be created against one PO (partial billing)
+ * - SUM(bills.total) <= PO.total (enforced with locks)
+ * - Partial deliveries supported (items received in multiple shipments)
+ * - PO can only be cancelled in Draft/Sent status (before bills/items)
+ * - Cannot cancel bill if items have been received in inventory
+ * - Bill amounts cannot be updated (cancel + new bill for corrections)
+ *
+ * Status Transitions:
+ * - Draft → Sent: PO sent to vendor for processing
+ * - Sent → Partial: First bill created (SUM(bills) < PO.total)
+ * - Sent → Paid: Fully billed in single bill (SUM(bills) = PO.total)
+ * - Partial → Paid: Remaining bills created (SUM(bills) = PO.total)
+ * - Paid → Delivered: All items received (receivedQuantities = ordered quantities)
+ * - Draft/Sent → Cancelled: Only if no bills and no items received
+ *
+ * Data Integrity Enforcements:
+ * - Bills: Lock PO before creating bill, validate SUM(bills) <= PO.total
+ * - Payments: Lock bill, validate SUM(payments) <= bill.total, check PO not cancelled
+ * - Inventory Receipt: Lock PO, validate bill exists, validate received <= ordered
+ * - Vendor Ledger: Updated atomically with bill creation/cancellation
+ * - All operations use DECIMAL(18,4) precision with formatAmount()
  */
 
 const db = require('../config/database');
@@ -22,11 +55,14 @@ const { generatePONumber } = require('../utils/generateId');
 /**
  * Valid PO status transitions
  * Draft → Sent → Partial (partial bills) → Paid (fully billed) → Delivered (items received in inventory)
+ *
+ * CRITICAL: PO can only be cancelled from Draft/Sent states (before bills are created)
+ * Once bills exist (Partial status), cancellation is prohibited to maintain data integrity
  */
 const STATUS_TRANSITIONS = {
   'Draft': ['Sent', 'Cancelled'],
   'Sent': ['Partial', 'Paid', 'Cancelled'],
-  'Partial': ['Paid', 'Cancelled'],
+  'Partial': ['Paid'],  // FIX: Cannot cancel once bills exist (was: ['Paid', 'Cancelled'])
   'Paid': ['Delivered'], // Can only deliver after fully paid
   'Delivered': [], // Terminal state
   'Cancelled': [] // Terminal state
@@ -285,6 +321,100 @@ async function updatePurchaseOrder(poId, updates) {
 }
 
 /**
+ * Cancel a Purchase Order
+ * Can only cancel POs in Draft or Sent status (before bills/items received)
+ *
+ * @param {string} poId - PO ID
+ * @param {string} reason - Cancellation reason
+ * @param {string} userId - User performing cancellation
+ * @returns {Promise<Object>} Cancelled PO
+ */
+async function cancelPurchaseOrder(poId, reason, userId) {
+  return withTransaction(async (tx) => {
+    // 1. Lock the PO
+    const po = await lockForUpdate(tx, 'PurchaseOrder', poId);
+
+    // 2. Validate PO can be cancelled (only Draft/Sent status)
+    if (!['Draft', 'Sent'].includes(po.status)) {
+      throw new ValidationError(
+        `Cannot cancel PO in ${po.status} status. Only Draft or Sent POs can be cancelled.`
+      );
+    }
+
+    // 3. Check for existing bills (even cancelled ones indicate history)
+    const billCount = await tx.bill.count({
+      where: {
+        purchaseOrderId: poId,
+        deletedAt: null,
+        cancelledAt: null
+      }
+    });
+
+    if (billCount > 0) {
+      throw new ValidationError(
+        `Cannot cancel PO with existing bills. ${billCount} active bill(s) found. Please cancel bills first.`
+      );
+    }
+
+    // 4. Check for received items in inventory
+    const itemCount = await tx.item.count({
+      where: {
+        purchaseOrderId: poId,
+        deletedAt: null
+      }
+    });
+
+    if (itemCount > 0) {
+      throw new ValidationError(
+        `Cannot cancel PO with received items. ${itemCount} item(s) found in inventory for this PO.`
+      );
+    }
+
+    // 5. Mark PO as cancelled
+    const cancelled = await tx.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        status: 'Cancelled',
+        cancelledAt: new Date(),
+        cancelReason: reason
+      },
+      include: {
+        vendor: true,
+        lineItems: true
+      }
+    });
+
+    // 6. Create audit trail
+    await tx.pOBillAudit.create({
+      data: {
+        purchaseOrderId: poId,
+        action: 'PO_CANCELLED',
+        beforeState: {
+          status: po.status
+        },
+        afterState: {
+          status: 'Cancelled',
+          cancelReason: reason
+        },
+        performedBy: userId,
+        metadata: {
+          reason,
+          poNumber: po.poNumber
+        }
+      }
+    });
+
+    logger.info(`PO cancelled: ${po.poNumber}`, {
+      poId,
+      reason,
+      previousStatus: po.status
+    });
+
+    return cancelled;
+  });
+}
+
+/**
  * Get Purchase Order with computed fields
  *
  * @param {string} poId - PO ID
@@ -323,8 +453,8 @@ async function getPurchaseOrder(poId) {
     throw new ValidationError('Purchase Order not found');
   }
 
-  // Add computed fields
-  po.remainingAmount = formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount));
+  // Add computed fields (FIX: Use formatAmount for precision)
+  po.remainingAmount = formatAmount(formatAmount(po.total) - formatAmount(po.billedAmount));
   po.canCreateBill = po.status !== 'Cancelled' &&
                      po.status !== 'Completed' &&
                      po.remainingAmount > 0;
@@ -383,14 +513,17 @@ async function getPurchaseOrders(filters = {}) {
     orderBy: { orderDate: 'desc' }
   });
 
-  // Add computed fields
-  return purchaseOrders.map(po => ({
-    ...po,
-    remainingAmount: formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)),
-    canCreateBill: po.status !== 'Cancelled' &&
-                   po.status !== 'Completed' &&
-                   formatAmount(parseFloat(po.total) - parseFloat(po.billedAmount)) > 0
-  }));
+  // Add computed fields (FIX: Use formatAmount for precision)
+  return purchaseOrders.map(po => {
+    const remainingAmount = formatAmount(formatAmount(po.total) - formatAmount(po.billedAmount));
+    return {
+      ...po,
+      remainingAmount,
+      canCreateBill: po.status !== 'Cancelled' &&
+                     po.status !== 'Completed' &&
+                     remainingAmount > 0
+    };
+  });
 }
 
 /**
@@ -506,6 +639,7 @@ module.exports = {
   createPurchaseOrder,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
+  cancelPurchaseOrder,  // NEW: Dedicated cancellation function with validations
   getPurchaseOrder,
   getPurchaseOrders,
   checkAndUpdateDeliveryStatus,

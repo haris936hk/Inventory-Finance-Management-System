@@ -97,6 +97,11 @@ async function createInvoice(data, userId) {
       discountAmount = formatAmount(data.discountValue || 0);
     }
 
+    // FIX: Validate total is non-negative
+    if (total < 0) {
+      throw new ValidationError('Invoice total cannot be negative');
+    }
+
     // Verify total = subtotal - discount + tax
     const taxableAmount = formatAmount(subtotal - discountAmount);
     const expectedTotal = formatAmount(taxableAmount + taxAmount);
@@ -107,12 +112,10 @@ async function createInvoice(data, userId) {
       );
     }
 
-    // Verify customer exists
-    const customer = await tx.customer.findUnique({
-      where: { id: data.customerId, deletedAt: null }
-    });
+    // FIX: Lock customer to prevent race conditions on credit limit check
+    const customer = await lockForUpdate(tx, 'Customer', data.customerId);
 
-    if (!customer) {
+    if (!customer || customer.deletedAt) {
       throw new ValidationError('Customer not found');
     }
 
@@ -122,7 +125,8 @@ async function createInvoice(data, userId) {
       if (newBalance > customer.creditLimit) {
         throw new ValidationError(
           `Invoice total (${total}) would exceed customer credit limit. ` +
-          `Current: ${customer.currentBalance}, Limit: ${customer.creditLimit}`
+          `Current: ${customer.currentBalance}, Limit: ${customer.creditLimit}, ` +
+          `New Balance: ${newBalance}`
         );
       }
     }
@@ -184,10 +188,45 @@ async function createInvoice(data, userId) {
     // Call lifecycle service to reserve items (updates inventoryStatus to 'Reserved')
     await inventoryLifecycleService.reserveItemsForInvoice(itemIds, invoice.id, userId);
 
+    // CRITICAL FIX: Clean up temporary ItemReservation records
+    // Now that items are permanently reserved via Item.reservedFor* fields,
+    // delete any temporary session-based reservations to prevent confusion
+    await tx.itemReservation.deleteMany({
+      where: { itemId: { in: itemIds } }
+    });
+
     // Set customer reference on items for direct lookup in inventory list
     await tx.item.updateMany({
       where: { id: { in: itemIds } },
       data: { customerId: data.customerId }
+    });
+
+    // CRITICAL FIX: Re-fetch customer to get FRESH balance (not stale from line 116)
+    // This prevents incorrect ledger balance under concurrent invoice/payment operations
+    const freshCustomer = await tx.customer.findUnique({
+      where: { id: data.customerId }
+    });
+
+    const newCustomerBalance = formatAmount(formatAmount(freshCustomer.currentBalance) + total);
+
+    await tx.customerLedger.create({
+      data: {
+        customerId: data.customerId,
+        entryDate: data.invoiceDate || new Date(),
+        description: `Invoice ${invoiceNumber}`,
+        debit: total,
+        credit: 0,
+        balance: newCustomerBalance,
+        invoiceId: invoice.id
+      }
+    });
+
+    // Update customer balance
+    await tx.customer.update({
+      where: { id: data.customerId },
+      data: {
+        currentBalance: newCustomerBalance
+      }
     });
 
     // Create audit log
@@ -326,8 +365,47 @@ async function updateInvoice(invoiceId, updates, userId) {
       }
     }
 
-    // Delete existing items if new ones provided
+    // FIX: Release old reserved items before deleting invoice items
     if (updates.items) {
+      // Get old items that are currently reserved for this invoice
+      const oldInvoiceItems = await tx.invoiceItem.findMany({
+        where: { invoiceId },
+        include: { item: true }
+      });
+
+      // Release each old item back to Available
+      for (const invoiceItem of oldInvoiceItems) {
+        const item = invoiceItem.item;
+        if (item.inventoryStatus === 'Reserved' && item.reservedForId === invoiceId) {
+          await tx.item.update({
+            where: { id: item.id },
+            data: {
+              inventoryStatus: 'Available',
+              reservedAt: null,
+              reservedBy: null,
+              reservedForType: null,
+              reservedForId: null,
+              customerId: null
+            }
+          });
+
+          // Create status history
+          await tx.inventoryStatusHistory.create({
+            data: {
+              itemId: item.id,
+              fromStatus: 'Reserved',
+              toStatus: 'Available',
+              changeReason: 'MANUAL',
+              referenceType: 'Invoice',
+              referenceId: invoiceId,
+              changedBy: userId,
+              notes: `Released due to invoice items update`
+            }
+          });
+        }
+      }
+
+      // Now delete the old invoice items
       await tx.invoiceItem.deleteMany({
         where: { invoiceId }
       });
@@ -378,6 +456,63 @@ async function updateInvoice(invoiceId, updates, userId) {
       }
     });
 
+    // CRITICAL FIX: Reserve new items for the invoice
+    // Without this, items remain Available and can be sold twice
+    if (updates.items && updates.items.length > 0) {
+      const newItemIds = updates.items.map(item => item.itemId);
+      await inventoryLifecycleService.reserveItemsForInvoice(
+        newItemIds,
+        invoiceId,
+        userId,
+        tx
+      );
+
+      // CRITICAL FIX: Clean up temporary ItemReservation records for new items
+      await tx.itemReservation.deleteMany({
+        where: { itemId: { in: newItemIds } }
+      });
+
+      logger.info(`Reserved ${newItemIds.length} new items for invoice ${updated.invoiceNumber} during update`);
+    }
+
+    // CRITICAL FIX: Adjust customer ledger if total changed
+    // Without this, customer balance becomes permanently incorrect
+    if (updates.total !== undefined) {
+      const oldTotal = formatAmount(invoice.total);
+      const newTotal = formatAmount(updates.total);
+      const difference = formatAmount(newTotal - oldTotal);
+
+      if (!compareAmounts(oldTotal, newTotal)) {
+        // Fetch fresh customer balance
+        const customer = await tx.customer.findUnique({
+          where: { id: invoice.customerId }
+        });
+
+        const newCustomerBalance = formatAmount(formatAmount(customer.currentBalance) + difference);
+
+        // Create ledger adjustment entry
+        await tx.customerLedger.create({
+          data: {
+            customerId: invoice.customerId,
+            entryDate: new Date(),
+            description: `Invoice ${invoice.invoiceNumber} amount adjustment (${oldTotal} → ${newTotal})`,
+            debit: difference > 0 ? difference : 0,
+            credit: difference < 0 ? Math.abs(difference) : 0,
+            balance: newCustomerBalance,
+            invoiceId: invoice.id
+          }
+        });
+
+        // Update customer balance
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: newCustomerBalance }
+        });
+
+        logger.info(`Adjusted customer balance for invoice ${invoice.invoiceNumber}: ${oldTotal} → ${newTotal} (diff: ${difference})`);
+      }
+    }
+
     return updated;
   });
 }
@@ -401,16 +536,11 @@ async function cancelInvoice(invoiceId, reason, userId) {
       throw new ValidationError('Invoice is already cancelled');
     }
 
-    // CRITICAL: Only Draft invoices can be cancelled
-    if (invoice.status !== 'Draft') {
-      throw new ValidationError(
-        `Cannot cancel invoice with status ${invoice.status}. Only Draft invoices can be cancelled.`
-      );
-    }
-
+    // FIX: Relax cancellation rules - allow any status if unpaid
+    // The real constraint is no payments, not the status
     if (invoice.paidAmount > 0) {
       throw new ValidationError(
-        `Cannot cancel invoice with payments. Invoice has ${invoice.paidAmount} paid.`
+        `Cannot cancel invoice with payments. Invoice has ${invoice.paidAmount} paid. Please void payments first.`
       );
     }
 
@@ -477,38 +607,33 @@ async function cancelInvoice(invoiceId, reason, userId) {
       }
     });
 
-    // Reverse customer ledger entry if it exists
-    const ledgerEntries = await tx.customerLedger.findMany({
-      where: { invoiceId: invoiceId }
+    // CRITICAL FIX: Always reverse customer ledger entry (unconditional)
+    // Since invoices now create ledger entries on creation, we must always reverse
+    const customer = await tx.customer.findUnique({
+      where: { id: invoice.customerId }
     });
 
-    if (ledgerEntries.length > 0) {
-      const customer = await tx.customer.findUnique({
-        where: { id: invoice.customerId }
-      });
+    const newBalance = formatAmount(customer.currentBalance - invoice.total);
 
-      const newBalance = formatAmount(customer.currentBalance - invoice.total);
+    await tx.customerLedger.create({
+      data: {
+        customerId: invoice.customerId,
+        entryDate: new Date(),
+        description: `Invoice ${invoice.invoiceNumber} cancelled: ${reason}`,
+        debit: 0,
+        credit: invoice.total,
+        balance: newBalance,
+        invoiceId: invoice.id
+      }
+    });
 
-      await tx.customerLedger.create({
-        data: {
-          customerId: invoice.customerId,
-          entryDate: new Date(),
-          description: `Invoice ${invoice.invoiceNumber} cancelled: ${reason}`,
-          debit: 0,
-          credit: invoice.total,
-          balance: newBalance,
-          invoiceId: invoice.id
-        }
-      });
-
-      // Update customer balance
-      await tx.customer.update({
-        where: { id: invoice.customerId },
-        data: {
-          currentBalance: newBalance
-        }
-      });
-    }
+    // Update customer balance
+    await tx.customer.update({
+      where: { id: invoice.customerId },
+      data: {
+        currentBalance: newBalance
+      }
+    });
 
     // Create audit trail
     await tx.invoicePaymentAudit.create({
@@ -664,37 +789,59 @@ async function getInvoices(filters = {}) {
  * Auto-update overdue invoices (batch job)
  * Should be run daily via cron
  *
+ * FIX: Uses PostgreSQL advisory lock to prevent concurrent execution
  * @returns {Promise<number>} Number of invoices updated
  */
 async function updateOverdueInvoices() {
-  const now = new Date();
+  const LOCK_ID = 1001; // Unique ID for this batch job
 
-  const overdueInvoices = await db.prisma.invoice.findMany({
-    where: {
-      status: { in: ['Sent', 'Partial'] },
-      dueDate: { lt: now },
-      cancelledAt: null,
-      deletedAt: null,
-      paidAmount: { lt: db.prisma.invoice.fields.total }
-    }
-  });
+  // FIX: Try to acquire PostgreSQL advisory lock (non-blocking)
+  const lockAcquired = await db.prisma.$queryRaw`SELECT pg_try_advisory_lock(${LOCK_ID}) as locked`;
 
-  let updated = 0;
-
-  for (const invoice of overdueInvoices) {
-    try {
-      await db.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'Overdue' }
-      });
-      updated++;
-    } catch (error) {
-      logger.error(`Failed to mark invoice ${invoice.invoiceNumber} as overdue`, error);
-    }
+  if (!lockAcquired[0].locked) {
+    logger.warn('updateOverdueInvoices: Another instance is already running. Skipping.');
+    return 0;
   }
 
-  logger.info(`Marked ${updated} invoices as overdue`);
-  return updated;
+  try {
+    const now = new Date();
+
+    // FIX: Prisma doesn't support field-to-field comparison in WHERE clause
+    // Fetch all candidates and filter in-memory
+    const candidateInvoices = await db.prisma.invoice.findMany({
+      where: {
+        status: { in: ['Sent', 'Partial'] },
+        dueDate: { lt: now },
+        cancelledAt: null,
+        deletedAt: null
+      }
+    });
+
+    // Filter to only invoices where paidAmount < total
+    const overdueInvoices = candidateInvoices.filter(
+      invoice => invoice.paidAmount < invoice.total
+    );
+
+    let updated = 0;
+
+    for (const invoice of overdueInvoices) {
+      try {
+        await db.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { status: 'Overdue' }
+        });
+        updated++;
+      } catch (error) {
+        logger.error(`Failed to mark invoice ${invoice.invoiceNumber} as overdue`, error);
+      }
+    }
+
+    logger.info(`Marked ${updated} invoices as overdue`);
+    return updated;
+  } finally {
+    // FIX: Always release the advisory lock
+    await db.prisma.$queryRaw`SELECT pg_advisory_unlock(${LOCK_ID})`;
+  }
 }
 
 module.exports = {

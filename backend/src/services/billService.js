@@ -111,8 +111,8 @@ async function createBill(data, userId) {
       }
     });
 
-    // 8. Update PO billed amount and status
-    const updatedBilledAmount = formatAmount(parseFloat(po.billedAmount) + total);
+    // 8. Update PO billed amount and status (FIX: Use formatAmount for precision)
+    const updatedBilledAmount = formatAmount(formatAmount(po.billedAmount) + total);
     let newPOStatus = po.status;
 
     // Auto-transition to Partial if first bill created
@@ -133,12 +133,12 @@ async function createBill(data, userId) {
       }
     });
 
-    // 9. Create vendor ledger entry
+    // 9. Create vendor ledger entry (FIX: Use formatAmount for precision)
     const vendor = await tx.vendor.findUnique({
       where: { id: data.vendorId }
     });
 
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) + total);
+    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) + total);
 
     await tx.vendorLedger.create({
       data: {
@@ -219,7 +219,8 @@ async function cancelBill(billId, reason, userId) {
       );
     }
 
-    if (parseFloat(bill.paidAmount) > 0) {
+    // FIX: Use formatAmount for comparison
+    if (formatAmount(bill.paidAmount) > 0) {
       throw new ValidationError(
         `Cannot cancel bill with payments. Bill has ${bill.paidAmount} paid.`
       );
@@ -227,6 +228,21 @@ async function cancelBill(billId, reason, userId) {
 
     // 3. Lock the PO
     const po = await lockForUpdate(tx, 'PurchaseOrder', bill.purchaseOrderId);
+
+    // CRITICAL FIX: Check if items have been received for this PO
+    // Per user requirements: Cannot cancel bill if items are already in inventory
+    const receivedItemCount = await tx.item.count({
+      where: {
+        purchaseOrderId: bill.purchaseOrderId,
+        deletedAt: null
+      }
+    });
+
+    if (receivedItemCount > 0) {
+      throw new ValidationError(
+        `Cannot cancel bill. ${receivedItemCount} item(s) have been received in inventory for this Purchase Order.`
+      );
+    }
 
     // 4. Soft-cancel the bill
     const cancelled = await tx.bill.update({
@@ -241,12 +257,14 @@ async function cancelBill(billId, reason, userId) {
       }
     });
 
-    // 5. Update PO billed amount
-    const newBilledAmount = formatAmount(parseFloat(po.billedAmount) - parseFloat(bill.total));
+    // 5. Update PO billed amount (FIX: Use formatAmount for precision)
+    const billTotalFormatted = formatAmount(bill.total);
+    const newBilledAmount = formatAmount(formatAmount(po.billedAmount) - billTotalFormatted);
+    const poTotalFormatted = formatAmount(po.total);
     let newPOStatus = po.status;
 
     // Revert from Paid if needed
-    if (po.status === 'Paid' && newBilledAmount < parseFloat(po.total)) {
+    if (po.status === 'Paid' && newBilledAmount < poTotalFormatted) {
       newPOStatus = 'Partial';
     }
 
@@ -263,12 +281,12 @@ async function cancelBill(billId, reason, userId) {
       }
     });
 
-    // 6. Reverse vendor ledger entry
+    // 6. Reverse vendor ledger entry (FIX: Use formatAmount for precision)
     const vendor = await tx.vendor.findUnique({
       where: { id: bill.vendorId }
     });
 
-    const newVendorBalance = formatAmount(parseFloat(vendor.currentBalance) - parseFloat(bill.total));
+    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) - billTotalFormatted);
 
     await tx.vendorLedger.create({
       data: {
@@ -276,7 +294,7 @@ async function cancelBill(billId, reason, userId) {
         entryDate: new Date(),
         description: `Bill ${bill.billNumber} cancelled: ${reason}`,
         debit: 0,
-        credit: parseFloat(bill.total),
+        credit: billTotalFormatted,  // FIX: Use already formatted amount
         balance: newVendorBalance,
         billId: bill.id
       }
@@ -342,7 +360,7 @@ async function updateBillStatus(tx, billId) {
 
   if (compareAmounts(bill.paidAmount, bill.total)) {
     newStatus = 'Paid';
-  } else if (parseFloat(bill.paidAmount) > 0) {
+  } else if (formatAmount(bill.paidAmount) > 0) {  // FIX: Use formatAmount for precision
     newStatus = 'Partial';
   }
 
@@ -464,14 +482,27 @@ async function updateBill(billId, updates, userId) {
       throw new ValidationError('Cannot update bill with payments');
     }
 
+    // CRITICAL FIX: Prohibit amount updates to maintain ledger integrity
+    // Changing bill amounts requires complex ledger reconciliation:
+    // - Update PO.billedAmount
+    // - Reverse old VendorLedger entry
+    // - Create new VendorLedger entry
+    // - Update vendor.currentBalance
+    // Instead, recommend void + new bill for corrections
+    if (updates.subtotal !== undefined || updates.taxAmount !== undefined || updates.total !== undefined) {
+      throw new ValidationError(
+        'Cannot update bill amounts (subtotal/tax/total). ' +
+        'To correct amounts, please cancel this bill and create a new one. ' +
+        'This maintains audit trail integrity.'
+      );
+    }
+
     const updated = await tx.bill.update({
       where: { id: billId },
       data: {
         billDate: updates.billDate || bill.billDate,
         dueDate: updates.dueDate || bill.dueDate,
-        subtotal: updates.subtotal || bill.subtotal,
-        taxAmount: updates.taxAmount || bill.taxAmount,
-        total: updates.total || bill.total,
+        // FIX: Remove amount updates - only dates can be updated
         updatedAt: new Date()
       },
       include: {

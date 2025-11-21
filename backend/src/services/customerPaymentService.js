@@ -158,6 +158,13 @@ async function recordPayment(data, userId) {
       }
     });
 
+    // CRITICAL FIX: Mark items as sold INSIDE transaction (not after)
+    // This ensures atomicity: payment recorded = items marked as sold
+    if (wasFullyPaid) {
+      const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId, tx);
+      logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold (within transaction)`);
+    }
+
     // 12. Create audit trail
     await tx.invoicePaymentAudit.create({
       data: {
@@ -191,18 +198,6 @@ async function recordPayment(data, userId) {
 
     return createdPayment;
   });
-
-  // 10. AFTER transaction commits, mark items as sold if invoice is fully paid
-  if (wasFullyPaid) {
-    try {
-      const saleResult = await inventoryLifecycleService.markItemsAsSoldForInvoice(invoiceId, userId);
-      logger.info(`Invoice ${invoiceNumber} fully paid - ${saleResult.saleCount} items marked as sold`);
-    } catch (error) {
-      logger.error(`Failed to mark items as sold for Invoice ${invoiceNumber}:`, error);
-      // Don't fail the payment - just log the error
-      // Items can be manually marked as sold later
-    }
-  }
 
   return payment;
 }
@@ -307,6 +302,17 @@ async function voidPayment(paymentId, reason, userId) {
         currentBalance: newBalance
       }
     });
+
+    // CRITICAL FIX: Reverse items from Sold to Reserved if invoice no longer fully paid
+    // This prevents inventory from being permanently locked as "Sold"
+    if (newStatus !== 'Paid' && invoice.status === 'Paid') {
+      const reversalResult = await inventoryLifecycleService.reverseItemsFromSoldToReserved(
+        payment.invoiceId,
+        userId,
+        tx
+      );
+      logger.info(`Payment void: Reversed ${reversalResult.reversalCount} items from Sold to Reserved for Invoice ${invoice.invoiceNumber}`);
+    }
 
     // 9. Create audit trail
     await tx.invoicePaymentAudit.create({
