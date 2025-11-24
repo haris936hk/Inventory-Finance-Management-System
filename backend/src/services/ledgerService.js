@@ -244,19 +244,19 @@ class LedgerService {
       where: { id: customerId }
     });
 
-    // Convert Decimals to floats for all entries
+    // Convert Decimals to proper amounts for all entries
     const convertedEntries = ledgerEntries.map(entry => ({
       ...entry,
-      debit: parseFloat(entry.debit),
-      credit: parseFloat(entry.credit),
-      balance: parseFloat(entry.balance)
+      debit: formatAmount(entry.debit),
+      credit: formatAmount(entry.credit),
+      balance: formatAmount(entry.balance)
     }));
 
     return {
       customer,
       entries: convertedEntries,
-      openingBalance: parseFloat(customer.openingBalance) || 0,
-      closingBalance: parseFloat(customer.currentBalance) || 0,
+      openingBalance: formatAmount(customer.openingBalance) || 0,
+      closingBalance: formatAmount(customer.currentBalance) || 0,
       totalDebits: convertedEntries.reduce((sum, e) => sum + e.debit, 0),
       totalCredits: convertedEntries.reduce((sum, e) => sum + e.credit, 0)
     };

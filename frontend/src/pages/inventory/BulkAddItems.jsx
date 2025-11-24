@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
+import { parseAmount } from '../../utils/decimalUtils';
 
 const { Step } = Steps;
 const { TextArea } = Input;
@@ -167,7 +168,7 @@ const BulkAddItems = () => {
         categoryId: lineItem.productModel?.categoryId,
         companyId: lineItem.productModel?.companyId,
         modelId: lineItem.productModelId,
-        purchasePrice: parseFloat(lineItem.unitPrice),
+        purchasePrice: parseAmount(lineItem.unitPrice),
         specifications: lineItem.specifications || {}
       });
     }

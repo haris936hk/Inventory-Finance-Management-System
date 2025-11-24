@@ -386,7 +386,7 @@ async function getPaymentsForBill(billId) {
   return payments.map(p => ({
     ...p,
     isVoided: !!p.voidedAt,
-    effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
+    effectiveAmount: p.voidedAt ? 0 : formatAmount(p.amount)
   }));
 }
 
@@ -426,7 +426,7 @@ async function getVendorPayments(filters = {}) {
   return payments.map(p => ({
     ...p,
     isVoided: !!p.voidedAt,
-    effectiveAmount: p.voidedAt ? 0 : parseFloat(p.amount)
+    effectiveAmount: p.voidedAt ? 0 : formatAmount(p.amount)
   }));
 }
 

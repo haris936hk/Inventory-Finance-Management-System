@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, formatAmount, subtractAmounts, addAmounts } from '../../utils/decimalUtils';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -44,15 +45,18 @@ const Invoices = () => {
   // Calculate statistics
   const statistics = React.useMemo(() => {
     if (!invoicesData) return { total: 0, paid: 0, pending: 0, overdue: 0 };
-    
+
     return invoicesData.reduce((acc, invoice) => {
-      acc.total += parseFloat(invoice.total);
+      const total = parseAmount(invoice.total);
+      const paidAmount = parseAmount(invoice.paidAmount);
+
+      acc.total = addAmounts(acc.total, total);
       if (invoice.status === 'Paid') {
-        acc.paid += parseFloat(invoice.total);
+        acc.paid = addAmounts(acc.paid, total);
       } else if (invoice.status === 'Overdue') {
-        acc.overdue += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        acc.overdue = addAmounts(acc.overdue, subtractAmounts(total, paidAmount));
       } else {
-        acc.pending += parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        acc.pending = addAmounts(acc.pending, subtractAmounts(total, paidAmount));
       }
       return acc;
     }, { total: 0, paid: 0, pending: 0, overdue: 0 });
@@ -192,24 +196,24 @@ const Invoices = () => {
           color: record.cancelledAt ? '#999' : 'inherit',
           textDecoration: record.cancelledAt ? 'line-through' : 'none'
         }}>
-          {formatPKR(parseFloat(amount))}
+          {formatPKR(parseAmount(amount))}
         </span>
       ),
-      sorter: (a, b) => a.total - b.total
+      sorter: (a, b) => parseAmount(a.total) - parseAmount(b.total)
     },
     {
       title: 'Paid',
       dataIndex: 'paidAmount',
       key: 'paidAmount',
       width: 120,
-      render: (amount) => formatPKR(parseFloat(amount))
+      render: (amount) => formatPKR(parseAmount(amount))
     },
     {
       title: 'Balance',
       key: 'balance',
       width: 120,
       render: (_, record) => {
-        const balance = parseFloat(record.total) - parseFloat(record.paidAmount);
+        const balance = subtractAmounts(record.total, record.paidAmount);
         return (
           <span style={{ color: balance > 0 ? '#ff4d4f' : '#52c41a' }}>
             {formatPKR(balance)}
@@ -294,7 +298,7 @@ const Invoices = () => {
             label: 'Cancel Invoice',
             danger: true,
             onClick: () => handleCancelInvoice(record),
-            disabled: record.status !== 'Draft' || record.cancelledAt || parseFloat(record.paidAmount || 0) > 0
+            disabled: record.status !== 'Draft' || record.cancelledAt || parseAmount(record.paidAmount) > 0
           }
         ];
 

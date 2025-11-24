@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts } from '../../utils/decimalUtils';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
@@ -64,14 +65,14 @@ const Payments = () => {
 
   // Calculate stats from the payments data
   const stats = {
-    totalAmount: payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
+    totalAmount: payments.reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0),
     totalCount: payments.length,
     todayAmount: payments
       .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'day'))
-      .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0),
+      .reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0),
     monthAmount: payments
       .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'month'))
-      .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0)
+      .reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0)
   };
 
   const paymentMethodColors = {

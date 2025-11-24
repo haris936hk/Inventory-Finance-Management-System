@@ -15,6 +15,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -221,8 +222,8 @@ const InvoiceDetails = () => {
     }
   ];
 
-  const paidAmount = payments?.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) || 0;
-  const outstandingAmount = (parseFloat(invoice?.total) || 0) - paidAmount;
+  const paidAmount = payments?.reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0) || 0;
+  const outstandingAmount = subtractAmounts(invoice?.total || 0, paidAmount);
 
   return (
     <div style={{ padding: 24 }}>

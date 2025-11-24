@@ -12,6 +12,7 @@ import axios from 'axios';
 import LedgerView from '../../components/LedgerView';
 import CustomerStatement from '../../components/CustomerStatement';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, subtractAmounts } from '../../utils/decimalUtils';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -135,7 +136,7 @@ const CustomerDetails = () => {
               <Descriptions.Item label="Address" span={2}>{customer.address || '-'}</Descriptions.Item>
               <Descriptions.Item label="Credit Limit">
                 {customer.creditLimit > 0
-                  ? formatPKR(parseFloat(customer.creditLimit))
+                  ? formatPKR(parseAmount(customer.creditLimit))
                   : 'No Limit'}
               </Descriptions.Item>
               <Descriptions.Item label="Opening Balance">
@@ -194,7 +195,7 @@ const CustomerDetails = () => {
                       color: record.cancelledAt ? '#999' : 'inherit',
                       textDecoration: record.cancelledAt ? 'line-through' : 'none'
                     }}>
-                      {formatPKR(parseFloat(amount))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },
@@ -205,7 +206,7 @@ const CustomerDetails = () => {
                   align: 'right',
                   render: (amount, record) => (
                     <span style={{ color: record.cancelledAt ? '#999' : 'inherit' }}>
-                      {formatPKR(parseFloat(amount || 0))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },
@@ -215,7 +216,7 @@ const CustomerDetails = () => {
                   align: 'right',
                   render: (_, record) => {
                     if (record.cancelledAt) return '-';
-                    const balance = parseFloat(record.totalAmount) - parseFloat(record.paidAmount || 0);
+                    const balance = subtractAmounts(record.totalAmount, record.paidAmount);
                     return (
                       <span style={{
                         color: balance > 0 ? '#f5222d' : '#52c41a',
@@ -287,7 +288,7 @@ const CustomerDetails = () => {
                       color: record.voidedAt ? '#999' : 'inherit',
                       textDecoration: record.voidedAt ? 'line-through' : 'none'
                     }}>
-                      {formatPKR(parseFloat(amount))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },

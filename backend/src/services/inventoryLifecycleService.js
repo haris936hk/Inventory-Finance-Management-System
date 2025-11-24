@@ -44,14 +44,16 @@ class InventoryLifecycleService {
    * @param {string[]} itemIds - Array of item IDs to reserve
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User making the reservation
+   * @param {Object} tx - Optional transaction object (for use within existing transaction)
    * @returns {Promise<Object>} Reservation result
    */
-  async reserveItemsForInvoice(itemIds, invoiceId, userId) {
+  async reserveItemsForInvoice(itemIds, invoiceId, userId, tx = null) {
     if (!itemIds || itemIds.length === 0) {
       throw new Error('Item IDs are required');
     }
 
-    return await db.transaction(async (prisma) => {
+    // CRITICAL FIX: Support both standalone and within-transaction usage
+    const executeOperation = async (prisma) => {
       // CRITICAL FIX: Acquire row-level locks to prevent race conditions
       // Lock items in sorted order to prevent deadlocks
       const sortedItemIds = [...itemIds].sort();
@@ -145,17 +147,26 @@ class InventoryLifecycleService {
         reservationCount: items.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
   }
 
   /**
    * Cancel invoice and release reserved items (Reserved → Available)
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User cancelling the invoice
+   * @param {Object} tx - Optional transaction object (for use within existing transaction)
    * @returns {Promise<Object>} Release result
    */
-  async releaseItemsForInvoiceCancellation(invoiceId, userId) {
-    return await db.transaction(async (prisma) => {
+  async releaseItemsForInvoiceCancellation(invoiceId, userId, tx = null) {
+    // CRITICAL FIX: Support both standalone and within-transaction usage
+    const executeOperation = async (prisma) => {
       // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
       const itemIdsResult = await prisma.item.findMany({
         where: {
@@ -235,7 +246,14 @@ class InventoryLifecycleService {
         releaseCount: reservedItems.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
   }
 
   /**
@@ -420,10 +438,12 @@ class InventoryLifecycleService {
    * @param {string} invoiceId - Invoice ID
    * @param {string} userId - User processing the delivery
    * @param {Object} deliveryInfo - Delivery information
+   * @param {Object} tx - Optional transaction object (for use within existing transaction)
    * @returns {Promise<Object}> Delivery result
    */
-  async markItemsAsDeliveredForInvoice(invoiceId, userId, deliveryInfo = {}) {
-    return await db.transaction(async (prisma) => {
+  async markItemsAsDeliveredForInvoice(invoiceId, userId, deliveryInfo = {}, tx = null) {
+    // CRITICAL FIX: Support both standalone and within-transaction usage
+    const executeOperation = async (prisma) => {
       // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
       const itemIdsResult = await prisma.item.findMany({
         where: {
@@ -500,7 +520,14 @@ class InventoryLifecycleService {
         deliveryCount: soldItems.length,
         invoiceId
       };
-    });
+    };
+
+    // If transaction provided, use it; otherwise create new transaction
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
   }
 
   /**

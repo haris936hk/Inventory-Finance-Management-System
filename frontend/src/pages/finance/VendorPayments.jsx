@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts } from '../../utils/decimalUtils';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -48,19 +49,19 @@ const VendorPayments = () => {
     if (!vendorPaymentsData) return { total: 0, cash: 0, bank: 0, cheque: 0, count: 0 };
 
     return vendorPaymentsData.reduce((acc, payment) => {
-      const amount = parseFloat(payment.amount);
-      acc.total += amount;
+      const amount = parseAmount(payment.amount);
+      acc.total = addAmounts(acc.total, amount);
       acc.count++;
 
       switch (payment.method) {
         case 'Cash':
-          acc.cash += amount;
+          acc.cash = addAmounts(acc.cash, amount);
           break;
         case 'Bank Transfer':
-          acc.bank += amount;
+          acc.bank = addAmounts(acc.bank, amount);
           break;
         case 'Cheque':
-          acc.cheque += amount;
+          acc.cheque = addAmounts(acc.cheque, amount);
           break;
       }
       return acc;

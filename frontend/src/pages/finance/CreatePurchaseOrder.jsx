@@ -13,6 +13,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import PurchaseOrderItemSelector from '../../components/PurchaseOrderItemSelector';
 import { formatPKR } from '../../config/constants';
+import { formatAmount, parseAmount } from '../../utils/decimalUtils';
 
 const { Title, Text } = Typography;
 
@@ -123,10 +124,10 @@ const CreatePurchaseOrder = () => {
         totalPrice: item.totalPrice,
         specifications: item.specifications || {}
       })),
-      subtotal: parseFloat(subtotal.toFixed(2)),
-      taxRate: parseFloat(values.taxRate || 0),
-      taxAmount: parseFloat(taxAmount.toFixed(2)),
-      total: parseFloat(total.toFixed(2))
+      subtotal: formatAmount(subtotal, 2),
+      taxRate: parseAmount(values.taxRate),
+      taxAmount: formatAmount(taxAmount, 2),
+      total: formatAmount(total, 2)
     };
 
     poMutation.mutate(poData);

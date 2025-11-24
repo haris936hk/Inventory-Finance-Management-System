@@ -819,7 +819,7 @@ class InventoryService {
     // Calculate total value
     const totalValue = items.reduce((sum, item) => {
       const price = item.sellingPrice || item.purchasePrice || 0;
-      return sum + parseFloat(price);
+      return sum + formatAmount(price);
     }, 0);
 
     return {
@@ -935,7 +935,8 @@ class InventoryService {
    * Bulk operations
    */
   async bulkCreateItems(itemsData, userId) {
-    // FIX: Wrap in transaction for atomicity (all or nothing)
+    // CRITICAL FIX: Create items directly with prisma.item.create() to avoid nested transactions
+    // Wrap in transaction for atomicity (all or nothing)
     return await db.transaction(async (prisma) => {
       const results = {
         success: [],
@@ -944,14 +945,73 @@ class InventoryService {
 
       for (const itemData of itemsData) {
         try {
-          const item = await this.createItem(itemData, userId);
+          // Validate required fields
+          if (!itemData.modelId || !itemData.condition) {
+            throw new Error('Model ID and condition are required');
+          }
+
+          // Validate model exists first
+          const model = await prisma.productModel.findUnique({
+            where: { id: itemData.modelId },
+            include: { category: true }
+          });
+
+          if (!model) {
+            throw new Error('Invalid product model');
+          }
+
+          // Generate serial number if not provided
+          let serialNumber = itemData.serialNumber;
+          if (!serialNumber) {
+            const year = new Date().getFullYear();
+            serialNumber = await generateSerialNumber(model.category.code, year);
+          }
+
+          // Validate serial number uniqueness
+          const existing = await prisma.item.findUnique({
+            where: { serialNumber: serialNumber }
+          });
+
+          if (existing) {
+            throw new Error(`Serial number ${serialNumber} already exists`);
+          }
+
+          // Automatically determine status based on condition
+          const condition = itemData.condition || 'New';
+          const autoStatus = condition === 'Used' ? 'In Lab' : 'In Store';
+          const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
+          const inventoryStatus = 'Available';
+
+          // Create item directly in transaction
+          const item = await prisma.item.create({
+            data: {
+              serialNumber: serialNumber,
+              condition: condition,
+              status: autoStatus,
+              inventoryStatus: inventoryStatus,
+              repaired: repairedStatus,
+              specifications: itemData.specifications,
+              purchasePrice: itemData.purchasePrice,
+              sellingPrice: itemData.sellingPrice,
+              purchaseDate: itemData.purchaseDate,
+              inboundDate: itemData.inboundDate || new Date(),
+              categoryId: model.category.id,
+              modelId: itemData.modelId,
+              vendorId: itemData.vendorId,
+              purchaseOrderId: itemData.purchaseOrderId,
+              createdById: userId
+            }
+          });
+
           results.success.push({
             serialNumber: item.serialNumber,
             id: item.id
           });
+
+          logger.info(`Item created in bulk: ${item.serialNumber}`);
         } catch (error) {
           results.failed.push({
-            serialNumber: itemData.serialNumber,
+            serialNumber: itemData.serialNumber || 'N/A',
             error: error.message
           });
         }
@@ -1056,12 +1116,12 @@ class InventoryService {
               purchaseOrderId: purchaseOrderId,
               vendorId: po.vendorId,
               categoryId: itemData.categoryId,
-              productModelId: itemData.productModelId,
+              modelId: itemData.modelId,
               price: formatAmount(itemData.price),
               notes: itemData.notes || null,
               specifications: itemData.specifications || {},
               inboundDate: new Date(),
-              createdBy: userId
+              createdById: userId
             }
           });
 

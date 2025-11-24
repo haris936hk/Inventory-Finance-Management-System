@@ -25,11 +25,21 @@ class ReservationService {
         throw new Error(`Items already reserved: ${reservedItemIds.join(', ')}`);
       }
 
+      // CRITICAL FIX: Acquire row-level locks to prevent race conditions
+      // Lock items in sorted order to prevent deadlocks
+      const sortedItemIds = [...itemIds].sort();
+
+      for (const itemId of sortedItemIds) {
+        await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+      }
+
       // Check items availability and status
+      // CRITICAL FIX: Check inventoryStatus (Available) instead of physical status (In Store)
+      // This prevents reserving items that are already Reserved, Sold, or Delivered
       const items = await prisma.item.findMany({
         where: {
-          id: { in: itemIds },
-          status: 'In Store',
+          id: { in: sortedItemIds },
+          inventoryStatus: 'Available',
           deletedAt: null
         },
         include: {
@@ -42,15 +52,15 @@ class ReservationService {
         }
       });
 
-      if (items.length !== itemIds.length) {
+      if (items.length !== sortedItemIds.length) {
         const foundIds = items.map(i => i.id);
-        const missingIds = itemIds.filter(id => !foundIds.includes(id));
+        const missingIds = sortedItemIds.filter(id => !foundIds.includes(id));
         throw new Error(`Items not available for reservation: ${missingIds.join(', ')}`);
       }
 
       // Create reservations
       const reservations = await Promise.all(
-        itemIds.map(itemId =>
+        sortedItemIds.map(itemId =>
           prisma.itemReservation.create({
             data: {
               itemId,
@@ -63,7 +73,7 @@ class ReservationService {
         )
       );
 
-      logger.info(`Reserved ${itemIds.length} items for user ${userId}, session ${sessionId}`);
+      logger.info(`Reserved ${sortedItemIds.length} items for user ${userId}, session ${sessionId}`);
 
       return {
         sessionId,

@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatPKR } from '../../config/constants';
+import { parseAmount } from '../../utils/decimalUtils';
 
 const Vendors = () => {
   const queryClient = useQueryClient();
@@ -195,8 +196,8 @@ const Vendors = () => {
             // Convert balance fields to numbers for backend
             const processedValues = {
               ...values,
-              openingBalance: values.openingBalance ? parseFloat(values.openingBalance) : 0,
-              currentBalance: values.currentBalance ? parseFloat(values.currentBalance) : 0
+              openingBalance: values.openingBalance ? parseAmount(values.openingBalance) : 0,
+              currentBalance: values.currentBalance ? parseAmount(values.currentBalance) : 0
             };
             vendorMutation.mutate(processedValues);
           }}

@@ -13,6 +13,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, subtractAmounts, isPositive } from '../../utils/decimalUtils';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -79,7 +80,7 @@ const RecordPayment = () => {
       setSelectedInvoice(invoiceFromUrl);
 
       // Calculate remaining balance
-      const remainingBalance = (invoiceFromUrl.total || 0) - (invoiceFromUrl.paidAmount || 0);
+      const remainingBalance = subtractAmounts(invoiceFromUrl.total, invoiceFromUrl.paidAmount);
 
       // Prefill form fields
       form.setFieldsValue({
@@ -145,7 +146,7 @@ const RecordPayment = () => {
       key: 'balance',
       render: (_, record) => (
         <Text strong style={{ color: '#f5222d' }}>
-          {formatPKR((record.total || 0) - (record.paidAmount || 0))}
+          {formatPKR(subtractAmounts(record.total, record.paidAmount))}
         </Text>
       )
     },
@@ -226,7 +227,7 @@ const RecordPayment = () => {
                     {customerInvoices?.map(invoice => (
                       <Select.Option key={invoice.id} value={invoice.id}>
                         {invoice.invoiceNumber} - {formatPKR(invoice.total)}
-                        (Balance: {formatPKR((invoice.total || 0) - (invoice.paidAmount || 0))})
+                        (Balance: {formatPKR(subtractAmounts(invoice.total, invoice.paidAmount))})
                       </Select.Option>
                     ))}
                   </Select>
@@ -250,14 +251,14 @@ const RecordPayment = () => {
                         { required: true, message: 'Please enter amount' },
                         {
                           validator: (_, value) => {
-                            const numValue = parseFloat(value);
-                            if (isNaN(numValue) || numValue <= 0) {
+                            const numValue = parseAmount(value);
+                            if (!isPositive(numValue)) {
                               return Promise.reject(new Error('Amount must be greater than 0'));
                             }
 
                             // Validate against invoice remaining balance if invoice is selected
                             if (selectedInvoice) {
-                              const remainingBalance = (selectedInvoice.total || 0) - (selectedInvoice.paidAmount || 0);
+                              const remainingBalance = subtractAmounts(selectedInvoice.total, selectedInvoice.paidAmount);
                               if (numValue > remainingBalance) {
                                 return Promise.reject(new Error(`Amount cannot exceed remaining balance of ${formatPKR(remainingBalance)}`));
                               }
@@ -356,7 +357,7 @@ const RecordPayment = () => {
                       <Text strong>Outstanding:</Text>
                       <br />
                       <Text style={{ color: '#f5222d' }}>
-                        PKR {((selectedInvoice.total || 0) - (selectedInvoice.paidAmount || 0)).toLocaleString()}
+                        {formatPKR(subtractAmounts(selectedInvoice.total, selectedInvoice.paidAmount))}
                       </Text>
                     </Col>
                   </Row>

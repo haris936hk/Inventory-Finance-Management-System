@@ -18,6 +18,7 @@ import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import PurchaseOrderItemSelector from '../../components/PurchaseOrderItemSelector';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts } from '../../utils/decimalUtils';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -63,23 +64,24 @@ const PurchaseOrders = () => {
     if (!purchaseOrdersData) return { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 };
 
     return purchaseOrdersData.reduce((acc, po) => {
-      acc.total += parseFloat(po.total);
+      const poTotal = parseAmount(po.total);
+      acc.total = addAmounts(acc.total, poTotal);
       switch (po.status) {
         case 'Draft':
-          acc.draft += parseFloat(po.total);
+          acc.draft = addAmounts(acc.draft, poTotal);
           break;
         case 'Sent':
         case 'Partial':
-          acc.sent += parseFloat(po.total);
+          acc.sent = addAmounts(acc.sent, poTotal);
           break;
         case 'Paid':
-          acc.paid += parseFloat(po.total);
+          acc.paid = addAmounts(acc.paid, poTotal);
           break;
         case 'Delivered':
-          acc.delivered += parseFloat(po.total);
+          acc.delivered = addAmounts(acc.delivered, poTotal);
           break;
         case 'Cancelled':
-          acc.cancelled += parseFloat(po.total);
+          acc.cancelled = addAmounts(acc.cancelled, poTotal);
           break;
       }
       return acc;

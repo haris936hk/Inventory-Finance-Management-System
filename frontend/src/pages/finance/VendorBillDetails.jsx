@@ -16,6 +16,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
 
 const { Title, Text } = Typography;
 
@@ -120,8 +121,8 @@ const VendorBillDetails = () => {
     if (selectedPO) {
       setSelectedPurchaseOrder(selectedPO);
       form.setFieldsValue({
-        subtotal: parseFloat(selectedPO.subtotal || 0),
-        taxAmount: parseFloat(selectedPO.taxAmount || 0)
+        subtotal: parseAmount(selectedPO.subtotal),
+        taxAmount: parseAmount(selectedPO.taxAmount)
       });
       message.success(`Populated bill amounts from PO ${selectedPO.poNumber}`);
     }
@@ -146,13 +147,16 @@ const VendorBillDetails = () => {
   };
 
   const handleFormSubmit = (values) => {
+    const subtotal = parseAmount(values.subtotal);
+    const taxAmount = parseAmount(values.taxAmount);
+
     const processedValues = {
       ...values,
       billDate: values.billDate ? values.billDate.toISOString() : new Date().toISOString(),
       dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-      subtotal: parseFloat(values.subtotal) || 0,
-      taxAmount: parseFloat(values.taxAmount) || 0,
-      total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
+      subtotal: subtotal,
+      taxAmount: taxAmount,
+      total: addAmounts(subtotal, taxAmount)
     };
     updateMutation.mutate(processedValues);
   };
@@ -236,15 +240,13 @@ const VendorBillDetails = () => {
   };
 
   const getPaymentProgress = () => {
-    const total = parseFloat(vendorBill.total);
-    const paid = parseFloat(vendorBill.paidAmount) || 0;
+    const total = parseAmount(vendorBill.total);
+    const paid = parseAmount(vendorBill.paidAmount);
     return Math.round((paid / total) * 100);
   };
 
   const getRemainingAmount = () => {
-    const total = parseFloat(vendorBill.total);
-    const paid = parseFloat(vendorBill.paidAmount) || 0;
-    return total - paid;
+    return subtractAmounts(vendorBill.total, vendorBill.paidAmount);
   };
 
   const paymentColumns = [

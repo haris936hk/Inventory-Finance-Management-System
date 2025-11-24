@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, subtractAmounts, isPositive } from '../../utils/decimalUtils';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -107,7 +108,7 @@ const RecordVendorPayment = () => {
     const paymentData = {
       ...values,
       paymentDate: values.paymentDate.toISOString(),
-      amount: parseFloat(values.amount)
+      amount: parseAmount(values.amount)
     };
     paymentMutation.mutate(paymentData);
   };
@@ -134,20 +135,20 @@ const RecordVendorPayment = () => {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      render: (amount) => formatPKR(Number(amount))
+      render: (amount) => formatPKR(parseAmount(amount))
     },
     {
       title: 'Paid',
       dataIndex: 'paidAmount',
       key: 'paidAmount',
-      render: (amount) => formatPKR(Number(amount || 0))
+      render: (amount) => formatPKR(parseAmount(amount))
     },
     {
       title: 'Balance',
       key: 'balance',
       render: (_, record) => (
         <Text strong style={{ color: '#f5222d' }}>
-          {formatPKR(Number(record.total) - Number(record.paidAmount || 0))}
+          {formatPKR(subtractAmounts(record.total, record.paidAmount))}
         </Text>
       )
     },
@@ -229,8 +230,8 @@ const RecordVendorPayment = () => {
                   >
                     {vendorBills?.map(bill => (
                       <Select.Option key={bill.id} value={bill.id}>
-                        {bill.billNumber} - {formatPKR(Number(bill.total))}
-                        (Balance: {formatPKR(Number(bill.total) - Number(bill.paidAmount || 0))})
+                        {bill.billNumber} - {formatPKR(parseAmount(bill.total))}
+                        (Balance: {formatPKR(subtractAmounts(bill.total, bill.paidAmount))})
                       </Select.Option>
                     ))}
                   </Select>
@@ -255,14 +256,14 @@ const RecordVendorPayment = () => {
                         { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
                         {
                           validator: (_, value) => {
-                            const numValue = parseFloat(value);
-                            if (isNaN(numValue) || numValue <= 0) {
+                            const numValue = parseAmount(value);
+                            if (!isPositive(numValue)) {
                               return Promise.reject(new Error('Amount must be greater than 0'));
                             }
 
                             // Validate against bill remaining balance if bill is selected
                             if (selectedBill) {
-                              const remainingBalance = Number(selectedBill.total) - Number(selectedBill.paidAmount || 0);
+                              const remainingBalance = subtractAmounts(selectedBill.total, selectedBill.paidAmount);
                               if (numValue > remainingBalance) {
                                 return Promise.reject(new Error(`Amount cannot exceed remaining balance of ${formatPKR(remainingBalance)}`));
                               }
@@ -369,13 +370,13 @@ const RecordVendorPayment = () => {
                     <Col span={12}>
                       <Text strong>Total Amount:</Text>
                       <br />
-                      {formatPKR(Number(selectedBill.total))}
+                      {formatPKR(parseAmount(selectedBill.total))}
                     </Col>
                     <Col span={12}>
                       <Text strong>Outstanding:</Text>
                       <br />
                       <Text style={{ color: '#f5222d' }}>
-                        {formatPKR(Number(selectedBill.total) - Number(selectedBill.paidAmount || 0))}
+                        {formatPKR(subtractAmounts(selectedBill.total, selectedBill.paidAmount))}
                       </Text>
                     </Col>
                   </Row>

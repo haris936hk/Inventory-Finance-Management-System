@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatPKR } from '../../config/constants';
+import { parseAmount } from '../../utils/decimalUtils';
 
 const { Search } = Input;
 const { TextArea } = Input;
@@ -111,7 +112,7 @@ const Customers = () => {
       dataIndex: 'currentBalance',
       key: 'currentBalance',
       render: (balance) => {
-        const amount = parseFloat(balance);
+        const amount = parseAmount(balance);
         return (
           <Tag color={amount > 0 ? 'red' : 'green'}>
             {formatPKR(amount)}
@@ -123,7 +124,7 @@ const Customers = () => {
       title: 'Credit Limit',
       dataIndex: 'creditLimit',
       key: 'creditLimit',
-      render: (limit) => limit > 0 ? formatPKR(parseFloat(limit)) : 'No Limit'
+      render: (limit) => limit > 0 ? formatPKR(parseAmount(limit)) : 'No Limit'
     },
     {
       title: 'Invoices',

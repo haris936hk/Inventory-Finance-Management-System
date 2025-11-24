@@ -168,7 +168,7 @@ async function createBill(data, userId) {
         billId: bill.id,
         beforeState: {
           poStatus: po.status,
-          billedAmount: parseFloat(po.billedAmount)
+          billedAmount: formatAmount(po.billedAmount)
         },
         afterState: {
           poStatus: newPOStatus,
@@ -317,7 +317,7 @@ async function cancelBill(billId, reason, userId) {
         beforeState: {
           billStatus: bill.status,
           poStatus: po.status,
-          billedAmount: parseFloat(po.billedAmount)
+          billedAmount: formatAmount(po.billedAmount)
         },
         afterState: {
           billStatus: 'Cancelled',
@@ -332,7 +332,7 @@ async function cancelBill(billId, reason, userId) {
     logger.info(`Bill cancelled: ${bill.billNumber}`, {
       billId,
       reason,
-      refundedToPO: parseFloat(bill.total)
+      refundedToPO: formatAmount(bill.total)
     });
 
     return cancelled;
@@ -398,10 +398,10 @@ async function getBill(billId) {
   }
 
   // Add computed fields
-  bill.remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
+  bill.remainingAmount = formatAmount(bill.total - bill.paidAmount);
   bill.isCancelled = !!bill.cancelledAt;
   bill.canBePaid = !bill.cancelledAt && bill.remainingAmount > 0;
-  bill.canBeCancelled = !bill.cancelledAt && bill.status === 'Unpaid' && parseFloat(bill.paidAmount) === 0;
+  bill.canBeCancelled = !bill.cancelledAt && bill.status === 'Unpaid' && formatAmount(bill.paidAmount) === 0;
 
   return bill;
 }
@@ -452,7 +452,7 @@ async function getBills(filters = {}) {
 
   // Add computed fields
   return bills.map(bill => {
-    const remainingAmount = formatAmount(parseFloat(bill.total) - parseFloat(bill.paidAmount));
+    const remainingAmount = formatAmount(bill.total - bill.paidAmount);
     return {
       ...bill,
       remainingAmount,
@@ -518,14 +518,14 @@ async function updateBill(billId, updates, userId) {
         billId,
         action: 'BILL_UPDATED',
         beforeState: {
-          total: parseFloat(bill.total),
-          subtotal: parseFloat(bill.subtotal),
-          taxAmount: parseFloat(bill.taxAmount)
+          total: formatAmount(bill.total),
+          subtotal: formatAmount(bill.subtotal),
+          taxAmount: formatAmount(bill.taxAmount)
         },
         afterState: {
-          total: parseFloat(updated.total),
-          subtotal: parseFloat(updated.subtotal),
-          taxAmount: parseFloat(updated.taxAmount)
+          total: formatAmount(updated.total),
+          subtotal: formatAmount(updated.subtotal),
+          taxAmount: formatAmount(updated.taxAmount)
         },
         performedBy: userId
       }

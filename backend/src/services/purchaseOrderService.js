@@ -454,7 +454,7 @@ async function getPurchaseOrder(poId) {
   }
 
   // Add computed fields (FIX: Use formatAmount for precision)
-  po.remainingAmount = formatAmount(formatAmount(po.total) - formatAmount(po.billedAmount));
+  po.remainingAmount = formatAmount(po.total - po.billedAmount);
   po.canCreateBill = po.status !== 'Cancelled' &&
                      po.status !== 'Completed' &&
                      po.remainingAmount > 0;
@@ -515,7 +515,7 @@ async function getPurchaseOrders(filters = {}) {
 
   // Add computed fields (FIX: Use formatAmount for precision)
   return purchaseOrders.map(po => {
-    const remainingAmount = formatAmount(formatAmount(po.total) - formatAmount(po.billedAmount));
+    const remainingAmount = formatAmount(po.total - po.billedAmount);
     return {
       ...po,
       remainingAmount,

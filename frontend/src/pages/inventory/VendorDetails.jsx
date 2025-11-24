@@ -11,6 +11,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import LedgerView from '../../components/LedgerView';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, subtractAmounts } from '../../utils/decimalUtils';
 
 const VendorDetails = () => {
   const { id } = useParams();
@@ -177,21 +178,21 @@ const VendorDetails = () => {
                   dataIndex: 'total',
                   key: 'total',
                   align: 'right',
-                  render: (amount) => formatPKR(parseFloat(amount))
+                  render: (amount) => formatPKR(parseAmount(amount))
                 },
                 {
                   title: 'Billed',
                   dataIndex: 'billedAmount',
                   key: 'billedAmount',
                   align: 'right',
-                  render: (amount) => formatPKR(parseFloat(amount || 0))
+                  render: (amount) => formatPKR(parseAmount(amount))
                 },
                 {
                   title: 'Unbilled',
                   key: 'unbilled',
                   align: 'right',
                   render: (_, record) => {
-                    const unbilled = parseFloat(record.total) - parseFloat(record.billedAmount || 0);
+                    const unbilled = subtractAmounts(record.total, record.billedAmount);
                     return formatPKR(unbilled);
                   }
                 },
@@ -258,7 +259,7 @@ const VendorDetails = () => {
                       color: record.cancelledAt ? '#999' : 'inherit',
                       textDecoration: record.cancelledAt ? 'line-through' : 'none'
                     }}>
-                      {formatPKR(parseFloat(amount))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },
@@ -269,7 +270,7 @@ const VendorDetails = () => {
                   align: 'right',
                   render: (amount, record) => (
                     <span style={{ color: record.cancelledAt ? '#999' : 'inherit' }}>
-                      {formatPKR(parseFloat(amount || 0))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },
@@ -279,7 +280,7 @@ const VendorDetails = () => {
                   align: 'right',
                   render: (_, record) => {
                     if (record.cancelledAt) return '-';
-                    const balance = parseFloat(record.total) - parseFloat(record.paidAmount || 0);
+                    const balance = subtractAmounts(record.total, record.paidAmount);
                     return (
                       <span style={{
                         color: balance > 0 ? '#f5222d' : '#52c41a',
@@ -349,7 +350,7 @@ const VendorDetails = () => {
                       color: record.voidedAt ? '#999' : 'inherit',
                       textDecoration: record.voidedAt ? 'line-through' : 'none'
                     }}>
-                      {formatPKR(parseFloat(amount))}
+                      {formatPKR(parseAmount(amount))}
                     </span>
                   )
                 },

@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, formatAmount, addAmounts, subtractAmounts, multiplyAmount } from '../../utils/decimalUtils';
 
 const { Title, Text } = Typography;
 
@@ -80,8 +81,8 @@ const CreateVendorBill = () => {
       form.setFieldsValue({
         vendorId: specificPO.vendorId,
         purchaseOrderId: specificPO.id,
-        subtotal: parseFloat(specificPO.subtotal || 0),
-        taxAmount: parseFloat(specificPO.taxAmount || 0)
+        subtotal: parseAmount(specificPO.subtotal),
+        taxAmount: parseAmount(specificPO.taxAmount)
       });
     }
   }, [specificPO, form]);
@@ -111,35 +112,38 @@ const CreateVendorBill = () => {
       setSelectedPurchaseOrder(selectedPO);
 
       // Calculate remaining unbilled amount
-      const poTotal = parseFloat(selectedPO.total || 0);
-      const billedAmount = parseFloat(selectedPO.billedAmount || 0);
-      const remainingUnbilled = poTotal - billedAmount;
+      const poTotal = parseAmount(selectedPO.total);
+      const billedAmount = parseAmount(selectedPO.billedAmount);
+      const remainingUnbilled = subtractAmounts(poTotal, billedAmount);
 
       // Calculate proportional subtotal and tax from remaining unbilled
-      const poSubtotal = parseFloat(selectedPO.subtotal || 0);
-      const poTaxAmount = parseFloat(selectedPO.taxAmount || 0);
-      const poTotalCalc = poSubtotal + poTaxAmount;
+      const poSubtotal = parseAmount(selectedPO.subtotal);
+      const poTaxAmount = parseAmount(selectedPO.taxAmount);
+      const poTotalCalc = addAmounts(poSubtotal, poTaxAmount);
 
       const ratio = poTotalCalc > 0 ? remainingUnbilled / poTotalCalc : 0;
-      const calculatedSubtotal = poSubtotal * ratio;
-      const calculatedTax = poTaxAmount * ratio;
+      const calculatedSubtotal = multiplyAmount(poSubtotal, ratio, 2);
+      const calculatedTax = multiplyAmount(poTaxAmount, ratio, 2);
 
       form.setFieldsValue({
-        subtotal: parseFloat(calculatedSubtotal.toFixed(2)),
-        taxAmount: parseFloat(calculatedTax.toFixed(2))
+        subtotal: calculatedSubtotal,
+        taxAmount: calculatedTax
       });
       message.success(`Populated remaining unbilled amount (${formatPKR(remainingUnbilled)}) from PO ${selectedPO.poNumber}`);
     }
   };
 
   const handleSubmit = (values) => {
+    const subtotal = parseAmount(values.subtotal);
+    const taxAmount = parseAmount(values.taxAmount);
+
     const billData = {
       ...values,
       billDate: values.billDate.toISOString(),
       dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-      subtotal: parseFloat(values.subtotal) || 0,
-      taxAmount: parseFloat(values.taxAmount) || 0,
-      total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
+      subtotal: subtotal,
+      taxAmount: taxAmount,
+      total: addAmounts(subtotal, taxAmount)
     };
     billMutation.mutate(billData);
   };
@@ -169,7 +173,7 @@ const CreateVendorBill = () => {
       key: 'unitPrice',
       align: 'right',
       width: 120,
-      render: (price) => formatPKR(Number(price))
+      render: (price) => formatPKR(parseAmount(price))
     },
     {
       title: 'Total',
@@ -179,7 +183,7 @@ const CreateVendorBill = () => {
       width: 120,
       render: (total) => (
         <Text strong style={{ color: '#1890ff' }}>
-          {formatPKR(Number(total))}
+          {formatPKR(parseAmount(total))}
         </Text>
       )
     }
@@ -255,9 +259,9 @@ const CreateVendorBill = () => {
                   >
                     {filteredPurchaseOrders.map(po => (
                       <Select.Option key={po.id} value={po.id}>
-                        {po.poNumber} - {formatPKR(Number(po.total || 0))}
+                        {po.poNumber} - {formatPKR(parseAmount(po.total))}
                         {' (Unbilled: '}
-                        {formatPKR(Number(po.total || 0) - Number(po.billedAmount || 0))}
+                        {formatPKR(subtractAmounts(po.total, po.billedAmount))}
                         {')'}
                       </Select.Option>
                     ))}
@@ -300,13 +304,13 @@ const CreateVendorBill = () => {
                               return Promise.resolve();
                             }
 
-                            const subtotal = parseFloat(value) || 0;
-                            const taxAmount = parseFloat(form.getFieldValue('taxAmount')) || 0;
-                            const billTotal = subtotal + taxAmount;
+                            const subtotal = parseAmount(value);
+                            const taxAmount = parseAmount(form.getFieldValue('taxAmount'));
+                            const billTotal = addAmounts(subtotal, taxAmount);
 
-                            const poTotal = parseFloat(selectedPurchaseOrder.total) || 0;
-                            const billedAmount = parseFloat(selectedPurchaseOrder.billedAmount) || 0;
-                            const remainingUnbilled = poTotal - billedAmount;
+                            const poTotal = parseAmount(selectedPurchaseOrder.total);
+                            const billedAmount = parseAmount(selectedPurchaseOrder.billedAmount);
+                            const remainingUnbilled = subtractAmounts(poTotal, billedAmount);
 
                             if (billTotal > remainingUnbilled + 0.01) {
                               return Promise.reject(
@@ -358,8 +362,10 @@ const CreateVendorBill = () => {
                     style={{ width: '100%' }}
                     precision={2}
                     value={
-                      (parseFloat(form.getFieldValue('subtotal')) || 0) +
-                      (parseFloat(form.getFieldValue('taxAmount')) || 0)
+                      addAmounts(
+                        parseAmount(form.getFieldValue('subtotal')),
+                        parseAmount(form.getFieldValue('taxAmount'))
+                      )
                     }
                     disabled
                   />
@@ -405,7 +411,7 @@ const CreateVendorBill = () => {
                             <Text strong>Current Balance:</Text>
                             <br />
                             <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>
-                              {formatPKR(Number(vendor.currentBalance || 0))}
+                              {formatPKR(parseAmount(vendor.currentBalance))}
                             </Text>
                           </Col>
                         </Row>
@@ -445,13 +451,13 @@ const CreateVendorBill = () => {
                     <Col span={12}>
                       <Text strong>Total Amount:</Text>
                       <br />
-                      {formatPKR(Number(selectedPurchaseOrder.total))}
+                      {formatPKR(parseAmount(selectedPurchaseOrder.total))}
                     </Col>
                     <Col span={12}>
                       <Text strong>Billed Amount:</Text>
                       <br />
                       <Text style={{ color: '#faad14' }}>
-                        {formatPKR(Number(selectedPurchaseOrder.billedAmount || 0))}
+                        {formatPKR(parseAmount(selectedPurchaseOrder.billedAmount))}
                       </Text>
                     </Col>
                   </Row>
@@ -475,7 +481,7 @@ const CreateVendorBill = () => {
                               </Table.Summary.Cell>
                               <Table.Summary.Cell index={3} align="right">
                                 <Text strong style={{ color: '#1890ff' }}>
-                                  {formatPKR(Number(selectedPurchaseOrder.total || 0))}
+                                  {formatPKR(parseAmount(selectedPurchaseOrder.total))}
                                 </Text>
                               </Table.Summary.Cell>
                             </Table.Summary.Row>

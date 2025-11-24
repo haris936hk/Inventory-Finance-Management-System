@@ -18,6 +18,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
+import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -69,8 +70,8 @@ const VendorBills = () => {
 
     const today = new Date();
     return vendorBillsData.reduce((acc, bill) => {
-      const billTotal = parseFloat(bill.total);
-      const paidAmount = parseFloat(bill.paidAmount) || 0;
+      const billTotal = parseAmount(bill.total);
+      const paidAmount = parseAmount(bill.paidAmount);
       const balance = billTotal - paidAmount;
 
       acc.total += billTotal;
@@ -189,8 +190,8 @@ const VendorBills = () => {
 
       // Auto-populate financial fields from PO (no longer set vendor since it's already selected)
       form.setFieldsValue({
-        subtotal: parseFloat(selectedPO.subtotal || 0),
-        taxAmount: parseFloat(selectedPO.taxAmount || 0)
+        subtotal: parseAmount(selectedPO.subtotal),
+        taxAmount: parseAmount(selectedPO.taxAmount)
       });
 
       message.success(`Populated bill amounts from PO ${selectedPO.poNumber}`);
@@ -259,8 +260,8 @@ const VendorBills = () => {
   };
 
   const getPaymentProgress = (bill) => {
-    const total = parseFloat(bill.total);
-    const paid = parseFloat(bill.paidAmount) || 0;
+    const total = parseAmount(bill.total);
+    const paid = parseAmount(bill.paidAmount);
     return Math.round((paid / total) * 100);
   };
 
@@ -414,7 +415,7 @@ const VendorBills = () => {
             key: 'edit',
             icon: <EditOutlined />,
             label: 'Edit',
-            disabled: record.status !== 'Unpaid' || parseFloat(record.paidAmount || 0) > 0,
+            disabled: record.status !== 'Unpaid' || parseAmount(record.paidAmount) > 0,
             onClick: () => {
               setEditingBill(record);
               form.setFieldsValue({
@@ -438,7 +439,7 @@ const VendorBills = () => {
             icon: <StopOutlined />,
             label: 'Cancel Bill',
             danger: true,
-            disabled: record.status !== 'Unpaid' || parseFloat(record.paidAmount || 0) > 0,
+            disabled: record.status !== 'Unpaid' || parseAmount(record.paidAmount) > 0,
             onClick: () => handleCancelBill(record)
           },
           { type: 'divider' },
@@ -489,9 +490,9 @@ const VendorBills = () => {
       ...values,
       billDate: values.billDate ? values.billDate.toISOString() : new Date().toISOString(),
       dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-      subtotal: parseFloat(values.subtotal) || 0,
-      taxAmount: parseFloat(values.taxAmount) || 0,
-      total: (parseFloat(values.subtotal) || 0) + (parseFloat(values.taxAmount) || 0)
+      subtotal: parseAmount(values.subtotal),
+      taxAmount: parseAmount(values.taxAmount),
+      total: addAmounts(values.subtotal, values.taxAmount)
     };
     billMutation.mutate(processedValues);
   };

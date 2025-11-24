@@ -19,6 +19,8 @@ import { useNavigate } from 'react-router-dom';
 import { Line, Bar, Pie } from 'recharts';
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
+import { parseAmount } from '../utils/decimalUtils';
+import { formatPKR } from '../config/constants';
 
 const { Text } = Typography;
 
@@ -77,9 +79,9 @@ const Dashboard = () => {
               <Text type="secondary">Available: </Text>
               <Text strong>{data.inventory.availableItems}</Text>
             </div>
-            <Progress 
-              percent={parseFloat(data.inventory.utilizationRate)} 
-              size="small" 
+            <Progress
+              percent={parseAmount(data.inventory.utilizationRate)}
+              size="small"
               strokeColor="#52c41a"
             />
           </Card>
@@ -96,7 +98,7 @@ const Dashboard = () => {
             />
             <div style={{ marginTop: 8 }}>
               <Text type="secondary">Total: </Text>
-              <Text strong>PKR {parseFloat(data.financial.totalRevenue).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
+              <Text strong>{formatPKR(data.financial.totalRevenue)}</Text>
             </div>
           </Card>
         </Col>
@@ -199,7 +201,7 @@ const Dashboard = () => {
                     description={invoice.customer?.name}
                   />
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ marginBottom: 4 }}>PKR {parseFloat(invoice.total).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    <div style={{ marginBottom: 4 }}>{formatPKR(invoice.total)}</div>
                     <Tag
                       color={
                         invoice.status === 'Paid' ? 'green' :
@@ -241,7 +243,7 @@ const Dashboard = () => {
                     avatar={
                       <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
                     }
-                    title={`PKR ${parseFloat(payment.amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    title={formatPKR(payment.amount)}
                     description={payment.customer?.name}
                   />
                   <div>
