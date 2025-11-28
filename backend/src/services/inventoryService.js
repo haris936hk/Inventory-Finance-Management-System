@@ -367,10 +367,9 @@ class InventoryService {
     const autoStatus = condition === 'Used' ? 'In Lab' : 'In Store';
 
     // Set repaired status and inventory status based on condition
-    // FIX: "Under Repair" is not a valid inventoryStatus - use "Available" instead
-    // Valid inventoryStatus values: Available, Reserved, Sold, Delivered
+    // Valid inventoryStatus values: Available, Reserved, Sold, Delivered, Under Repair, Returned
     const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
-    const inventoryStatus = 'Available';  // FIX: All new items start as Available
+    const inventoryStatus = condition === 'Used' ? 'Under Repair' : 'Available';
 
     // Create item with initial status
     try {
@@ -467,6 +466,7 @@ class InventoryService {
 
     // CRITICAL FIX: Filter for invoice-available items only
     // Must check BOTH physical status AND inventoryStatus to prevent showing Reserved/Sold items
+    // CRITICAL: Also exclude items with repaired='No' (items under repair cannot be sold)
     if (filters.availableForInvoice) {
       where.AND = [
         {
@@ -475,7 +475,12 @@ class InventoryService {
             { status: 'In Lab', repaired: 'Yes' }
           ]
         },
-        { inventoryStatus: 'Available' }  // FIX: Only show Available items (not Reserved/Sold)
+        { inventoryStatus: 'Available' },  // FIX: Only show Available items (not Reserved/Sold)
+        {
+          NOT: {
+            repaired: 'No'  // CRITICAL: Block items under repair from invoice selection
+          }
+        }
       ];
     }
 
@@ -699,22 +704,29 @@ class InventoryService {
 
   /**
    * Update repaired status for "In Lab" items
+   * Delegates to inventory lifecycle service for proper state machine management
    */
   async updateRepairedStatus(serialNumber, repairedStatus, userId) {
-    // FIX: Wrap in transaction with row lock to prevent race conditions
     return await db.transaction(async (prisma) => {
-      // FIX: Lock the item row to prevent concurrent updates
+      // Lock item to prevent concurrent updates
+      await prisma.$queryRaw`SELECT * FROM "Item" WHERE "serialNumber" = ${serialNumber} FOR UPDATE NOWAIT`;
+
       const item = await prisma.item.findUnique({
-        where: { serialNumber }
+        where: { serialNumber, deletedAt: null }
       });
 
       if (!item) {
         throw new Error('Item not found');
       }
 
-      // Validate: Item must be "In Lab"
-      if (item.status !== 'In Lab') {
-        throw new Error('Only items in "In Lab" status can have their repaired status updated');
+      // Validate: Item must be "In Lab" and "Under Repair"
+      if (item.status !== 'In Lab' || item.inventoryStatus !== 'Under Repair') {
+        throw new Error('Only items in "In Lab" with "Under Repair" status can have their repaired status updated');
+      }
+
+      // Validate: Item must not be reserved (shouldn't happen with Under Repair status, but check anyway)
+      if (item.inventoryStatus === 'Reserved') {
+        throw new Error('Cannot update repaired status of reserved items');
       }
 
       // Validate: Only allow "Yes" and "Returned"
@@ -723,47 +735,16 @@ class InventoryService {
         throw new Error('Invalid repaired status. Only "Yes" and "Returned" are allowed.');
       }
 
-      // Validate transitions: No→Yes, No→Returned, Yes→Returned
-      const currentRepaired = item.repaired || 'No';
-      const validTransitions = {
-        'No': ['Yes', 'Returned'],
-        'Yes': ['Returned'],
-        'Returned': [] // Cannot change from Returned
-      };
+      // Delegate to lifecycle service for proper state machine transitions
+      const inventoryLifecycleService = require('./inventoryLifecycleService');
 
-      if (!validTransitions[currentRepaired].includes(repairedStatus)) {
-        throw new Error(`Cannot change repaired status from "${currentRepaired}" to "${repairedStatus}"`);
+      if (repairedStatus === 'Yes') {
+        const result = await inventoryLifecycleService.markItemAsRepaired(item.id, userId, prisma);
+        return result.item;
+      } else if (repairedStatus === 'Returned') {
+        const result = await inventoryLifecycleService.markItemAsReturned(item.id, userId, prisma);
+        return result.item;
       }
-
-      // Determine inventoryStatus and physical status based on repaired status
-      // FIX: "Under Repair" is not a valid inventoryStatus
-      // Yes → Available + In Store, No/Returned → Available + In Lab
-      const inventoryStatus = 'Available';  // FIX: Keep as Available regardless
-      const physicalStatus = repairedStatus === 'Yes' ? 'In Store' : 'In Lab';
-
-      // Update item
-      const updatedItem = await prisma.item.update({
-        where: { serialNumber },
-        data: {
-          repaired: repairedStatus,
-          status: physicalStatus,
-          inventoryStatus: inventoryStatus
-          // FIX: Removed statusHistory JSON field - use InventoryStatusHistory table instead
-        },
-        include: {
-          category: true,
-          model: {
-            include: {
-              company: true
-            }
-          },
-          vendor: true,
-          customer: true
-        }
-      });
-
-      logger.info(`Item ${serialNumber} repaired status updated to ${repairedStatus}`);
-      return updatedItem;
     });
   }
 
@@ -980,7 +961,7 @@ class InventoryService {
           const condition = itemData.condition || 'New';
           const autoStatus = condition === 'Used' ? 'In Lab' : 'In Store';
           const repairedStatus = autoStatus === 'In Lab' ? 'No' : null;
-          const inventoryStatus = 'Available';
+          const inventoryStatus = condition === 'Used' ? 'Under Repair' : 'Available';
 
           // Create item directly in transaction
           const item = await prisma.item.create({
@@ -1107,12 +1088,20 @@ class InventoryService {
             throw new Error(`Serial number ${itemData.serialNumber} already exists`);
           }
 
+          // Determine status based on condition (if provided)
+          const condition = itemData.condition || 'New';
+          const autoStatus = condition === 'Used' ? 'In Lab' : (itemData.status || 'In Store');
+          const repairedStatus = condition === 'Used' ? 'No' : null;
+          const inventoryStatus = condition === 'Used' ? 'Under Repair' : 'Available';
+
           // Create item directly in transaction (not via this.createItem)
           const item = await prisma.item.create({
             data: {
               serialNumber: itemData.serialNumber,
-              status: itemData.status || 'In Store',
-              inventoryStatus: 'Available', // All new items start as Available
+              condition: condition,
+              status: autoStatus,
+              inventoryStatus: inventoryStatus,
+              repaired: repairedStatus,
               purchaseOrderId: purchaseOrderId,
               vendorId: po.vendorId,
               categoryId: itemData.categoryId,

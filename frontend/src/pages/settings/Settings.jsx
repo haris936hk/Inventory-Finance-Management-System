@@ -18,6 +18,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -68,7 +69,8 @@ const Settings = () => {
         queryClient.invalidateQueries('settings');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to update settings');
+        const errorMessage = getErrorMessage(error);
+        message.error(errorMessage);
       }
     }
   );

@@ -14,6 +14,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, subtractAmounts, isPositive } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -67,7 +68,8 @@ const RecordPayment = () => {
         navigate('/app/finance/payments');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to record payment');
+        const errorMessage = getErrorMessage(error, 'payment', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -101,7 +103,7 @@ const RecordPayment = () => {
     const invoice = customerInvoices?.find(inv => inv.id === invoiceId);
     setSelectedInvoice(invoice);
     // Re-validate the amount field when invoice changes
-    form.validateFields(['amount']).catch(() => {});
+    form.validateFields(['amount']).catch(() => { });
   };
 
   const handleSubmit = (values) => {
@@ -157,7 +159,7 @@ const RecordPayment = () => {
       render: (status) => (
         <span style={{
           color: status === 'Paid' ? '#52c41a' :
-                status === 'Partial' ? '#faad14' : '#f5222d'
+            status === 'Partial' ? '#faad14' : '#f5222d'
         }}>
           {status}
         </span>

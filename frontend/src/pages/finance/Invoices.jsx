@@ -16,6 +16,7 @@ import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, formatAmount, subtractAmounts, addAmounts } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -48,15 +49,18 @@ const Invoices = () => {
 
     return invoicesData.reduce((acc, invoice) => {
       const total = parseAmount(invoice.total);
-      const paidAmount = parseAmount(invoice.paidAmount);
+      const paidAmount = parseAmount(invoice.paidAmount || 0);
 
       acc.total = addAmounts(acc.total, total);
-      if (invoice.status === 'Paid') {
-        acc.paid = addAmounts(acc.paid, total);
-      } else if (invoice.status === 'Overdue') {
-        acc.overdue = addAmounts(acc.overdue, subtractAmounts(total, paidAmount));
-      } else {
-        acc.pending = addAmounts(acc.pending, subtractAmounts(total, paidAmount));
+      // Paid should accumulate actual paid amounts from all invoices
+      acc.paid = addAmounts(acc.paid, paidAmount);
+
+      // Calculate remaining balances for pending/overdue
+      const remaining = subtractAmounts(total, paidAmount);
+      if (invoice.status === 'Overdue') {
+        acc.overdue = addAmounts(acc.overdue, remaining);
+      } else if (invoice.status !== 'Paid' && invoice.status !== 'Cancelled') {
+        acc.pending = addAmounts(acc.pending, remaining);
       }
       return acc;
     }, { total: 0, paid: 0, pending: 0, overdue: 0 });
@@ -83,7 +87,8 @@ const Invoices = () => {
         queryClient.invalidateQueries('customers');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to cancel invoice');
+        const errorMessage = getErrorMessage(error, 'invoice', 'cancel');
+        message.error(errorMessage);
       }
     }
   );
@@ -213,7 +218,7 @@ const Invoices = () => {
       key: 'balance',
       width: 120,
       render: (_, record) => {
-        const balance = subtractAmounts(record.total, record.paidAmount);
+        const balance = subtractAmounts(parseAmount(record.total), parseAmount(record.paidAmount || 0));
         return (
           <span style={{ color: balance > 0 ? '#ff4d4f' : '#52c41a' }}>
             {formatPKR(balance)}
@@ -260,7 +265,7 @@ const Invoices = () => {
             label: 'Record Payment',
             icon: <DollarOutlined />,
             onClick: () => navigate(`/app/finance/payments/record?invoiceId=${record.id}`),
-            disabled: record.status === 'Paid'
+            disabled: !['Sent', 'Partial', 'Overdue'].includes(record.status)
           },
           {
             key: 'download-pdf',
@@ -363,7 +368,7 @@ const Invoices = () => {
             onSearch={(value) => setFilters({ ...filters, search: value })}
           />
         </Col>
-        
+
         <Col xs={24} sm={8} lg={6}>
           <Select
             placeholder="Select customer"

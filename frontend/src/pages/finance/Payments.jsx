@@ -16,6 +16,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
@@ -58,7 +59,8 @@ const Payments = () => {
         queryClient.invalidateQueries('customers');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to void payment');
+        const errorMessage = getErrorMessage(error, 'payment', 'void');
+        message.error(errorMessage);
       }
     }
   );

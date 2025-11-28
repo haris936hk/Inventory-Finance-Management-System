@@ -25,6 +25,20 @@ import { useMutation, useQuery } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import GroupedItemSelector from '../../components/GroupedItemSelector';
+import { VALIDATION } from '../../config/constants';
+import {
+  nameRules,
+  phoneRules,
+  optionalEmailRules,
+  addressRules,
+  nicRules,
+  creditLimitRules,
+  percentageRules,
+  getDiscountRules,
+  requiredDateRules,
+  notesRules
+} from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -61,7 +75,8 @@ const CreateInvoice = () => {
         navigate(`/app/finance/invoices/${response.data.data.id}`);
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to create invoice');
+        const errorMessage = getErrorMessage(error, 'invoice', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -78,7 +93,8 @@ const CreateInvoice = () => {
         customerForm.resetFields();
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to create customer');
+        const errorMessage = getErrorMessage(error, 'customer', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -208,7 +224,7 @@ const CreateInvoice = () => {
                     <Form.Item
                       label="Invoice Date"
                       name="invoiceDate"
-                      rules={[{ required: true }]}
+                      rules={requiredDateRules}
                     >
                       <DatePicker style={{ width: '100%' }} />
                     </Form.Item>
@@ -217,7 +233,7 @@ const CreateInvoice = () => {
                     <Form.Item
                       label="Due Date"
                       name="dueDate"
-                      rules={[{ required: true }]}
+                      rules={requiredDateRules}
                     >
                       <DatePicker style={{ width: '100%' }} />
                     </Form.Item>
@@ -238,11 +254,11 @@ const CreateInvoice = () => {
           <Row gutter={16} style={{ marginTop: 24 }}>
             <Col xs={24} lg={12}>
               <Card size="small" title="Additional Information">
-                <Form.Item label="Terms & Conditions" name="terms">
-                  <TextArea rows={3} placeholder="Enter terms and conditions" />
+                <Form.Item label="Terms & Conditions" name="terms" rules={notesRules}>
+                  <TextArea rows={3} placeholder="Enter terms and conditions" maxLength={1000} showCount />
                 </Form.Item>
-                <Form.Item label="Notes" name="notes">
-                  <TextArea rows={3} placeholder="Additional notes" />
+                <Form.Item label="Notes" name="notes" rules={notesRules}>
+                  <TextArea rows={3} placeholder="Additional notes" maxLength={1000} showCount />
                 </Form.Item>
               </Card>
             </Col>
@@ -264,10 +280,18 @@ const CreateInvoice = () => {
                     </Form.Item>
                   </Col>
                   <Col span={8}>
-                    <Form.Item name="discountValue" noStyle>
+                    <Form.Item
+                      name="discountValue"
+                      noStyle
+                      rules={getDiscountRules(form.getFieldValue('discountType'), subtotal)}
+                    >
                       <InputNumber
                         style={{ width: '100%' }}
+                        precision={2}
                         min={0}
+                        max={form.getFieldValue('discountType') === 'Percentage' ? 100 : subtotal}
+                        step={0.01}
+                        placeholder="0.00"
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}
@@ -281,11 +305,14 @@ const CreateInvoice = () => {
 
                 <Row gutter={8} style={{ marginBottom: 16 }}>
                   <Col span={16}>
-                    <Form.Item label="Tax Rate (%)" name="taxRate" labelCol={{ span: 12 }}>
+                    <Form.Item label="Tax Rate (%)" name="taxRate" labelCol={{ span: 12 }} rules={percentageRules}>
                       <InputNumber
                         style={{ width: '100%' }}
+                        precision={2}
                         min={0}
                         max={100}
+                        step={0.01}
+                        placeholder="0.00"
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}
@@ -341,43 +368,42 @@ const CreateInvoice = () => {
           <Form.Item
             label="Name"
             name="name"
-            rules={[{ required: true, message: 'Name is required' }]}
+            rules={nameRules}
           >
-            <Input placeholder="Customer name" />
+            <Input placeholder="Customer name" maxLength={100} showCount />
           </Form.Item>
 
           <Form.Item
             label="Phone"
             name="phone"
-            rules={[
-              { required: true, message: 'Phone is required' },
-              { pattern: /^\d{11}$/, message: 'Phone must be 11 digits' }
-            ]}
+            rules={phoneRules}
           >
-            <Input placeholder="03001234567" />
+            <Input placeholder="03001234567" maxLength={11} />
           </Form.Item>
 
           <Form.Item label="Company" name="company">
-            <Input placeholder="Company name (optional)" />
+            <Input placeholder="Company name (optional)" maxLength={100} />
           </Form.Item>
 
-          <Form.Item label="Email" name="email">
-            <Input type="email" placeholder="email@example.com" />
+          <Form.Item label="Email" name="email" rules={optionalEmailRules}>
+            <Input type="email" placeholder="email@example.com" maxLength={100} />
           </Form.Item>
 
-          <Form.Item label="NIC" name="nic">
-            <Input placeholder="National ID Card" />
+          <Form.Item label="NIC" name="nic" rules={nicRules}>
+            <Input placeholder="1234567890123 (13 digits)" maxLength={13} />
           </Form.Item>
 
-          <Form.Item label="Address" name="address">
-            <TextArea rows={2} placeholder="Full address" />
+          <Form.Item label="Address" name="address" rules={addressRules}>
+            <TextArea rows={2} placeholder="Full address" maxLength={500} showCount />
           </Form.Item>
 
-          <Form.Item label="Credit Limit" name="creditLimit" initialValue={0}>
+          <Form.Item label="Credit Limit (PKR)" name="creditLimit" initialValue={0} rules={creditLimitRules}>
             <InputNumber
+              precision={2}
               min={0}
+              max={VALIDATION.MAX_AMOUNT}
+              step={0.01}
               style={{ width: '100%' }}
-              prefix="PKR"
               placeholder="0 for no limit"
             />
           </Form.Item>

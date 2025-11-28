@@ -19,6 +19,8 @@ import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
+import { requiredDateRules, amountRules, optionalAmountRules } from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -112,8 +114,8 @@ const VendorBills = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('Bill operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingBill ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'bill', operation);
         message.error(errorMessage);
       }
     }
@@ -129,7 +131,7 @@ const VendorBills = () => {
         queryClient.invalidateQueries('purchase-orders');
       },
       onError: (error) => {
-        const errorMessage = error.response?.data?.message || 'Failed to update status';
+        const errorMessage = getErrorMessage(error, 'bill', 'update');
         message.error(errorMessage);
       }
     }
@@ -145,7 +147,7 @@ const VendorBills = () => {
         queryClient.invalidateQueries('purchase-orders');
       },
       onError: (error) => {
-        const errorMessage = error.response?.data?.message || error.response?.data?.error?.message || 'Failed to cancel bill';
+        const errorMessage = getErrorMessage(error, 'bill', 'cancel');
         message.error(errorMessage);
       }
     }
@@ -713,7 +715,7 @@ const VendorBills = () => {
               <Form.Item
                 label="Bill Date"
                 name="billDate"
-                rules={[{ required: true, message: 'Please select bill date' }]}
+                rules={requiredDateRules}
               >
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
@@ -742,15 +744,13 @@ const VendorBills = () => {
               <Form.Item
                 label="Subtotal (PKR)"
                 name="subtotal"
-                rules={[
-                  { required: true, message: 'Please enter subtotal' },
-                  { type: 'number', min: 0, message: 'Amount must be positive' }
-                ]}
+                rules={amountRules}
               >
                 <InputNumber
                   style={{ width: '100%' }}
                   precision={2}
                   min={0}
+                  step={0.01}
                   placeholder="0.00"
                 />
               </Form.Item>
@@ -759,12 +759,13 @@ const VendorBills = () => {
               <Form.Item
                 label="Tax Amount (PKR)"
                 name="taxAmount"
-                rules={[{ type: 'number', min: 0, message: 'Amount must be positive' }]}
+                rules={optionalAmountRules}
               >
                 <InputNumber
                   style={{ width: '100%' }}
                   precision={2}
                   min={0}
+                  step={0.01}
                   placeholder="0.00"
                 />
               </Form.Item>

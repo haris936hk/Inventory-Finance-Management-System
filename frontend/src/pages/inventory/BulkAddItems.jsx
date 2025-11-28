@@ -13,6 +13,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { formatPKR } from '../../config/constants';
 import { parseAmount } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Step } = Steps;
 const { TextArea } = Input;
@@ -93,7 +94,8 @@ const BulkAddItems = () => {
         navigate('/app/inventory/items');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to add items');
+        const errorMessage = getErrorMessage(error, 'item', 'create');
+        message.error(errorMessage);
       }
     }
   );

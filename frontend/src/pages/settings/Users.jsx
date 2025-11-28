@@ -1,15 +1,16 @@
 // ========== src/pages/settings/Users.jsx ==========
 import React, { useState } from 'react';
-import { 
-  Card, Table, Button, Modal, Form, Input, Select, 
-  Switch, message, Space, Tag, Badge 
+import {
+  Card, Table, Button, Modal, Form, Input, Select,
+  Switch, message, Space, Tag, Badge
 } from 'antd';
-import { 
-  PlusOutlined, EditOutlined, DeleteOutlined, 
-  KeyOutlined, UserOutlined 
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined,
+  KeyOutlined, UserOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const Users = () => {
   const queryClient = useQueryClient();
@@ -44,7 +45,9 @@ const Users = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Operation failed');
+        const operation = editingUser ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'user', operation);
+        message.error(errorMessage);
       }
     }
   );

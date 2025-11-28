@@ -4,6 +4,7 @@ import { Card, Table, Button, Modal, Form, Input, Select, Switch, message, Space
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const Models = () => {
   const queryClient = useQueryClient();
@@ -59,8 +60,8 @@ const Models = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('Model operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingModel ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'model', operation);
         message.error(errorMessage);
       }
     }
@@ -74,8 +75,7 @@ const Models = () => {
         queryClient.invalidateQueries('models');
       },
       onError: (error) => {
-        console.error('Delete failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete model';
+        const errorMessage = getErrorMessage(error, 'model', 'delete');
         message.error(errorMessage);
       }
     }

@@ -12,6 +12,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { TabPane } = Tabs;
 
@@ -34,7 +35,8 @@ const ProfileContent = () => {
         queryClient.invalidateQueries('currentUser');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to update profile');
+        const errorMessage = getErrorMessage(error, 'user', 'update');
+        message.error(errorMessage);
       }
     }
   );
@@ -51,7 +53,8 @@ const ProfileContent = () => {
         passwordForm.resetFields();
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to change password');
+        const errorMessage = getErrorMessage(error);
+        message.error(errorMessage);
       }
     }
   );

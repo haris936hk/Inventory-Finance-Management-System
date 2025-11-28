@@ -6,9 +6,10 @@ import {
   Typography, Divider, Statistic, Alert, Modal, message, Tabs
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, DeleteOutlined, PrinterOutlined,
-  BarcodeOutlined, HistoryOutlined, DollarOutlined, TruckOutlined,
-  WarningOutlined, CheckCircleOutlined, ClockCircleOutlined
+  ArrowLeftOutlined, EditOutlined, DeleteOutlined,
+  HistoryOutlined, DollarOutlined, TruckOutlined,
+  WarningOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  ToolOutlined, CloseCircleOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -104,7 +105,8 @@ const ItemDetails = () => {
       'Reserved': 'orange',
       'Sold': 'blue',
       'Delivered': 'cyan',
-      'Under Repair': 'red'
+      'Under Repair': 'gold',
+      'Returned': 'red'
     };
     return colors[status] || 'default';
   };
@@ -113,7 +115,10 @@ const ItemDetails = () => {
     const colors = {
       'In Store': 'green',
       'In Lab': 'purple',
-      'Handover': 'orange'
+      'Handover': 'orange',
+      'Sold': 'blue',
+      'Delivered': 'cyan',
+      'Returned': 'red'
     };
     return colors[status] || 'default';
   };
@@ -124,7 +129,8 @@ const ItemDetails = () => {
       'Reserved': <ClockCircleOutlined />,
       'Sold': <DollarOutlined />,
       'Delivered': <TruckOutlined />,
-      'Under Repair': <WarningOutlined />
+      'Under Repair': <ToolOutlined />,
+      'Returned': <CloseCircleOutlined />
     };
     return icons[status] || <CheckCircleOutlined />;
   };
@@ -133,7 +139,10 @@ const ItemDetails = () => {
     const icons = {
       'In Store': <CheckCircleOutlined />,
       'In Lab': <WarningOutlined />,
-      'Handover': <TruckOutlined />
+      'Handover': <TruckOutlined />,
+      'Sold': <DollarOutlined />,
+      'Delivered': <TruckOutlined />,
+      'Returned': <CloseCircleOutlined />
     };
     return icons[status] || <CheckCircleOutlined />;
   };
@@ -210,12 +219,6 @@ const ItemDetails = () => {
           </Space>
 
           <Space>
-            <Button icon={<BarcodeOutlined />}>
-              Print Barcode
-            </Button>
-            <Button icon={<PrinterOutlined />}>
-              Print Details
-            </Button>
             {hasPermission('inventory.update') && (
               <>
                 {item?.inventoryStatus === 'Reserved' && (
@@ -251,6 +254,30 @@ const ItemDetails = () => {
         </div>
       </Card>
 
+      {/* Returned Item Alert */}
+      {item.inventoryStatus === 'Returned' && (
+        <Alert
+          message="Returned Item - Cannot Be Repaired"
+          description="This item has been marked as 'Returned' and is in a terminal state. It cannot be repaired, sold, or have its status changed. This is a permanent state."
+          type="error"
+          icon={<CloseCircleOutlined />}
+          showIcon
+          style={{ marginBottom: 24 }}
+        />
+      )}
+
+      {/* Under Repair Status Message */}
+      {item.inventoryStatus === 'Under Repair' && item.repaired === 'No' && (
+        <Alert
+          message="Item Under Repair"
+          description="This item is currently under repair and cannot be sold until the repair is completed. Update the repaired status to 'Yes' when ready to sell, or mark as 'Returned' if it cannot be repaired."
+          type="warning"
+          icon={<ToolOutlined />}
+          showIcon
+          style={{ marginBottom: 24 }}
+        />
+      )}
+
       <Row gutter={[24, 24]}>
         {/* Left Column - Main Details */}
         <Col xs={24} lg={16}>
@@ -260,9 +287,6 @@ const ItemDetails = () => {
                 <Descriptions column={2} bordered>
                   <Descriptions.Item label="Serial Number" span={2}>
                     <Text strong>{item.serialNumber}</Text>
-                    <Tag color="blue" style={{ marginLeft: 8 }}>
-                      <BarcodeOutlined /> {item.barcode || 'Auto-generated'}
-                    </Tag>
                   </Descriptions.Item>
 
                   <Descriptions.Item label="Model">
@@ -303,15 +327,9 @@ const ItemDetails = () => {
                   <Descriptions.Item label="Purchase Date">
                     {item.purchaseDate ? dayjs(item.purchaseDate).format('DD/MM/YYYY') : 'N/A'}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Warranty Expires">
-                    {item.warrantyExpires ? dayjs(item.warrantyExpires).format('DD/MM/YYYY') : 'N/A'}
-                  </Descriptions.Item>
 
                   <Descriptions.Item label="Vendor">
                     {item.vendor?.name || 'N/A'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Location">
-                    {item.location || 'Not specified'}
                   </Descriptions.Item>
 
                   {item.specifications && (

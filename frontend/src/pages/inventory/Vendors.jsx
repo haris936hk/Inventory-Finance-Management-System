@@ -1,7 +1,7 @@
 // ========== src/pages/inventory/Vendors.jsx ==========
 import React, { useState } from 'react';
 import {
-  Card, Table, Button, Modal, Form, Input, Switch, message, Space, Tag
+  Card, Table, Button, Modal, Form, Input, InputNumber, Switch, message, Space, Tag
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, PhoneOutlined, MailOutlined,
@@ -10,8 +10,10 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { formatPKR } from '../../config/constants';
+import { formatPKR, VALIDATION } from '../../config/constants';
 import { parseAmount } from '../../utils/decimalUtils';
+import { nameRules, codeRules, optionalPhoneRules, optionalEmailRules, addressRules, notesRules, optionalAmountRules } from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const Vendors = () => {
   const queryClient = useQueryClient();
@@ -39,8 +41,8 @@ const Vendors = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('Vendor operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingVendor ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'vendor', operation);
         message.error(errorMessage);
       }
     }
@@ -54,8 +56,7 @@ const Vendors = () => {
         queryClient.invalidateQueries('vendors');
       },
       onError: (error) => {
-        console.error('Delete failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete vendor';
+        const errorMessage = getErrorMessage(error, 'vendor', 'delete');
         message.error(errorMessage);
       }
     }
@@ -206,74 +207,68 @@ const Vendors = () => {
             <Form.Item
               label="Name"
               name="name"
-              rules={[{ required: true, message: 'Name is required' }]}
+              rules={nameRules}
             >
-              <Input placeholder="e.g., ABC Electronics" />
+              <Input placeholder="e.g., ABC Electronics" maxLength={100} showCount />
             </Form.Item>
 
             <Form.Item
               label="Code"
               name="code"
-              rules={[{ required: true, message: 'Code is required' }]}
+              rules={codeRules}
             >
-              <Input placeholder="e.g., ABC" maxLength={10} />
+              <Input placeholder="e.g., ABC-001" maxLength={20} />
             </Form.Item>
 
             <Form.Item label="Contact Person" name="contactPerson">
-              <Input placeholder="Contact person name" />
+              <Input placeholder="Contact person name" maxLength={100} />
             </Form.Item>
 
             <Form.Item
               label="Phone"
               name="phone"
-              rules={[
-                { pattern: /^[\d\s\-\+\(\)]+$/, message: 'Invalid phone number' }
-              ]}
+              rules={optionalPhoneRules}
             >
-              <Input placeholder="e.g., +92 300 1234567" />
+              <Input placeholder="03001234567 (11 digits)" maxLength={11} />
             </Form.Item>
 
             <Form.Item
               label="Email"
               name="email"
-              rules={[{ type: 'email', message: 'Invalid email address' }]}
+              rules={optionalEmailRules}
             >
-              <Input placeholder="vendor@example.com" />
+              <Input placeholder="vendor@example.com" maxLength={100} />
             </Form.Item>
 
           </div>
 
-          <Form.Item label="Address" name="address">
-            <Input.TextArea rows={2} placeholder="Complete address" />
+          <Form.Item label="Address" name="address" rules={addressRules}>
+            <Input.TextArea rows={2} placeholder="Complete address" maxLength={500} showCount />
           </Form.Item>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item label="Tax Number" name="taxNumber">
-              <Input placeholder="e.g., 12345-6789012-3" />
+              <Input placeholder="e.g., 12345-6789012-3" maxLength={50} />
             </Form.Item>
 
             <Form.Item label="Payment Terms" name="paymentTerms">
-              <Input placeholder="e.g., Net 30, Due on Receipt" />
+              <Input placeholder="e.g., Net 30, Due on Receipt" maxLength={100} />
             </Form.Item>
 
             <Form.Item
               label="Opening Balance (PKR)"
               name="openingBalance"
-              rules={[
-                { pattern: /^\d+(\.\d{1,2})?$/, message: 'Enter valid amount (e.g., 1000.50)' }
-              ]}
+              rules={optionalAmountRules}
             >
-              <Input placeholder="0.00" />
+              <InputNumber style={{ width: '100%' }} precision={2} min={0} max={VALIDATION.MAX_AMOUNT} step={0.01} placeholder="0.00" />
             </Form.Item>
 
             <Form.Item
               label="Current Balance (PKR)"
               name="currentBalance"
-              rules={[
-                { pattern: /^\d+(\.\d{1,2})?$/, message: 'Enter valid amount (e.g., 1000.50)' }
-              ]}
+              rules={optionalAmountRules}
             >
-              <Input placeholder="0.00" />
+              <InputNumber style={{ width: '100%' }} precision={2} min={0} max={VALIDATION.MAX_AMOUNT} step={0.01} placeholder="0.00" />
             </Form.Item>
           </div>
 

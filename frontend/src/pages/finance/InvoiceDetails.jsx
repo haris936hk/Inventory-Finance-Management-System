@@ -6,7 +6,7 @@ import {
   Divider, Statistic, Alert, Modal, message, Tabs, Timeline
 } from 'antd';
 import {
-  ArrowLeftOutlined, EditOutlined, DeleteOutlined,
+  ArrowLeftOutlined, DeleteOutlined,
   FilePdfOutlined, DollarOutlined, CreditCardOutlined,
   CalendarOutlined, UserOutlined, PhoneOutlined, EnvironmentOutlined
 } from '@ant-design/icons';
@@ -260,7 +260,7 @@ const InvoiceDetails = () => {
             >
               Download PDF
             </Button>
-            {hasPermission('finance.update') && invoice.status !== 'Paid' && (
+            {hasPermission('finance.update') && ['Sent', 'Partial', 'Overdue'].includes(invoice.status) && (
               <Button
                 type="primary"
                 icon={<CreditCardOutlined />}
@@ -500,7 +500,7 @@ const InvoiceDetails = () => {
                   type="primary"
                   icon={<CreditCardOutlined />}
                   onClick={() => navigate(`/app/finance/payments/record?invoiceId=${id}`)}
-                  disabled={invoice.status === 'Paid'}
+                  disabled={!['Sent', 'Partial', 'Overdue'].includes(invoice.status)}
                 >
                   Record Payment
                 </Button>
@@ -510,14 +510,6 @@ const InvoiceDetails = () => {
                   onClick={handleDownloadPDF}
                 >
                   Download PDF
-                </Button>
-                <Button
-                  block
-                  icon={<EditOutlined />}
-                  onClick={() => navigate(`/app/finance/invoices/${id}/edit`)}
-                  disabled={invoice.status === 'Paid'}
-                >
-                  Edit Invoice
                 </Button>
               </Space>
             </Card>

@@ -12,8 +12,9 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import PurchaseOrderItemSelector from '../../components/PurchaseOrderItemSelector';
-import { formatPKR } from '../../config/constants';
+import { formatPKR, VALIDATION } from '../../config/constants';
 import { formatAmount, parseAmount } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 
@@ -49,7 +50,8 @@ const CreatePurchaseOrder = () => {
         navigate('/app/finance/purchase-orders');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to create purchase order');
+        const errorMessage = getErrorMessage(error, 'purchaseOrder', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -209,6 +211,7 @@ const CreatePurchaseOrder = () => {
                     precision={2}
                     min={0}
                     max={100}
+                    step={0.01}
                     placeholder="0.00"
                     onChange={() => {
                       setTimeout(() => calculateTotals(), 0);

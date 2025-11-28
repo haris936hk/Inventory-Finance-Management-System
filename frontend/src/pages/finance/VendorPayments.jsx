@@ -16,6 +16,7 @@ import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -79,7 +80,7 @@ const VendorPayments = () => {
         queryClient.invalidateQueries('vendors');
       },
       onError: (error) => {
-        const errorMessage = error.response?.data?.message || error.response?.data?.error?.message || 'Failed to void payment';
+        const errorMessage = getErrorMessage(error, 'payment', 'void');
         message.error(errorMessage);
       }
     }

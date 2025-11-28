@@ -27,7 +27,9 @@ class InventoryLifecycleService {
     'Available': ['Reserved', 'Sold'], // Direct sale possible
     'Reserved': ['Available', 'Sold'],
     'Sold': ['Delivered'],
-    'Delivered': [] // Terminal state
+    'Delivered': [], // Terminal state
+    'Under Repair': ['Available', 'Returned'], // Can be repaired or returned
+    'Returned': [] // Terminal state - cannot be changed
   };
 
   static CHANGE_REASONS = {
@@ -36,7 +38,9 @@ class InventoryLifecycleService {
     INVOICE_PAID: 'INVOICE_PAID',
     INVOICE_DELIVERED: 'INVOICE_DELIVERED',
     MANUAL: 'MANUAL',
-    SYSTEM_CLEANUP: 'SYSTEM_CLEANUP'
+    SYSTEM_CLEANUP: 'SYSTEM_CLEANUP',
+    REPAIR_COMPLETED: 'REPAIR_COMPLETED',
+    ITEM_RETURNED: 'ITEM_RETURNED'
   };
 
   /**
@@ -113,8 +117,7 @@ class InventoryLifecycleService {
             reservedAt: new Date(),
             reservedBy: userId,
             reservedForType: 'Invoice',
-            reservedForId: invoiceId,
-            reservationExpiry: null // Permanent reservation for invoices
+            reservedForId: invoiceId
           }
         })
       );
@@ -648,9 +651,150 @@ class InventoryLifecycleService {
    * @throws {Error} If transition is invalid
    */
   validateStatusTransition(fromStatus, toStatus) {
+    // Check terminal states first
+    if (fromStatus === 'Returned' || fromStatus === 'Delivered') {
+      throw new Error(`Cannot change status from ${fromStatus} (terminal state)`);
+    }
+
     const validNextStates = InventoryLifecycleService.VALID_TRANSITIONS[fromStatus];
     if (!validNextStates || !validNextStates.includes(toStatus)) {
       throw new Error(`Invalid inventory status transition: ${fromStatus} → ${toStatus}`);
+    }
+  }
+
+  /**
+   * Mark item as repaired (Under Repair → Available)
+   * Used when a used item has been successfully repaired and is ready for sale
+   * @param {string} itemId - Item ID
+   * @param {string} userId - User performing the action
+   * @param {Object} tx - Optional transaction object
+   * @returns {Promise<Object>} Updated item
+   */
+  async markItemAsRepaired(itemId, userId, tx = null) {
+    const executeOperation = async (prisma) => {
+      // Lock the item to prevent concurrent updates
+      await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+
+      const item = await prisma.item.findUnique({
+        where: { id: itemId, deletedAt: null }
+      });
+
+      if (!item) {
+        throw new Error('Item not found');
+      }
+
+      // Validate transition
+      this.validateStatusTransition(item.inventoryStatus, 'Available');
+
+      // Update item to Available status
+      const updatedItem = await prisma.item.update({
+        where: { id: itemId },
+        data: {
+          inventoryStatus: 'Available',
+          status: 'In Store',
+          repaired: 'Yes'
+        },
+        include: {
+          category: true,
+          model: {
+            include: {
+              company: true
+            }
+          },
+          vendor: true,
+          customer: true
+        }
+      });
+
+      // Create audit trail
+      await prisma.inventoryStatusHistory.create({
+        data: {
+          itemId: itemId,
+          fromStatus: item.inventoryStatus,
+          toStatus: 'Available',
+          changeReason: InventoryLifecycleService.CHANGE_REASONS.REPAIR_COMPLETED,
+          changedBy: userId,
+          notes: `Item repaired and ready for sale`
+        }
+      });
+
+      logger.info(`Item ${item.serialNumber} marked as repaired by user ${userId}`);
+
+      return { item: updatedItem };
+    };
+
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
+    }
+  }
+
+  /**
+   * Mark item as returned (Under Repair → Returned)
+   * Used when a used item cannot be repaired - TERMINAL STATE
+   * @param {string} itemId - Item ID
+   * @param {string} userId - User performing the action
+   * @param {Object} tx - Optional transaction object
+   * @returns {Promise<Object>} Updated item
+   */
+  async markItemAsReturned(itemId, userId, tx = null) {
+    const executeOperation = async (prisma) => {
+      // Lock the item to prevent concurrent updates
+      await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
+
+      const item = await prisma.item.findUnique({
+        where: { id: itemId, deletedAt: null }
+      });
+
+      if (!item) {
+        throw new Error('Item not found');
+      }
+
+      // Validate transition
+      this.validateStatusTransition(item.inventoryStatus, 'Returned');
+
+      // Update item to Returned status (terminal state)
+      const updatedItem = await prisma.item.update({
+        where: { id: itemId },
+        data: {
+          inventoryStatus: 'Returned',
+          status: 'Returned',
+          repaired: 'Returned'
+        },
+        include: {
+          category: true,
+          model: {
+            include: {
+              company: true
+            }
+          },
+          vendor: true,
+          customer: true
+        }
+      });
+
+      // Create audit trail
+      await prisma.inventoryStatusHistory.create({
+        data: {
+          itemId: itemId,
+          fromStatus: item.inventoryStatus,
+          toStatus: 'Returned',
+          changeReason: InventoryLifecycleService.CHANGE_REASONS.ITEM_RETURNED,
+          changedBy: userId,
+          notes: `Item returned - cannot be repaired (terminal state)`
+        }
+      });
+
+      logger.info(`Item ${item.serialNumber} marked as returned (terminal) by user ${userId}`);
+
+      return { item: updatedItem };
+    };
+
+    if (tx) {
+      return await executeOperation(tx);
+    } else {
+      return await db.transaction(executeOperation);
     }
   }
 

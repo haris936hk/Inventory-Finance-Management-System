@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import dayjs from 'dayjs';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Step } = Steps;
 const { TextArea } = Input;
@@ -75,7 +76,8 @@ const AddItem = () => {
         navigate('/app/inventory/items');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to add item');
+        const errorMessage = getErrorMessage(error, 'item', 'create');
+        message.error(errorMessage);
       }
     }
   );

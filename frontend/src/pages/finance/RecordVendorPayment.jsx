@@ -12,8 +12,10 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { formatPKR } from '../../config/constants';
+import { formatPKR, VALIDATION } from '../../config/constants';
 import { parseAmount, subtractAmounts, isPositive } from '../../utils/decimalUtils';
+import { amountRules, paymentMethodRules, notesRules } from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { TextArea } = Input;
 const { Title, Text } = Typography;
@@ -74,7 +76,8 @@ const RecordVendorPayment = () => {
         navigate('/app/finance/vendor-payments');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to record payment');
+        const errorMessage = getErrorMessage(error, 'payment', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -278,6 +281,8 @@ const RecordVendorPayment = () => {
                         style={{ width: '100%' }}
                         precision={2}
                         min={0.01}
+                        max={VALIDATION.MAX_AMOUNT}
+                        step={0.01}
                         placeholder="0.00"
                       />
                     </Form.Item>
@@ -287,7 +292,7 @@ const RecordVendorPayment = () => {
                 <Form.Item
                   label="Payment Method"
                   name="method"
-                  rules={[{ required: true, message: 'Please select payment method' }]}
+                  rules={paymentMethodRules}
                 >
                   <Select onChange={(value) => setPaymentMethod(value)}>
                     <Select.Option value="Cash">Cash</Select.Option>
@@ -312,8 +317,8 @@ const RecordVendorPayment = () => {
                   <Input placeholder="Enter reference number" />
                 </Form.Item>
 
-                <Form.Item label="Notes" name="notes">
-                  <TextArea rows={3} placeholder="Additional notes about this payment" />
+                <Form.Item label="Notes" name="notes" rules={notesRules}>
+                  <TextArea rows={3} placeholder="Additional notes about this payment" maxLength={1000} showCount />
                 </Form.Item>
               </Card>
             </Col>

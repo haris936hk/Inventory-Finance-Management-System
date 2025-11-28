@@ -1,15 +1,15 @@
 // ========== src/pages/inventory/InventoryList.jsx ==========
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Table, Card, Button, Space, Tag, Input, Select, DatePicker, 
+import {
+  Table, Card, Button, Space, Tag, Input, Select, DatePicker,
   Row, Col, Drawer, Descriptions, Badge, Tooltip, message,
   Popconfirm, Modal, Form, Dropdown
 } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FilterOutlined,
   EditOutlined, DeleteOutlined, EyeOutlined, BarcodeOutlined,
-  PrinterOutlined, MoreOutlined, ScanOutlined, AppstoreAddOutlined,
+  MoreOutlined, ScanOutlined, AppstoreAddOutlined,
   TruckOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
@@ -18,6 +18,7 @@ import { useAuthStore } from '../../stores/authStore';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import HandoverModal from '../../components/HandoverModal';
 import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
@@ -66,8 +67,9 @@ const InventoryList = () => {
         message.success('Item deleted successfully');
         queryClient.invalidateQueries('items');
       },
-      onError: () => {
-        message.error('Failed to delete item');
+      onError: (error) => {
+        const errorMessage = getErrorMessage(error, 'item', 'delete');
+        message.error(errorMessage);
       }
     }
   );
@@ -78,7 +80,8 @@ const InventoryList = () => {
       'Reserved': 'warning',
       'Sold': 'processing',
       'Delivered': 'success',
-      'Under Repair': 'orange'
+      'Under Repair': 'orange',
+      'Returned': 'error'
     };
     return colors[status] || 'default';
   };
@@ -87,7 +90,8 @@ const InventoryList = () => {
     const colors = {
       'In Store': 'green',
       'In Lab': 'cyan',
-      'Handover': 'magenta'
+      'Handover': 'magenta',
+      'Returned': 'red'
     };
     return colors[status] || 'default';
   };
@@ -139,6 +143,7 @@ const InventoryList = () => {
         { text: 'Sold', value: 'Sold' },
         { text: 'Delivered', value: 'Delivered' },
         { text: 'Under Repair', value: 'Under Repair' },
+        { text: 'Returned', value: 'Returned' },
       ],
       onFilter: (value, record) => (record.inventoryStatus || 'Available') === value,
       render: (status) => (
@@ -156,6 +161,7 @@ const InventoryList = () => {
         { text: 'In Store', value: 'In Store' },
         { text: 'In Lab', value: 'In Lab' },
         { text: 'Handover', value: 'Handover' },
+        { text: 'Returned', value: 'Returned' },
       ],
       onFilter: (value, record) => record.status === value,
       render: (status) => (
@@ -305,12 +311,6 @@ const InventoryList = () => {
             disabled: !hasPermission('inventory.edit') || isReturned
           }] : []),
           {
-            key: 'print',
-            label: 'Print Label',
-            icon: <PrinterOutlined />,
-            onClick: () => handlePrintLabel(record)
-          },
-          {
             type: 'divider'
           },
           {
@@ -370,11 +370,6 @@ const InventoryList = () => {
       okType: 'danger',
       onOk: () => deleteMutation.mutate(record.id)
     });
-  };
-
-  const handlePrintLabel = (record) => {
-    // Generate and print label
-    message.info('Printing label...');
   };
 
   const rowSelection = {

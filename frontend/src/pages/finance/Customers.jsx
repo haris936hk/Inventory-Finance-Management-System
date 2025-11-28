@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import {
   Card, Table, Button, Space, Tag, Input, Modal, Form,
-  message, Row, Col
+  message, Row, Col, InputNumber
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, EyeOutlined, PhoneOutlined,
@@ -13,6 +13,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatPKR } from '../../config/constants';
 import { parseAmount } from '../../utils/decimalUtils';
+import { nameRules, phoneRules, optionalEmailRules, creditLimitRules, addressRules, nicRules } from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
 const { TextArea } = Input;
@@ -53,7 +55,9 @@ const Customers = () => {
         setEditingCustomer(null);
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Operation failed');
+        const operation = editingCustomer ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'customer', operation);
+        message.error(errorMessage);
       }
     }
   );
@@ -201,9 +205,9 @@ const Customers = () => {
           <Form.Item
             label="Name"
             name="name"
-            rules={[{ required: true, message: 'Name is required' }]}
+            rules={nameRules}
           >
-            <Input placeholder="Customer name" />
+            <Input placeholder="Customer name" maxLength={100} showCount />
           </Form.Item>
 
           <Row gutter={16}>
@@ -211,46 +215,43 @@ const Customers = () => {
               <Form.Item
                 label="Phone"
                 name="phone"
-                rules={[
-                  { required: true, message: 'Phone is required' },
-                  { pattern: /^\d{11}$/, message: 'Invalid phone number' }
-                ]}
+                rules={phoneRules}
               >
-                <Input placeholder="03001234567" />
+                <Input placeholder="03001234567" maxLength={11} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="NIC" name="nic">
-                <Input placeholder="National ID" />
+              <Form.Item label="NIC" name="nic" rules={nicRules}>
+                <Input placeholder="1234567890123 (13 digits)" maxLength={13} />
               </Form.Item>
             </Col>
           </Row>
 
           <Form.Item label="Company" name="company">
-            <Input placeholder="Company name" />
+            <Input placeholder="Company name" maxLength={100} />
           </Form.Item>
 
           <Form.Item
             label="Email"
             name="email"
-            rules={[{ type: 'email', message: 'Invalid email' }]}
+            rules={optionalEmailRules}
           >
-            <Input placeholder="email@example.com" />
+            <Input placeholder="email@example.com" maxLength={100} />
           </Form.Item>
 
-          <Form.Item label="Address" name="address">
-            <TextArea rows={2} placeholder="Full address" />
+          <Form.Item label="Address" name="address" rules={addressRules}>
+            <TextArea rows={2} placeholder="Full address" maxLength={500} showCount />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item label="Credit Limit" name="creditLimit" initialValue={0}>
-                <Input type="number" prefix="PKR" placeholder="0 for no limit" />
+              <Form.Item label="Credit Limit (PKR)" name="creditLimit" initialValue={0} rules={creditLimitRules}>
+                <InputNumber style={{ width: '100%' }} precision={2} min={0} step={0.01} placeholder="0 for no limit" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="Opening Balance" name="openingBalance" initialValue={0}>
-                <Input type="number" prefix="PKR" />
+              <Form.Item label="Opening Balance (PKR)" name="openingBalance" initialValue={0}>
+                <InputNumber style={{ width: '100%' }} precision={2} min={0} step={0.01} placeholder="0.00" />
               </Form.Item>
             </Col>
           </Row>

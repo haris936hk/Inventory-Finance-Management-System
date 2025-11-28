@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const db = require('./config/database');
 const logger = require('./config/logger');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
+const decimalSerializer = require('./middleware/decimalSerializer');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -41,6 +42,9 @@ app.use('/api/', limiter);
 // Body parser
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Decimal serialization - Convert Prisma Decimal objects to numbers
+app.use(decimalSerializer);
 
 // Logging
 if (process.env.NODE_ENV === 'development') {

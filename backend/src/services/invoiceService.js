@@ -186,7 +186,8 @@ async function createInvoice(data, userId) {
     const itemIds = data.items.map(item => item.itemId);
 
     // Call lifecycle service to reserve items (updates inventoryStatus to 'Reserved')
-    await inventoryLifecycleService.reserveItemsForInvoice(itemIds, invoice.id, userId);
+    // CRITICAL: Pass tx to avoid nested transaction deadlock
+    await inventoryLifecycleService.reserveItemsForInvoice(itemIds, invoice.id, userId, tx);
 
     // CRITICAL FIX: Clean up temporary ItemReservation records
     // Now that items are permanently reserved via Item.reservedFor* fields,

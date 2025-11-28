@@ -19,6 +19,8 @@ import { useAuthStore } from '../../stores/authStore';
 import PurchaseOrderItemSelector from '../../components/PurchaseOrderItemSelector';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts } from '../../utils/decimalUtils';
+import { requiredDateRules, percentageRules } from '../../utils/validationRules';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
@@ -103,8 +105,8 @@ const PurchaseOrders = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('PO operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingPO ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'purchaseOrder', operation);
         message.error(errorMessage);
       }
     }
@@ -618,7 +620,7 @@ const PurchaseOrders = () => {
               <Form.Item
                 label="Order Date"
                 name="orderDate"
-                rules={[{ required: true, message: 'Please select order date' }]}
+                rules={requiredDateRules}
               >
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
@@ -646,12 +648,14 @@ const PurchaseOrders = () => {
                 label="Tax Rate (%)"
                 name="taxRate"
                 initialValue={0}
+                rules={percentageRules}
               >
                 <InputNumber
                   style={{ width: '100%' }}
                   precision={2}
                   min={0}
                   max={100}
+                  step={0.01}
                   placeholder="0.00"
                   onChange={() => {
                     setTimeout(() => calculateTotals(), 0);

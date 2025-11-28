@@ -12,8 +12,9 @@ import {
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
-import { formatPKR } from '../../config/constants';
+import { formatPKR, VALIDATION } from '../../config/constants';
 import { parseAmount, formatAmount, addAmounts, subtractAmounts, multiplyAmount } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 
@@ -68,7 +69,8 @@ const CreateVendorBill = () => {
         navigate('/app/finance/vendor-bills');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to create bill');
+        const errorMessage = getErrorMessage(error, 'bill', 'create');
+        message.error(errorMessage);
       }
     }
   );
@@ -327,6 +329,8 @@ const CreateVendorBill = () => {
                         style={{ width: '100%' }}
                         precision={2}
                         min={0}
+                        max={VALIDATION.MAX_AMOUNT}
+                        step={0.01}
                         placeholder="0.00"
                         onChange={() => {
                           // Re-validate when subtotal changes
@@ -347,6 +351,8 @@ const CreateVendorBill = () => {
                         style={{ width: '100%' }}
                         precision={2}
                         min={0}
+                        max={VALIDATION.MAX_AMOUNT}
+                        step={0.01}
                         placeholder="0.00"
                         onChange={() => {
                           // Re-validate subtotal when tax amount changes

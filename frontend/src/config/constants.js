@@ -131,14 +131,18 @@ export const INVENTORY_STATUS = {
   AVAILABLE: 'Available',
   RESERVED: 'Reserved',
   SOLD: 'Sold',
-  DELIVERED: 'Delivered'
+  DELIVERED: 'Delivered',
+  UNDER_REPAIR: 'Under Repair',
+  RETURNED: 'Returned'
 };
 
 export const INVENTORY_STATUS_OPTIONS = [
   { value: 'Available', label: 'Available', color: 'green' },
   { value: 'Reserved', label: 'Reserved', color: 'blue' },
   { value: 'Sold', label: 'Sold', color: 'orange' },
-  { value: 'Delivered', label: 'Delivered', color: 'purple' }
+  { value: 'Delivered', label: 'Delivered', color: 'purple' },
+  { value: 'Under Repair', label: 'Under Repair', color: 'gold' },
+  { value: 'Returned', label: 'Returned', color: 'red' }
 ];
 
 // Physical Item Statuses
@@ -147,7 +151,8 @@ export const ITEM_STATUS = {
   IN_LAB: 'In Lab',
   HANDOVER: 'Handover',
   SOLD: 'Sold',
-  DELIVERED: 'Delivered'
+  DELIVERED: 'Delivered',
+  RETURNED: 'Returned'
 };
 
 export const ITEM_STATUS_OPTIONS = [
@@ -155,7 +160,8 @@ export const ITEM_STATUS_OPTIONS = [
   { value: 'In Lab', label: 'In Lab', color: 'blue' },
   { value: 'Handover', label: 'Handover', color: 'orange' },
   { value: 'Sold', label: 'Sold', color: 'purple' },
-  { value: 'Delivered', label: 'Delivered', color: 'cyan' }
+  { value: 'Delivered', label: 'Delivered', color: 'cyan' },
+  { value: 'Returned', label: 'Returned', color: 'red' }
 ];
 
 // Item Conditions

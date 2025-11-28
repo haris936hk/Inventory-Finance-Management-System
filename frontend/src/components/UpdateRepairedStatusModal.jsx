@@ -64,11 +64,21 @@ const UpdateRepairedStatusModal = ({ visible, item, onClose, onSuccess }) => {
           </Select>
         </Form.Item>
 
+        {form.getFieldValue('repaired') === 'Yes' && (
+          <Alert
+            message="Item Will Be Available for Sale"
+            description="Marking as 'Yes' will change the item's status to 'Available' in 'In Store', making it ready for sale and visible in invoice creation."
+            type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
+        )}
+
         {form.getFieldValue('repaired') === 'Returned' && (
           <Alert
-            message="Warning"
-            description="Marking as 'Returned' will exclude this item from all reports and it cannot be sold."
-            type="warning"
+            message="Warning: Terminal State"
+            description="Marking as 'Returned' is PERMANENT and cannot be undone. The item will be moved to a terminal 'Returned' state. It will appear in inventory lists (with strikethrough styling) but cannot be sold, repaired, or have its status changed ever again. Only use this option if the item is completely unusable and cannot be repaired."
+            type="error"
             showIcon
             style={{ marginTop: 16 }}
           />

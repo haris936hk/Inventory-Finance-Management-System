@@ -4,6 +4,7 @@ import { Card, Table, Button, Modal, Form, Input, Switch, message, Space, Tag } 
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const Companies = () => {
   const queryClient = useQueryClient();
@@ -36,8 +37,8 @@ const Companies = () => {
         handleCloseModal();
       },
       onError: (error) => {
-        console.error('Company operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingCompany ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'company', operation);
         message.error(errorMessage);
       }
     }
@@ -51,8 +52,7 @@ const Companies = () => {
         queryClient.invalidateQueries('companies');
       },
       onError: (error) => {
-        console.error('Delete failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete company';
+        const errorMessage = getErrorMessage(error, 'company', 'delete');
         message.error(errorMessage);
       }
     }

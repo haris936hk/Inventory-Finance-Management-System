@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import TemplateBuilder from '../../components/TemplateBuilder';
 import { validateTemplate } from '../../utils/templateValidation';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 
@@ -58,8 +59,8 @@ const Categories = () => {
         }, 0);
       },
       onError: (error) => {
-        console.error('Category operation failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        const operation = editingCategory ? 'update' : 'create';
+        const errorMessage = getErrorMessage(error, 'category', operation);
         message.error(errorMessage);
       }
     }
@@ -73,8 +74,7 @@ const Categories = () => {
         queryClient.invalidateQueries('categories');
       },
       onError: (error) => {
-        console.error('Delete failed:', error);
-        const errorMessage = error.response?.data?.message || error.message || 'Failed to delete category';
+        const errorMessage = getErrorMessage(error, 'category', 'delete');
         message.error(errorMessage);
       }
     }
