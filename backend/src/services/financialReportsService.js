@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { formatAmount, subtractAmounts } = require('../utils/transactionWrapper');
 
 class FinancialReportsService {
 
@@ -516,7 +517,7 @@ class FinancialReportsService {
 
       unpaidInvoices.forEach(invoice => {
         const daysOverdue = Math.floor((asOfDate - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
-        const balanceAmount = parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+        const balanceAmount = subtractAmounts(formatAmount(invoice.total), formatAmount(invoice.paidAmount));
 
         const invoiceData = {
           invoiceId: invoice.id,
@@ -524,8 +525,8 @@ class FinancialReportsService {
           customer: invoice.customer,
           invoiceDate: invoice.invoiceDate,
           dueDate: invoice.dueDate,
-          totalAmount: parseFloat(invoice.total),
-          paidAmount: parseFloat(invoice.paidAmount),
+          totalAmount: formatAmount(invoice.total),
+          paidAmount: formatAmount(invoice.paidAmount),
           balanceAmount,
           daysOverdue,
           status: invoice.status
@@ -589,7 +590,7 @@ class FinancialReportsService {
 
       const customerData = customerMap.get(customerId);
       const daysOverdue = Math.floor((asOfDate - new Date(invoice.dueDate)) / (1000 * 60 * 60 * 24));
-      const balanceAmount = parseFloat(invoice.total) - parseFloat(invoice.paidAmount);
+      const balanceAmount = subtractAmounts(formatAmount(invoice.total), formatAmount(invoice.paidAmount));
 
       customerData.invoices.push(invoice);
       customerData.totalDue += balanceAmount;
@@ -657,7 +658,7 @@ class FinancialReportsService {
 
       unpaidBills.forEach(bill => {
         const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
-        const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+        const balanceAmount = subtractAmounts(formatAmount(bill.total), formatAmount(bill.paidAmount || 0));
 
         const billData = {
           id: bill.id,
@@ -665,8 +666,8 @@ class FinancialReportsService {
           billDate: bill.billDate,
           dueDate: bill.dueDate,
           vendor: bill.vendor,
-          total: parseFloat(bill.total),
-          paidAmount: parseFloat(bill.paidAmount || 0),
+          total: formatAmount(bill.total),
+          paidAmount: formatAmount(bill.paidAmount || 0),
           balance: balanceAmount,
           daysOverdue: Math.max(0, daysOverdue),
           status: bill.status
@@ -728,7 +729,7 @@ class FinancialReportsService {
 
       const vendorData = vendorMap.get(vendorId);
       const daysOverdue = Math.floor((asOfDate - new Date(bill.dueDate || bill.billDate)) / (1000 * 60 * 60 * 24));
-      const balanceAmount = parseFloat(bill.total) - parseFloat(bill.paidAmount || 0);
+      const balanceAmount = subtractAmounts(formatAmount(bill.total), formatAmount(bill.paidAmount || 0));
 
       vendorData.bills.push(bill);
       vendorData.totalDue += balanceAmount;

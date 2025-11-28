@@ -48,6 +48,12 @@ const Invoices = () => {
     if (!invoicesData) return { total: 0, paid: 0, pending: 0, overdue: 0 };
 
     return invoicesData.reduce((acc, invoice) => {
+      // CRITICAL FIX: Exclude cancelled invoices from all statistics
+      // Cancelled Draft invoices have been reversed and should not count
+      if (invoice.cancelledAt || invoice.status === 'Cancelled') {
+        return acc;
+      }
+
       const total = parseAmount(invoice.total);
       const paidAmount = parseAmount(invoice.paidAmount || 0);
 
@@ -59,7 +65,8 @@ const Invoices = () => {
       const remaining = subtractAmounts(total, paidAmount);
       if (invoice.status === 'Overdue') {
         acc.overdue = addAmounts(acc.overdue, remaining);
-      } else if (invoice.status !== 'Paid' && invoice.status !== 'Cancelled') {
+      } else if (invoice.status !== 'Paid') {
+        // Sent, Partial, and Draft invoices contribute to pending
         acc.pending = addAmounts(acc.pending, remaining);
       }
       return acc;

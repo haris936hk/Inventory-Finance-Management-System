@@ -537,8 +537,15 @@ async function cancelInvoice(invoiceId, reason, userId) {
       throw new ValidationError('Invoice is already cancelled');
     }
 
-    // FIX: Relax cancellation rules - allow any status if unpaid
-    // The real constraint is no payments, not the status
+    // BUSINESS RULE: Only Draft invoices can be cancelled
+    // Sent/Partial/Paid/Overdue invoices have already been sent to customers
+    if (invoice.status !== 'Draft') {
+      throw new ValidationError(
+        `Only Draft invoices can be cancelled. Current status: ${invoice.status}`
+      );
+    }
+
+    // Additional safety check (should always be 0 for Draft invoices)
     if (invoice.paidAmount > 0) {
       throw new ValidationError(
         `Cannot cancel invoice with payments. Invoice has ${invoice.paidAmount} paid. Please void payments first.`
@@ -739,10 +746,17 @@ async function getInvoice(invoiceId) {
  * @param {string} filters.customerId - Filter by customer
  * @param {string} filters.dateFrom - Filter by date from
  * @param {string} filters.dateTo - Filter by date to
+ * @param {boolean} filters.includeCancelled - Include cancelled invoices (default: false)
  * @returns {Promise<Array>} Invoices
  */
 async function getInvoices(filters = {}) {
   const where = { deletedAt: null };
+
+  // CRITICAL FIX: Exclude cancelled invoices by default
+  // Cancelled Draft invoices have been reversed and should not appear in normal queries
+  if (!filters.includeCancelled) {
+    where.cancelledAt = null;
+  }
 
   if (filters.status) {
     // Handle multiple status values separated by comma

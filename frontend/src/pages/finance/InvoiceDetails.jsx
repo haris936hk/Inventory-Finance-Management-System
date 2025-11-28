@@ -3,10 +3,10 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Row, Col, Descriptions, Tag, Button, Space, Table, Typography,
-  Divider, Statistic, Alert, Modal, message, Tabs, Timeline
+  Divider, Statistic, Alert, Modal, message, Tabs, Timeline, Input
 } from 'antd';
 import {
-  ArrowLeftOutlined, DeleteOutlined,
+  ArrowLeftOutlined, DeleteOutlined, CloseCircleOutlined,
   FilePdfOutlined, DollarOutlined, CreditCardOutlined,
   CalendarOutlined, UserOutlined, PhoneOutlined, EnvironmentOutlined
 } from '@ant-design/icons';
@@ -16,9 +16,11 @@ import dayjs from 'dayjs';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
+const { TextArea } = Input;
 
 const InvoiceDetails = () => {
   const { id } = useParams();
@@ -38,16 +40,20 @@ const InvoiceDetails = () => {
   // Use payments from invoice response
   const payments = invoice?.payments || [];
 
-  // Delete mutation
-  const deleteMutation = useMutation(
-    () => axios.delete(`/finance/invoices/${id}`),
+  // Cancel invoice mutation (only for Draft invoices)
+  const cancelInvoiceMutation = useMutation(
+    ({ reason }) => axios.post(`/finance/invoices/${id}/cancel`, { reason }),
     {
       onSuccess: () => {
-        message.success('Invoice deleted successfully');
+        message.success('Invoice cancelled successfully');
+        queryClient.invalidateQueries(['invoice', id]);
+        queryClient.invalidateQueries('invoices');
+        queryClient.invalidateQueries('customers');
         navigate('/app/finance/invoices');
       },
       onError: (error) => {
-        message.error(error.response?.data?.message || 'Failed to delete invoice');
+        const errorMessage = getErrorMessage(error, 'invoice', 'cancel');
+        message.error(errorMessage);
       }
     }
   );
@@ -103,14 +109,33 @@ const InvoiceDetails = () => {
     return colors[status] || 'default';
   };
 
-  const handleDelete = () => {
+  const handleCancelInvoice = () => {
+    let reason = '';
     Modal.confirm({
-      title: 'Delete Invoice',
-      content: 'Are you sure you want to delete this invoice? This action cannot be undone.',
-      okText: 'Yes, Delete',
-      okType: 'danger',
-      cancelText: 'Cancel',
-      onOk: () => deleteMutation.mutate()
+      title: 'Cancel Invoice',
+      content: (
+        <div>
+          <p>Are you sure you want to cancel invoice <strong>{invoice.invoiceNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            ⚠️ Only Draft invoices can be cancelled. This action cannot be undone.
+          </p>
+          <TextArea
+            placeholder="Enter cancellation reason (required)"
+            rows={3}
+            onChange={(e) => { reason = e.target.value; }}
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => {
+        if (!reason || reason.trim() === '') {
+          message.error('Please provide a cancellation reason');
+          return Promise.reject();
+        }
+        return cancelInvoiceMutation.mutateAsync({ reason: reason.trim() });
+      },
+      okText: 'Cancel Invoice',
+      okButtonProps: { danger: true }
     });
   };
 
@@ -279,14 +304,14 @@ const InvoiceDetails = () => {
                 Mark as Paid
               </Button>
             )}
-            {hasPermission('finance.delete') && (
+            {hasPermission('finance.edit') && invoice.status === 'Draft' && !invoice.cancelledAt && parseAmount(invoice.paidAmount || 0) === 0 && (
               <Button
                 danger
-                icon={<DeleteOutlined />}
-                onClick={handleDelete}
-                loading={deleteMutation.isLoading}
+                icon={<CloseCircleOutlined />}
+                onClick={handleCancelInvoice}
+                loading={cancelInvoiceMutation.isLoading}
               >
-                Delete
+                Cancel Invoice
               </Button>
             )}
           </Space>
