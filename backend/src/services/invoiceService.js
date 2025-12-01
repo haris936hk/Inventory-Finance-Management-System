@@ -1,7 +1,8 @@
 /**
  * Invoice Lifecycle Management Service (Receivables)
  *
- * Implements strict lifecycle: Draft → Sent → Partial → Paid → Overdue → Cancelled
+ * Implements strict lifecycle: Draft → Sent → Partial → Paid → Overdue
+ * Note: Only Draft invoices can be cancelled
  * with proper concurrency controls and data integrity
  */
 
@@ -22,13 +23,14 @@ const inventoryLifecycleService = require('./inventoryLifecycleService');
 
 /**
  * Valid Invoice status transitions
+ * BUSINESS RULE: Only Draft invoices can be cancelled
  */
 const STATUS_TRANSITIONS = {
-  'Draft': ['Sent', 'Cancelled'],
-  'Sent': ['Partial', 'Paid', 'Overdue', 'Cancelled'],
-  'Partial': ['Paid', 'Overdue', 'Cancelled'],
+  'Draft': ['Sent', 'Cancelled'],  // Only Draft can be cancelled
+  'Sent': ['Partial', 'Paid', 'Overdue'],     // Cannot cancel after being sent
+  'Partial': ['Paid', 'Overdue'],              // Cannot cancel once sent
   'Paid': [], // Terminal state
-  'Overdue': ['Partial', 'Paid', 'Cancelled'], // Can still receive payments
+  'Overdue': ['Partial', 'Paid'],              // Can still receive payments, but cannot cancel
   'Cancelled': [] // Terminal state
 };
 
@@ -121,11 +123,20 @@ async function createInvoice(data, userId) {
 
     // Check credit limit (if applicable)
     if (customer.creditLimit > 0) {
-      const newBalance = formatAmount(customer.currentBalance + total);
+      // Get current balance from ledger
+      const latestLedger = await tx.customerLedger.findFirst({
+        where: { customerId: data.customerId },
+        orderBy: { createdAt: 'desc' },
+        select: { balance: true }
+      });
+
+      const currentBalance = latestLedger?.balance || customer.openingBalance || 0;
+      const newBalance = formatAmount(formatAmount(currentBalance) + total);
+
       if (newBalance > customer.creditLimit) {
         throw new ValidationError(
           `Invoice total (${total}) would exceed customer credit limit. ` +
-          `Current: ${customer.currentBalance}, Limit: ${customer.creditLimit}, ` +
+          `Current Balance: ${formatAmount(currentBalance)}, Limit: ${customer.creditLimit}, ` +
           `New Balance: ${newBalance}`
         );
       }
@@ -189,26 +200,27 @@ async function createInvoice(data, userId) {
     // CRITICAL: Pass tx to avoid nested transaction deadlock
     await inventoryLifecycleService.reserveItemsForInvoice(itemIds, invoice.id, userId, tx);
 
-    // CRITICAL FIX: Clean up temporary ItemReservation records
-    // Now that items are permanently reserved via Item.reservedFor* fields,
-    // delete any temporary session-based reservations to prevent confusion
-    await tx.itemReservation.deleteMany({
-      where: { itemId: { in: itemIds } }
-    });
-
     // Set customer reference on items for direct lookup in inventory list
     await tx.item.updateMany({
       where: { id: { in: itemIds } },
       data: { customerId: data.customerId }
     });
 
-    // CRITICAL FIX: Re-fetch customer to get FRESH balance (not stale from line 116)
+    // CRITICAL FIX: Get FRESH balance from ledger (single source of truth)
     // This prevents incorrect ledger balance under concurrent invoice/payment operations
-    const freshCustomer = await tx.customer.findUnique({
-      where: { id: data.customerId }
+    const latestLedgerEntry = await tx.customerLedger.findFirst({
+      where: { customerId: data.customerId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    const newCustomerBalance = formatAmount(formatAmount(freshCustomer.currentBalance) + total);
+    const customerForBalance = await tx.customer.findUnique({
+      where: { id: data.customerId },
+      select: { openingBalance: true }
+    });
+
+    const currentBalance = latestLedgerEntry?.balance || customerForBalance?.openingBalance || 0;
+    const newCustomerBalance = formatAmount(formatAmount(currentBalance) + total);
 
     await tx.customerLedger.create({
       data: {
@@ -222,13 +234,7 @@ async function createInvoice(data, userId) {
       }
     });
 
-    // Update customer balance
-    await tx.customer.update({
-      where: { id: data.customerId },
-      data: {
-        currentBalance: newCustomerBalance
-      }
-    });
+    // NOTE: currentBalance field removed - CustomerLedger is the single source of truth
 
     // Create audit log
     await tx.invoicePaymentAudit.create({
@@ -377,15 +383,11 @@ async function updateInvoice(invoiceId, updates, userId) {
       // Release each old item back to Available
       for (const invoiceItem of oldInvoiceItems) {
         const item = invoiceItem.item;
-        if (item.inventoryStatus === 'Reserved' && item.reservedForId === invoiceId) {
+        if (item.inventoryStatus === 'Reserved') {
           await tx.item.update({
             where: { id: item.id },
             data: {
               inventoryStatus: 'Available',
-              reservedAt: null,
-              reservedBy: null,
-              reservedForType: null,
-              reservedForId: null,
               customerId: null
             }
           });
@@ -468,11 +470,6 @@ async function updateInvoice(invoiceId, updates, userId) {
         tx
       );
 
-      // CRITICAL FIX: Clean up temporary ItemReservation records for new items
-      await tx.itemReservation.deleteMany({
-        where: { itemId: { in: newItemIds } }
-      });
-
       logger.info(`Reserved ${newItemIds.length} new items for invoice ${updated.invoiceNumber} during update`);
     }
 
@@ -484,12 +481,20 @@ async function updateInvoice(invoiceId, updates, userId) {
       const difference = formatAmount(newTotal - oldTotal);
 
       if (!compareAmounts(oldTotal, newTotal)) {
-        // Fetch fresh customer balance
-        const customer = await tx.customer.findUnique({
-          where: { id: invoice.customerId }
+        // Get current balance from ledger
+        const latestLedger = await tx.customerLedger.findFirst({
+          where: { customerId: invoice.customerId },
+          orderBy: { createdAt: 'desc' },
+          select: { balance: true }
         });
 
-        const newCustomerBalance = formatAmount(formatAmount(customer.currentBalance) + difference);
+        const customerData = await tx.customer.findUnique({
+          where: { id: invoice.customerId },
+          select: { openingBalance: true }
+        });
+
+        const currentBalance = latestLedger?.balance || customerData?.openingBalance || 0;
+        const newCustomerBalance = formatAmount(formatAmount(currentBalance) + difference);
 
         // Create ledger adjustment entry
         await tx.customerLedger.create({
@@ -504,11 +509,7 @@ async function updateInvoice(invoiceId, updates, userId) {
           }
         });
 
-        // Update customer balance
-        await tx.customer.update({
-          where: { id: invoice.customerId },
-          data: { currentBalance: newCustomerBalance }
-        });
+        // NOTE: currentBalance field removed - CustomerLedger is the single source of truth
 
         logger.info(`Adjusted customer balance for invoice ${invoice.invoiceNumber}: ${oldTotal} → ${newTotal} (diff: ${difference})`);
       }
@@ -523,11 +524,10 @@ async function updateInvoice(invoiceId, updates, userId) {
  * Only Draft invoices can be cancelled
  *
  * @param {string} invoiceId - Invoice ID
- * @param {string} reason - Cancellation reason
  * @param {string} userId - User performing cancellation
  * @returns {Promise<Object>} Cancelled invoice
  */
-async function cancelInvoice(invoiceId, reason, userId) {
+async function cancelInvoice(invoiceId, userId) {
   return withTransaction(async (tx) => {
     // Lock the invoice
     const invoice = await lockForUpdate(tx, 'Invoice', invoiceId);
@@ -563,16 +563,12 @@ async function cancelInvoice(invoiceId, reason, userId) {
     for (const invoiceItem of invoiceItems) {
       const item = invoiceItem.item;
 
-      // Only release if the item is currently Reserved for this invoice
-      if (item.inventoryStatus === 'Reserved' && item.reservedForId === invoiceId) {
+      // Only release if the item is currently Reserved
+      if (item.inventoryStatus === 'Reserved') {
         await tx.item.update({
           where: { id: item.id },
           data: {
             inventoryStatus: 'Available',
-            reservedAt: null,
-            reservedBy: null,
-            reservedForType: null,
-            reservedForId: null,
             customerId: null
           }
         });
@@ -593,21 +589,12 @@ async function cancelInvoice(invoiceId, reason, userId) {
       }
     }
 
-    // Delete any item reservations for this invoice
-    await tx.itemReservation.deleteMany({
-      where: {
-        referenceType: 'Invoice',
-        referenceId: invoiceId
-      }
-    });
-
     // Soft-cancel the invoice
     const cancelled = await tx.invoice.update({
       where: { id: invoiceId },
       data: {
         status: 'Cancelled',
         cancelledAt: new Date(),
-        cancelReason: reason,
         cancelledBy: userId
       },
       include: {
@@ -617,17 +604,26 @@ async function cancelInvoice(invoiceId, reason, userId) {
 
     // CRITICAL FIX: Always reverse customer ledger entry (unconditional)
     // Since invoices now create ledger entries on creation, we must always reverse
-    const customer = await tx.customer.findUnique({
-      where: { id: invoice.customerId }
+    // Get current balance from ledger
+    const latestLedger = await tx.customerLedger.findFirst({
+      where: { customerId: invoice.customerId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    const newBalance = formatAmount(customer.currentBalance - invoice.total);
+    const customerData = await tx.customer.findUnique({
+      where: { id: invoice.customerId },
+      select: { openingBalance: true }
+    });
+
+    const currentBalance = latestLedger?.balance || customerData?.openingBalance || 0;
+    const newBalance = formatAmount(formatAmount(currentBalance) - invoice.total);
 
     await tx.customerLedger.create({
       data: {
         customerId: invoice.customerId,
         entryDate: new Date(),
-        description: `Invoice ${invoice.invoiceNumber} cancelled: ${reason}`,
+        description: `Invoice ${invoice.invoiceNumber} cancelled`,
         debit: 0,
         credit: invoice.total,
         balance: newBalance,
@@ -635,13 +631,7 @@ async function cancelInvoice(invoiceId, reason, userId) {
       }
     });
 
-    // Update customer balance
-    await tx.customer.update({
-      where: { id: invoice.customerId },
-      data: {
-        currentBalance: newBalance
-      }
-    });
+    // NOTE: currentBalance field removed - CustomerLedger is the single source of truth
 
     // Create audit trail
     await tx.invoicePaymentAudit.create({
@@ -654,17 +644,15 @@ async function cancelInvoice(invoiceId, reason, userId) {
           paidAmount: invoice.paidAmount
         },
         afterState: {
-          status: 'Cancelled',
-          cancelReason: reason
+          status: 'Cancelled'
         },
         performedBy: userId,
-        metadata: { reason }
+        metadata: {}
       }
     });
 
     logger.info(`Invoice cancelled: ${invoice.invoiceNumber}`, {
       invoiceId,
-      reason,
       total: invoice.total
     });
 

@@ -1,212 +1,394 @@
-// ========== src/pages/Dashboard.jsx ==========
 import React from 'react';
-import { Row, Col, Card, Statistic, Table, Tag, Progress, Space, Button, List, Typography } from 'antd';
+import { Row, Col, Card, Statistic, List, Tag, Space, Button, Typography, Spin, Alert } from 'antd';
 import {
   ShoppingCartOutlined,
   DollarOutlined,
-  UserOutlined,
+  ShoppingOutlined,
   RiseOutlined,
-  FallOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
   PlusOutlined,
   FileTextOutlined,
-  ArrowUpOutlined,
-  ArrowDownOutlined,
+  DatabaseOutlined,
+  WalletOutlined,
+  FileDoneOutlined,
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
-import { Line, Bar, Pie } from 'recharts';
 import axios from 'axios';
 import { useAuthStore } from '../stores/authStore';
-import { parseAmount } from '../utils/decimalUtils';
 import { formatPKR } from '../config/constants';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
+/**
+ * Dashboard Component
+ * REVAMPED: 2025-01-21
+ * - Simplified to 4 essential stat cards
+ * - Card 1: Inventory Levels (Total, Available, Reserved)
+ * - Card 2: Outstanding Receivables (from unpaid invoices)
+ * - Card 3: Purchase Order metrics (Active POs, monthly value)
+ * - Card 4: Outstanding Payables (amounts owed to vendors)
+ * - Quick Actions: Create Invoice, Record Payment, Create Bill, Record Vendor Payment, Add Item, Bulk Add Items, Create PO
+ * - Removed charts, top products, complex visualizations
+ * - Spacious layout with large cards
+ * - Recent Invoices and POs both clickable to details
+ */
 const Dashboard = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuthStore();
 
-  // Fetch dashboard data
-  const { data: dashboardData, isLoading } = useQuery(
+  // Fetch dashboard data (no auto-refresh, manual only)
+  const { data: dashboardData, isLoading, isError, error } = useQuery(
     'dashboard',
     async () => {
       const response = await axios.get('/reports/dashboard');
       return response.data.data;
     },
     {
-      refetchInterval: 60000, // Refresh every minute
+      staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+      cacheTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
+      refetchOnWindowFocus: false, // Don't auto-refresh
     }
   );
 
+  // Loading state
   if (isLoading) {
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        Loading dashboard...
+      <div style={{ padding: 24, textAlign: 'center', minHeight: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" tip="Loading dashboard..." />
       </div>
     );
   }
 
-  const data = dashboardData || {
-    inventory: { totalItems: 0, availableItems: 0, soldThisMonth: 0, utilizationRate: '0.00' },
-    financial: { totalRevenue: 0, monthlyRevenue: 0, outstandingAmount: 0 },
-    customers: { total: 0, newThisMonth: 0 },
-    topProducts: [],
-    recentTransactions: { invoices: [], payments: [] }
+  // Error state
+  if (isError) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Alert
+          message="Error Loading Dashboard"
+          description={error?.response?.data?.message || error?.message || 'Failed to load dashboard data. Please try again.'}
+          type="error"
+          showIcon
+          action={
+            <Button size="small" onClick={() => window.location.reload()}>
+              Reload
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // Default empty data structure with defensive merging
+  const defaultData = {
+    inventory: { totalItems: 0, availableItems: 0, reservedItems: 0, soldThisMonth: 0 },
+    financial: { monthlyRevenue: 0, outstandingAmount: 0, unpaidInvoices: 0, overdueInvoices: 0 },
+    purchaseOrders: { activePOs: 0, monthlyPOValue: 0, pendingBills: 0 },
+    payables: { outstandingPayables: 0, unpaidBills: 0, overdueBills: 0 },
+    customers: { total: 0, newThisMonth: 0, activeThisMonth: 0 },
+    recentTransactions: { invoices: [], purchaseOrders: [] }
+  };
+
+  const data = {
+    inventory: { ...defaultData.inventory, ...dashboardData?.inventory },
+    financial: { ...defaultData.financial, ...dashboardData?.financial },
+    purchaseOrders: { ...defaultData.purchaseOrders, ...dashboardData?.purchaseOrders },
+    payables: { ...defaultData.payables, ...dashboardData?.payables },
+    customers: { ...defaultData.customers, ...dashboardData?.customers },
+    recentTransactions: {
+      invoices: dashboardData?.recentTransactions?.invoices || [],
+      purchaseOrders: dashboardData?.recentTransactions?.purchaseOrders || []
+    }
   };
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ margin: 0 }}>Dashboard</h1>
-        <p style={{ color: '#8c8c8c', marginTop: 8 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 32 }}>
+        <Title level={2} style={{ margin: 0 }}>Dashboard</Title>
+        <Text type="secondary" style={{ fontSize: '16px' }}>
           Welcome back! Here's what's happening with your business today.
-        </p>
+        </Text>
       </div>
 
-      {/* Stats Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      {/* 4 Large Stat Cards - Spacious Layout */}
+      <Row gutter={24} style={{ marginBottom: 32 }}>
+        {/* Card 1: Inventory Levels */}
         <Col xs={24} sm={12} lg={6}>
-          <Card hoverable className="hover-card">
+          <Card
+            hoverable
+            className="hover-card"
+            style={{ height: '160px' }}
+          >
             <Statistic
-              title="Total Items"
+              title="Inventory Levels"
               value={data.inventory.totalItems}
               prefix={<ShoppingCartOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1890ff', fontSize: '32px' }}
             />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">Available: </Text>
-              <Text strong>{data.inventory.availableItems}</Text>
-            </div>
-            <Progress
-              percent={parseAmount(data.inventory.utilizationRate)}
-              size="small"
-              strokeColor="#52c41a"
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} sm={12} lg={6}>
-          <Card hoverable className="hover-card">
-            <Statistic
-              title="Monthly Revenue"
-              value={data.financial.monthlyRevenue}
-              prefix="PKR"
-              valueStyle={{ color: '#52c41a' }}
-              precision={2}
-            />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">Total: </Text>
-              <Text strong>{formatPKR(data.financial.totalRevenue)}</Text>
+            <div style={{ marginTop: 12 }}>
+              <Space direction="horizontal" size="middle">
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Available:</Text>
+                  <br />
+                  <Text strong style={{ color: '#52c41a', fontSize: '16px' }}>
+                    {data.inventory.availableItems}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Reserved:</Text>
+                  <br />
+                  <Text strong style={{ color: '#faad14', fontSize: '16px' }}>
+                    {data.inventory.reservedItems}
+                  </Text>
+                </div>
+              </Space>
             </div>
           </Card>
         </Col>
 
+        {/* Card 2: Outstanding Receivables */}
         <Col xs={24} sm={12} lg={6}>
-          <Card hoverable className="hover-card">
+          <Card
+            hoverable
+            className="hover-card"
+            style={{ height: '160px' }}
+          >
             <Statistic
-              title="Outstanding"
+              title="Outstanding Receivables"
               value={data.financial.outstandingAmount}
               prefix="PKR"
-              valueStyle={{ color: '#faad14' }}
-              precision={2}
+              valueStyle={{ color: '#faad14', fontSize: '28px' }}
+              precision={0}
             />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">Overdue: </Text>
-              <Text strong style={{ color: '#ff4d4f' }}>
-                {data.financial.overdueInvoices || 0}
-              </Text>
+            <div style={{ marginTop: 12 }}>
+              <Space direction="horizontal" size="middle">
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Unpaid:</Text>
+                  <br />
+                  <Text strong style={{ fontSize: '16px' }}>
+                    {data.financial.unpaidInvoices}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Overdue:</Text>
+                  <br />
+                  <Text strong style={{ color: '#ff4d4f', fontSize: '16px' }}>
+                    {data.financial.overdueInvoices}
+                  </Text>
+                </div>
+              </Space>
             </div>
           </Card>
         </Col>
 
+        {/* Card 3: Purchase Orders */}
         <Col xs={24} sm={12} lg={6}>
-          <Card hoverable className="hover-card">
+          <Card
+            hoverable
+            className="hover-card"
+            style={{ height: '160px' }}
+          >
             <Statistic
-              title="Total Customers"
-              value={data.customers.total}
-              prefix={<UserOutlined />}
+              title="Purchase Orders"
+              value={data.purchaseOrders.activePOs}
+              prefix={<ShoppingOutlined />}
+              valueStyle={{ color: '#722ed1', fontSize: '32px' }}
             />
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">New this month: </Text>
-              <Text strong style={{ color: '#52c41a' }}>
-                +{data.customers.newThisMonth}
-              </Text>
+            <div style={{ marginTop: 12 }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>PO Value This Month:</Text>
+                <br />
+                <Text strong style={{ fontSize: '14px' }}>
+                  {formatPKR(data.purchaseOrders.monthlyPOValue)}
+                </Text>
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>Pending Bills: </Text>
+                <Text strong style={{ fontSize: '14px' }}>
+                  {data.purchaseOrders.pendingBills}
+                </Text>
+              </div>
+            </div>
+          </Card>
+        </Col>
+
+        {/* Card 4: Outstanding Payables */}
+        <Col xs={24} sm={12} lg={6}>
+          <Card
+            hoverable
+            className="hover-card"
+            style={{ height: '160px' }}
+          >
+            <Statistic
+              title="Outstanding Payables"
+              value={data.payables.outstandingPayables}
+              prefix="PKR"
+              valueStyle={{ color: '#ff4d4f', fontSize: '28px' }}
+              precision={0}
+            />
+            <div style={{ marginTop: 12 }}>
+              <Space direction="horizontal" size="middle">
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Unpaid Bills:</Text>
+                  <br />
+                  <Text strong style={{ fontSize: '16px' }}>
+                    {data.payables.unpaidBills}
+                  </Text>
+                </div>
+                <div>
+                  <Text type="secondary" style={{ fontSize: '12px' }}>Overdue:</Text>
+                  <br />
+                  <Text strong style={{ color: '#ff4d4f', fontSize: '16px' }}>
+                    {data.payables.overdueBills}
+                  </Text>
+                </div>
+              </Space>
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Charts and Lists */}
-      <Row gutter={[16, 16]}>
-        {/* Top Products */}
-        <Col xs={24} lg={8}>
-          <Card 
-            title="Top Selling Products" 
-            extra={<Button type="link" onClick={() => navigate('/app/reports')}>View All</Button>}
-          >
-            <List
-              dataSource={data.topProducts}
-              renderItem={(item, index) => (
-                <List.Item>
-                  <List.Item.Meta
-                    avatar={<Tag color="blue">#{index + 1}</Tag>}
-                    title={item.model?.name}
-                    description={`${item.model?.company.name} - ${item.model?.category.name}`}
-                  />
-                  <div>
-                    <Text strong>{item.count}</Text>
-                    <Text type="secondary"> sold</Text>
-                  </div>
-                </List.Item>
-              )}
-              locale={{ emptyText: 'No sales data' }}
-            />
-          </Card>
-        </Col>
+      {/* Quick Actions Bar */}
+      {(hasPermission('inventory.create') || hasPermission('finance.create')) && (
+        <Card style={{ marginBottom: 32 }}>
+          <Space size="large" wrap>
+            <Text strong style={{ fontSize: '16px' }}>Quick Actions:</Text>
 
+            {hasPermission('finance.create') && (
+              <Button
+                type="primary"
+                icon={<FileTextOutlined />}
+                onClick={() => navigate('/app/finance/invoices/create')}
+                size="large"
+              >
+                Create Invoice
+              </Button>
+            )}
+
+            {hasPermission('finance.create') && (
+              <Button
+                type="primary"
+                icon={<DollarOutlined />}
+                onClick={() => navigate('/app/finance/payments/record')}
+                size="large"
+              >
+                Record Payment
+              </Button>
+            )}
+
+            {hasPermission('finance.create') && (
+              <Button
+                type="primary"
+                icon={<FileDoneOutlined />}
+                onClick={() => navigate('/app/finance/vendor-bills/create')}
+                size="large"
+              >
+                Create Bill
+              </Button>
+            )}
+
+            {hasPermission('finance.create') && (
+              <Button
+                type="primary"
+                icon={<WalletOutlined />}
+                onClick={() => navigate('/app/finance/vendor-payments/record')}
+                size="large"
+              >
+                Record Vendor Payment
+              </Button>
+            )}
+
+            {hasPermission('inventory.create') && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => navigate('/app/inventory/items/add')}
+                size="large"
+              >
+                Add Item
+              </Button>
+            )}
+
+            {hasPermission('inventory.create') && (
+              <Button
+                type="primary"
+                icon={<DatabaseOutlined />}
+                onClick={() => navigate('/app/inventory/items/bulk-add')}
+                size="large"
+              >
+                Bulk Add Items
+              </Button>
+            )}
+
+            {hasPermission('finance.create') && (
+              <Button
+                type="primary"
+                icon={<ShoppingOutlined />}
+                onClick={() => navigate('/app/finance/purchase-orders/create')}
+                size="large"
+              >
+                Create Purchase Order
+              </Button>
+            )}
+          </Space>
+        </Card>
+      )}
+
+      {/* Recent Activity - Two Columns */}
+      <Row gutter={24}>
         {/* Recent Invoices */}
-        <Col xs={24} lg={8}>
-          <Card 
-            title="Recent Invoices"
+        <Col xs={24} lg={12}>
+          <Card
+            title={
+              <span style={{ fontSize: '18px', fontWeight: 600 }}>
+                Recent Invoices
+              </span>
+            }
             extra={
-              hasPermission('finance.create') && (
-                <Button 
-                  type="primary" 
-                  icon={<PlusOutlined />} 
-                  onClick={() => navigate('/app/finance/invoices/create')}
+              hasPermission('finance.view') && (
+                <Button
+                  type="link"
+                  onClick={() => navigate('/app/finance/invoices')}
                 >
-                  Create
+                  View All
                 </Button>
               )
             }
+            style={{ minHeight: '400px' }}
           >
             <List
               dataSource={data.recentTransactions.invoices.slice(0, 5)}
               renderItem={(invoice) => (
                 <List.Item
-                  actions={[
-                    <Button 
-                      type="link" 
-                      size="small"
-                      onClick={() => navigate(`/app/finance/invoices/${invoice.id}`)}
-                    >
-                      View
-                    </Button>
-                  ]}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/app/finance/invoices/${invoice.id}`)}
+                  className="hover-list-item"
                 >
                   <List.Item.Meta
-                    title={invoice.invoiceNumber}
-                    description={invoice.customer?.name}
+                    title={
+                      <Text strong style={{ fontSize: '15px' }}>
+                        {invoice.invoiceNumber}
+                      </Text>
+                    }
+                    description={
+                      <Space direction="vertical" size={0}>
+                        <Text type="secondary">{invoice.customer?.name}</Text>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          {new Date(invoice.invoiceDate).toLocaleDateString('en-PK')}
+                        </Text>
+                      </Space>
+                    }
                   />
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ marginBottom: 4 }}>{formatPKR(invoice.total)}</div>
+                    <div style={{ marginBottom: 8, fontSize: '15px', fontWeight: 500 }}>
+                      {formatPKR(invoice.total)}
+                    </div>
                     <Tag
                       color={
                         invoice.status === 'Paid' ? 'green' :
                         invoice.status === 'Overdue' ? 'red' :
-                        invoice.status === 'Partial' ? 'orange' : 'blue'
+                        invoice.status === 'Partial' ? 'orange' :
+                        invoice.status === 'Sent' ? 'blue' : 'default'
                       }
                     >
                       {invoice.status}
@@ -219,69 +401,91 @@ const Dashboard = () => {
           </Card>
         </Col>
 
-        {/* Recent Payments */}
-        <Col xs={24} lg={8}>
-          <Card 
-            title="Recent Payments"
+        {/* Recent Purchase Orders */}
+        <Col xs={24} lg={12}>
+          <Card
+            title={
+              <span style={{ fontSize: '18px', fontWeight: 600 }}>
+                Recent Purchase Orders
+              </span>
+            }
             extra={
-              hasPermission('finance.create') && (
-                <Button 
-                  type="primary" 
-                  icon={<DollarOutlined />}
-                  onClick={() => navigate('/app/finance/payments/record')}
+              hasPermission('finance.view') && (
+                <Button
+                  type="link"
+                  onClick={() => navigate('/app/finance/purchase-orders')}
                 >
-                  Record
+                  View All
                 </Button>
               )
             }
+            style={{ minHeight: '400px' }}
           >
             <List
-              dataSource={data.recentTransactions.payments.slice(0, 5)}
-              renderItem={(payment) => (
-                <List.Item>
+              dataSource={data.recentTransactions.purchaseOrders.slice(0, 5)}
+              renderItem={(po) => (
+                <List.Item
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/app/finance/purchase-orders/${po.id}`)}
+                  className="hover-list-item"
+                >
                   <List.Item.Meta
-                    avatar={
-                      <CheckCircleOutlined style={{ fontSize: 24, color: '#52c41a' }} />
+                    title={
+                      <Text strong style={{ fontSize: '15px' }}>
+                        {po.poNumber}
+                      </Text>
                     }
-                    title={formatPKR(payment.amount)}
-                    description={payment.customer?.name}
+                    description={
+                      <Space direction="vertical" size={0}>
+                        <Text type="secondary">{po.vendor?.name}</Text>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          {new Date(po.orderDate).toLocaleDateString('en-PK')}
+                        </Text>
+                      </Space>
+                    }
                   />
-                  <div>
-                    <Text type="secondary">
-                      {new Date(payment.paymentDate).toLocaleDateString('en-PK')}
-                    </Text>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ marginBottom: 8, fontSize: '15px', fontWeight: 500 }}>
+                      {formatPKR(po.total)}
+                    </div>
+                    <Tag
+                      color={
+                        po.status === 'Delivered' ? 'green' :
+                        po.status === 'Paid' ? 'blue' :
+                        po.status === 'Partial' ? 'orange' :
+                        po.status === 'Sent' ? 'cyan' :
+                        po.status === 'Cancelled' ? 'red' : 'default'
+                      }
+                    >
+                      {po.status}
+                    </Tag>
                   </div>
                 </List.Item>
               )}
-              locale={{ emptyText: 'No recent payments' }}
+              locale={{ emptyText: 'No recent purchase orders' }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* Quick Actions */}
-      {(hasPermission('inventory.create') || hasPermission('finance.create')) && (
-        <Card style={{ marginTop: 16 }}>
-          <Space size="large">
-            <Text strong>Quick Actions:</Text>
-            {hasPermission('inventory.create') && (
-              <Button icon={<PlusOutlined />} onClick={() => navigate('/app/inventory/items/add')}>
-                Add Item
-              </Button>
-            )}
-            {hasPermission('finance.create') && (
-              <>
-                <Button icon={<FileTextOutlined />} onClick={() => navigate('/app/finance/invoices/create')}>
-                  Create Invoice
-                </Button>
-                <Button icon={<DollarOutlined />} onClick={() => navigate('/app/finance/payments/record')}>
-                  Record Payment
-                </Button>
-              </>
-            )}
-          </Space>
-        </Card>
-      )}
+      {/* Custom CSS for hover effects */}
+      <style jsx>{`
+        .hover-card {
+          transition: all 0.3s ease;
+        }
+        .hover-card:hover {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          transform: translateY(-2px);
+        }
+        .hover-list-item {
+          transition: background-color 0.2s ease;
+          padding: 12px 16px;
+          border-radius: 4px;
+        }
+        .hover-list-item:hover {
+          background-color: #f0f2f5;
+        }
+      `}</style>
     </div>
   );
 };

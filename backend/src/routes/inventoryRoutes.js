@@ -36,26 +36,8 @@ router.route('/models/:id')
   .put(hasPermission(['inventory.edit']), inventoryController.updateModel)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteModel);
 
-// ============= ITEM RESERVATION SYSTEM =============
-const reservationController = require('../controllers/reservationController');
+// ============= ITEM ROUTES =============
 const inventoryLifecycleController = require('../controllers/inventoryLifecycleController');
-
-// Grouped item selection routes (must come BEFORE parameterized routes)
-router.get('/items/grouped',
-  hasPermission(['inventory.view']),
-  reservationController.getGroupedAvailableItems
-);
-
-// Item reservation routes
-router.post('/items/reserve',
-  hasPermission(['inventory.create']),
-  reservationController.reserveSpecificItems
-);
-
-router.post('/items/auto-assign',
-  hasPermission(['inventory.create']),
-  reservationController.autoAssignItems
-);
 
 // Item routes
 router.route('/items')
@@ -117,22 +99,6 @@ router.route('/vendors/:id')
   .get(hasPermission(['inventory.view']), inventoryController.getVendor)
   .put(hasPermission(['inventory.edit']), inventoryController.updateVendor)
   .delete(hasPermission(['inventory.delete']), inventoryController.deleteVendor);
-
-// Reservation management routes
-router.route('/reservations/:sessionId')
-  .get(hasPermission(['inventory.view']), reservationController.getReservationsBySession)
-  .delete(hasPermission(['inventory.edit']), reservationController.releaseReservations);
-
-router.put('/reservations/:sessionId/extend',
-  hasPermission(['inventory.edit']),
-  reservationController.extendReservation
-);
-
-// Admin route for cleanup
-router.delete('/reservations/expired',
-  hasPermission(['inventory.admin']),
-  reservationController.cleanupExpiredReservations
-);
 
 // ============= INVENTORY LIFECYCLE MANAGEMENT =============
 

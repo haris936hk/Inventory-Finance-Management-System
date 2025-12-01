@@ -50,9 +50,84 @@ const formatNumber = (number) => {
   }).format(number || 0);
 };
 
+// ========== BUSINESS CONSTANTS ==========
+
+// Inventory Status (Business/Sales State)
+const INVENTORY_STATUS = {
+  AVAILABLE: 'Available',
+  RESERVED: 'Reserved',
+  SOLD: 'Sold',
+  DELIVERED: 'Delivered',
+  UNDER_REPAIR: 'Under Repair',
+  RETURNED: 'Returned'
+};
+
+// Physical Status (Physical Location/State)
+const PHYSICAL_STATUS = {
+  IN_STORE: 'In Store',
+  IN_LAB: 'In Lab',
+  HANDOVER: 'Handover'
+};
+
+// Item Conditions
+const ITEM_CONDITION = {
+  NEW: 'New',
+  USED: 'Used'
+};
+
+// Repaired Status
+const REPAIRED_STATUS = {
+  NO: 'No',
+  YES: 'Yes',
+  RETURNED: 'Returned'
+};
+
+// Invoice Statuses
+const INVOICE_STATUS = {
+  DRAFT: 'Draft',
+  SENT: 'Sent',
+  PARTIAL: 'Partial',
+  PAID: 'Paid',
+  OVERDUE: 'Overdue',
+  CANCELLED: 'Cancelled'
+};
+
+// Bill Statuses
+const BILL_STATUS = {
+  UNPAID: 'Unpaid',
+  PARTIAL: 'Partial',
+  PAID: 'Paid'
+};
+
+// Purchase Order Statuses
+const PO_STATUS = {
+  DRAFT: 'Draft',
+  SENT: 'Sent',
+  PARTIAL: 'Partial',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled'
+};
+
+// Payment Methods
+const PAYMENT_METHODS = [
+  'Cash',
+  'Bank Transfer',
+  'Cheque',
+  'UPI',
+  'Card'
+];
+
 module.exports = {
   SYSTEM_CONFIG,
   SYSTEM_INFO,
   formatCurrency,
-  formatNumber
+  formatNumber,
+  INVENTORY_STATUS,
+  PHYSICAL_STATUS,
+  ITEM_CONDITION,
+  REPAIRED_STATUS,
+  INVOICE_STATUS,
+  BILL_STATUS,
+  PO_STATUS,
+  PAYMENT_METHODS
 };

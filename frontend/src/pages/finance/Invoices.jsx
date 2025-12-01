@@ -3,9 +3,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
-  Row, Col, Statistic, Badge, Dropdown, message, Modal
+  Row, Col, Statistic, Badge, Dropdown, message, Modal, Alert
 } from 'antd';
-const { TextArea } = Input;
 import {
   PlusOutlined, SearchOutlined, FilterOutlined,
   EyeOutlined, EditOutlined, DeleteOutlined, DollarOutlined,
@@ -26,7 +25,6 @@ const Invoices = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
 
   // Fetch invoices
   const { data: invoicesData, isLoading } = useQuery(
@@ -86,7 +84,7 @@ const Invoices = () => {
 
   // Cancel invoice mutation
   const cancelInvoiceMutation = useMutation(
-    ({ id, reason }) => axios.post(`/finance/invoices/${id}/cancel`, { reason }),
+    (id) => axios.post(`/finance/invoices/${id}/cancel`),
     {
       onSuccess: () => {
         message.success('Invoice cancelled successfully');
@@ -121,33 +119,43 @@ const Invoices = () => {
     }
   };
 
+  const handleMarkAsSent = (record) => {
+    Modal.confirm({
+      title: 'Mark as Sent',
+      content: (
+        <div>
+          <p>Are you sure you want to mark invoice <strong>{record.invoiceNumber}</strong> as Sent?</p>
+          <Alert
+            message="Important: Once sent, this invoice cannot be cancelled"
+            description="Invoices can only be cancelled while in Draft status. After sending to customer, cancellation will no longer be possible."
+            type="warning"
+            showIcon
+            style={{ marginTop: 12 }}
+          />
+        </div>
+      ),
+      onOk: () => updateStatusMutation.mutate({ id: record.id, status: 'Sent' }),
+      okText: 'Yes, Mark as Sent',
+      okButtonProps: { type: 'primary' },
+      cancelText: 'Cancel'
+    });
+  };
+
   const handleCancelInvoice = (record) => {
-    let reason = '';
     Modal.confirm({
       title: 'Cancel Invoice',
       content: (
         <div>
           <p>Are you sure you want to cancel invoice <strong>{record.invoiceNumber}</strong>?</p>
           <p style={{ color: '#ff4d4f', marginTop: 12 }}>
-            ⚠️ Only Draft invoices can be cancelled. This action cannot be undone.
+            This will reverse all amounts and mark the invoice as cancelled. This action cannot be undone.
           </p>
-          <TextArea
-            placeholder="Enter cancellation reason (required)"
-            rows={3}
-            onChange={(e) => { reason = e.target.value; }}
-            style={{ marginTop: 12 }}
-          />
         </div>
       ),
-      onOk: () => {
-        if (!reason || reason.trim() === '') {
-          message.error('Please provide a cancellation reason');
-          return Promise.reject();
-        }
-        return cancelInvoiceMutation.mutateAsync({ id: record.id, reason: reason.trim() });
-      },
-      okText: 'Cancel Invoice',
-      okButtonProps: { danger: true }
+      onOk: () => cancelInvoiceMutation.mutateAsync(record.id),
+      okText: 'Yes, Cancel Invoice',
+      okButtonProps: { danger: true },
+      cancelText: 'No, Keep It'
     });
   };
 
@@ -157,7 +165,7 @@ const Invoices = () => {
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
       fixed: 'left',
-      width: 120,
+      width: 80,
       render: (text, record) => (
         <Space direction="vertical" size="small">
           <Button
@@ -175,7 +183,7 @@ const Invoices = () => {
       title: 'Customer',
       dataIndex: ['customer', 'name'],
       key: 'customer',
-      width: 180,
+      width: 80,
       render: (name, record) => (
         <div>
           <div>{name}</div>
@@ -187,7 +195,7 @@ const Invoices = () => {
       title: 'Date',
       dataIndex: 'invoiceDate',
       key: 'invoiceDate',
-      width: 100,
+      width: 80,
       render: (date) => new Date(date).toLocaleDateString(),
       sorter: (a, b) => new Date(a.invoiceDate) - new Date(b.invoiceDate)
     },
@@ -195,14 +203,14 @@ const Invoices = () => {
       title: 'Due Date',
       dataIndex: 'dueDate',
       key: 'dueDate',
-      width: 100,
+      width: 80,
       render: (date) => new Date(date).toLocaleDateString()
     },
     {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      width: 120,
+      width: 80,
       render: (amount, record) => (
         <span style={{
           color: record.cancelledAt ? '#999' : 'inherit',
@@ -217,13 +225,13 @@ const Invoices = () => {
       title: 'Paid',
       dataIndex: 'paidAmount',
       key: 'paidAmount',
-      width: 120,
+      width: 80,
       render: (amount) => formatPKR(parseAmount(amount))
     },
     {
       title: 'Balance',
       key: 'balance',
-      width: 120,
+      width: 80,
       render: (_, record) => {
         const balance = subtractAmounts(parseAmount(record.total), parseAmount(record.paidAmount || 0));
         return (
@@ -237,7 +245,7 @@ const Invoices = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 50,
       filters: [
         { text: 'Draft', value: 'Draft' },
         { text: 'Sent', value: 'Sent' },
@@ -258,7 +266,7 @@ const Invoices = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 100,
+      width: 50,
       render: (_, record) => {
         const menuItems = [
           {
@@ -302,7 +310,7 @@ const Invoices = () => {
           {
             key: 'markSent',
             label: 'Mark as Sent',
-            onClick: () => updateStatusMutation.mutate({ id: record.id, status: 'Sent' }),
+            onClick: () => handleMarkAsSent(record),
             disabled: record.status !== 'Draft'
           },
           {
@@ -322,11 +330,6 @@ const Invoices = () => {
       }
     }
   ];
-
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (keys) => setSelectedRowKeys(keys)
-  };
 
   return (
     <Card>
@@ -426,8 +429,6 @@ const Invoices = () => {
         columns={columns}
         dataSource={invoicesData}
         loading={isLoading}
-        rowSelection={rowSelection}
-        scroll={{ x: 1200 }}
         pagination={{
           showSizeChanger: true,
           showTotal: (total) => `Total ${total} invoices`

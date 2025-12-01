@@ -279,6 +279,8 @@ const InventoryList = () => {
         const isInLab = record.status === 'In Lab';
         const isReturned = record.repaired === 'Returned';
         const isReserved = record.inventoryStatus === 'Reserved';
+        // CRITICAL: Items with Reserved, Sold, or Delivered status cannot be deleted
+        const isNotDeletable = ['Reserved', 'Sold', 'Delivered'].includes(record.inventoryStatus);
 
         const menuItems = [
           {
@@ -319,7 +321,7 @@ const InventoryList = () => {
             icon: <DeleteOutlined />,
             danger: true,
             onClick: () => handleDelete(record),
-            disabled: !hasPermission('inventory.delete') || isSold
+            disabled: !hasPermission('inventory.delete') || isNotDeletable
           }
         ];
 

@@ -61,7 +61,7 @@ class CustomerService {
       ];
     }
 
-    return await db.prisma.customer.findMany({
+    const customers = await db.prisma.customer.findMany({
       where,
       include: {
         _count: {
@@ -69,10 +69,86 @@ class CustomerService {
             invoices: true,
             payments: true
           }
+        },
+        ledgerEntries: {
+          orderBy: { createdAt: 'desc' },
+          take: 1, // Get only the latest entry
+          select: { balance: true }
         }
       },
       orderBy: { createdAt: 'desc' }
     });
+
+    // Use ledger balance as source of truth
+    const { formatAmount } = require('../utils/transactionWrapper');
+    return customers.map(customer => ({
+      ...customer,
+      currentBalance: customer.ledgerEntries[0]?.balance
+        ? formatAmount(customer.ledgerEntries[0].balance)
+        : formatAmount(customer.openingBalance || 0),
+      ledgerEntries: undefined // Remove from response (not needed)
+    }));
+  }
+
+  /**
+   * Compute balances for multiple customers efficiently
+   * @param {Array<string>} customerIds - Array of customer IDs
+   * @returns {Promise<Object>} Object mapping customer ID to computed balance
+   */
+  async computeAllCustomerBalances(customerIds) {
+    const { formatAmount } = require('../utils/transactionWrapper');
+
+    if (customerIds.length === 0) {
+      return {};
+    }
+
+    // Get all customers' opening balances
+    const customers = await db.prisma.customer.findMany({
+      where: { id: { in: customerIds } },
+      select: { id: true, openingBalance: true }
+    });
+
+    // Initialize balances with opening balances
+    const balances = {};
+    for (const customer of customers) {
+      balances[customer.id] = formatAmount(customer.openingBalance || 0);
+    }
+
+    // Get all non-cancelled invoices for these customers
+    const invoices = await db.prisma.invoice.findMany({
+      where: {
+        customerId: { in: customerIds },
+        deletedAt: null,
+        cancelledAt: null  // Exclude cancelled invoices
+      },
+      select: { customerId: true, total: true }
+    });
+
+    // Add invoice totals to balances
+    for (const invoice of invoices) {
+      balances[invoice.customerId] = formatAmount(
+        balances[invoice.customerId] + invoice.total
+      );
+    }
+
+    // Get all non-voided payments for these customers
+    const payments = await db.prisma.payment.findMany({
+      where: {
+        customerId: { in: customerIds },
+        deletedAt: null,
+        voidedAt: null  // Exclude voided payments
+      },
+      select: { customerId: true, amount: true }
+    });
+
+    // Subtract payment amounts from balances
+    for (const payment of payments) {
+      balances[payment.customerId] = formatAmount(
+        balances[payment.customerId] - payment.amount
+      );
+    }
+
+    return balances;
   }
 
   /**
@@ -81,7 +157,7 @@ class CustomerService {
    * @returns {Promise<Object>} Customer with invoices, payments, and ledger entries
    */
   async getCustomerById(id) {
-    return await db.prisma.customer.findUnique({
+    const customer = await db.prisma.customer.findUnique({
       where: { id },
       include: {
         invoices: {
@@ -102,6 +178,47 @@ class CustomerService {
         }
       }
     });
+
+    if (!customer) {
+      return null;
+    }
+
+    // Get current balance from ledger (single source of truth)
+    const currentBalance = await this.getCurrentBalance(id);
+
+    return {
+      ...customer,
+      currentBalance // Override with ledger-based balance
+    };
+  }
+
+  /**
+   * Get current balance from ledger (SINGLE SOURCE OF TRUTH)
+   * The ledger already handles all cancellations and voids via reversing entries
+   * @param {string} customerId - Customer ID
+   * @returns {Promise<number>} Current balance from latest ledger entry
+   */
+  async getCurrentBalance(customerId) {
+    const { formatAmount } = require('../utils/transactionWrapper');
+
+    // Get the most recent ledger entry - its balance IS the current balance
+    const latestEntry = await db.prisma.customerLedger.findFirst({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
+    });
+
+    if (latestEntry) {
+      return formatAmount(latestEntry.balance);
+    }
+
+    // If no ledger entries exist yet, return opening balance
+    const customer = await db.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { openingBalance: true }
+    });
+
+    return formatAmount(customer?.openingBalance || 0);
   }
 
   /**
@@ -128,6 +245,37 @@ class CustomerService {
     return await db.prisma.customer.update({
       where: { id },
       data
+    });
+  }
+
+  /**
+   * Delete customer (soft delete)
+   * @param {string} id - Customer ID
+   * @returns {Promise<Object>} Deleted customer
+   */
+  async deleteCustomer(id) {
+    const customerWithRelations = await db.prisma.customer.findUnique({
+      where: { id, deletedAt: null },
+      include: {
+        _count: {
+          select: {
+            invoices: { where: { deletedAt: null } }
+          }
+        }
+      }
+    });
+
+    if (!customerWithRelations) {
+      throw new Error('Customer not found');
+    }
+
+    if (customerWithRelations._count.invoices > 0) {
+      throw new Error('Cannot delete customer with existing invoices. Archive it instead.');
+    }
+
+    return await db.prisma.customer.update({
+      where: { id },
+      data: { deletedAt: new Date() }
     });
   }
 }

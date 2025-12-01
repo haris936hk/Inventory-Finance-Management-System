@@ -399,10 +399,10 @@ const CreateInvoice = () => {
 
           <Form.Item label="Credit Limit (PKR)" name="creditLimit" initialValue={0} rules={creditLimitRules}>
             <InputNumber
-              precision={2}
+              precision={0}
               min={0}
               max={VALIDATION.MAX_AMOUNT}
-              step={0.01}
+              step={1}
               style={{ width: '100%' }}
               placeholder="0 for no limit"
             />

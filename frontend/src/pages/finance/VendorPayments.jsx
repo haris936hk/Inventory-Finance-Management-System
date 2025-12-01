@@ -27,7 +27,6 @@ const VendorPayments = () => {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
 
   // Fetch vendor payments
   const { data: vendorPaymentsData, isLoading } = useQuery(
@@ -71,7 +70,7 @@ const VendorPayments = () => {
 
   // Void Payment mutation
   const voidPaymentMutation = useMutation(
-    ({ id, reason }) => axios.post(`/finance/vendor-payments/${id}/void`, { reason }),
+    ({ id }) => axios.post(`/finance/vendor-payments/${id}/void`),
     {
       onSuccess: () => {
         message.success('Payment voided successfully');
@@ -105,7 +104,6 @@ const VendorPayments = () => {
   };
 
   const handleVoidPayment = (record) => {
-    let reason = '';
     Modal.confirm({
       title: 'Void Payment',
       content: (
@@ -114,21 +112,13 @@ const VendorPayments = () => {
           <p style={{ color: '#ff4d4f', marginTop: 8 }}>
             <ExclamationCircleOutlined /> This will reverse the payment amount from the bill and vendor balance.
           </p>
-          <TextArea
-            rows={3}
-            placeholder="Enter void reason (required)"
-            onChange={(e) => { reason = e.target.value; }}
-            style={{ marginTop: 12 }}
-          />
         </div>
       ),
       onOk: () => {
-        if (!reason || reason.trim() === '') {
-          message.error('Please provide a void reason');
-          return Promise.reject();
-        }
-        return voidPaymentMutation.mutateAsync({ id: record.id, reason: reason.trim() });
-      }
+        return voidPaymentMutation.mutateAsync({ id: record.id });
+      },
+      okText: 'Void Payment',
+      okButtonProps: { danger: true }
     });
   };
 
@@ -138,7 +128,7 @@ const VendorPayments = () => {
       dataIndex: 'paymentNumber',
       key: 'paymentNumber',
       fixed: 'left',
-      width: 160,
+      width: 140,
       render: (text, record) => (
         <Space direction="vertical" size="small">
           <span style={{ fontWeight: 'bold', color: record.voidedAt ? '#999' : '#1890ff' }}>
@@ -152,14 +142,14 @@ const VendorPayments = () => {
       title: 'Date',
       dataIndex: 'paymentDate',
       key: 'paymentDate',
-      width: 120,
+      width: 80,
       render: (date) => new Date(date).toLocaleDateString('en-GB'),
     },
     {
       title: 'Vendor',
       dataIndex: 'vendor',
       key: 'vendor',
-      width: 180,
+      width: 100,
       render: (vendor) => (
         <Space>
           <ShopOutlined />
@@ -171,7 +161,7 @@ const VendorPayments = () => {
       title: 'Bill Reference',
       dataIndex: 'bill',
       key: 'bill',
-      width: 120,
+      width: 140,
       render: (bill) => bill ? (
         <Button
           type="link"
@@ -202,7 +192,7 @@ const VendorPayments = () => {
       title: 'Method',
       dataIndex: 'method',
       key: 'method',
-      width: 130,
+      width: 80,
       render: (method) => (
         <Space>
           {getMethodIcon(method)}
@@ -214,14 +204,14 @@ const VendorPayments = () => {
       title: 'Reference',
       dataIndex: 'reference',
       key: 'reference',
-      width: 150,
+      width: 120,
       render: (reference) => reference || '-',
     },
     {
       title: 'Notes',
       dataIndex: 'notes',
       key: 'notes',
-      width: 200,
+      width: 120,
       render: (notes) => notes ? (
         <span title={notes}>
           {notes.length > 50 ? `${notes.substring(0, 50)}...` : notes}
@@ -229,87 +219,27 @@ const VendorPayments = () => {
       ) : '-',
     },
     {
+      title: 'Recorded By',
+      dataIndex: 'createdByUser',
+      key: 'createdByUser',
+      width: 90,
+      render: (createdByUser) => createdByUser?.fullName || 'Unknown',
+    },
+    {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 120,
-      render: (_, record) => {
-        const menuItems = [
-          {
-            key: 'view',
-            icon: <EyeOutlined />,
-            label: 'View Details',
-            onClick: () => {
-              Modal.info({
-                title: `Payment Details - ${record.paymentNumber}`,
-                width: 600,
-                content: (
-                  <div style={{ marginTop: 16 }}>
-                    <Row gutter={16}>
-                      <Col span={12}>
-                        <p><strong>Vendor:</strong> {record.vendor?.name}</p>
-                        <p><strong>Date:</strong> {new Date(record.paymentDate).toLocaleDateString('en-GB')}</p>
-                        <p><strong>Amount:</strong> {formatPKR(Number(record.amount))}</p>
-                      </Col>
-                      <Col span={12}>
-                        <p><strong>Method:</strong> {record.method}</p>
-                        <p><strong>Reference:</strong> {record.reference || 'N/A'}</p>
-                        <p><strong>Bill:</strong> {record.bill?.billNumber || 'General Payment'}</p>
-                      </Col>
-                    </Row>
-                    {record.voidedAt && (
-                      <div style={{ marginTop: 16, padding: 12, backgroundColor: '#fff2e8', border: '1px solid #ffbb96', borderRadius: 4 }}>
-                        <p style={{ color: '#d4380d', fontWeight: 'bold', marginBottom: 8 }}>
-                          <ExclamationCircleOutlined /> VOIDED
-                        </p>
-                        <p><strong>Voided At:</strong> {new Date(record.voidedAt).toLocaleString('en-GB')}</p>
-                        <p><strong>Reason:</strong> {record.voidReason || 'N/A'}</p>
-                      </div>
-                    )}
-                    {record.notes && (
-                      <div style={{ marginTop: 16 }}>
-                        <strong>Notes:</strong>
-                        <p style={{ marginTop: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 4 }}>
-                          {record.notes}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )
-              });
-            }
-          },
-          { type: 'divider' },
-          {
-            key: 'void',
-            icon: <StopOutlined />,
-            label: 'Void Payment',
-            danger: true,
-            disabled: !!record.voidedAt,
-            onClick: () => handleVoidPayment(record)
-          },
-          { type: 'divider' },
-          {
-            key: 'print',
-            icon: <PrinterOutlined />,
-            label: 'Print Receipt',
-            onClick: () => message.info('Print functionality coming soon')
-          }
-        ];
-
-        return (
-          <Space>
-            <Button
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() => menuItems[0].onClick()}
-            />
-            <Dropdown menu={{ items: menuItems }} placement="bottomRight">
-              <Button size="small" icon={<MoreOutlined />} />
-            </Dropdown>
-          </Space>
-        );
-      },
+      width: 65,
+      render: (_, record) => (
+        <Button
+          size="small"
+          danger
+          icon={<StopOutlined />}
+          onClick={() => handleVoidPayment(record)}
+          disabled={!!record.voidedAt}
+        >
+        </Button>
+      ),
     },
   ];
 
@@ -437,10 +367,6 @@ const VendorPayments = () => {
           dataSource={vendorPaymentsData}
           loading={isLoading}
           scroll={{ x: 1200 }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-          }}
           pagination={{
             showSizeChanger: true,
             showQuickJumper: true,

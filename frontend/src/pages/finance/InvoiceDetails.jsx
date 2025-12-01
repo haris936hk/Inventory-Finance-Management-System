@@ -20,7 +20,6 @@ import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
-const { TextArea } = Input;
 
 const InvoiceDetails = () => {
   const { id } = useParams();
@@ -42,7 +41,7 @@ const InvoiceDetails = () => {
 
   // Cancel invoice mutation (only for Draft invoices)
   const cancelInvoiceMutation = useMutation(
-    ({ reason }) => axios.post(`/finance/invoices/${id}/cancel`, { reason }),
+    () => axios.post(`/finance/invoices/${id}/cancel`),
     {
       onSuccess: () => {
         message.success('Invoice cancelled successfully');
@@ -110,32 +109,20 @@ const InvoiceDetails = () => {
   };
 
   const handleCancelInvoice = () => {
-    let reason = '';
     Modal.confirm({
       title: 'Cancel Invoice',
       content: (
         <div>
           <p>Are you sure you want to cancel invoice <strong>{invoice.invoiceNumber}</strong>?</p>
           <p style={{ color: '#ff4d4f', marginTop: 12 }}>
-            ⚠️ Only Draft invoices can be cancelled. This action cannot be undone.
+            This will reverse all amounts and mark the invoice as cancelled. This action cannot be undone.
           </p>
-          <TextArea
-            placeholder="Enter cancellation reason (required)"
-            rows={3}
-            onChange={(e) => { reason = e.target.value; }}
-            style={{ marginTop: 12 }}
-          />
         </div>
       ),
-      onOk: () => {
-        if (!reason || reason.trim() === '') {
-          message.error('Please provide a cancellation reason');
-          return Promise.reject();
-        }
-        return cancelInvoiceMutation.mutateAsync({ reason: reason.trim() });
-      },
-      okText: 'Cancel Invoice',
-      okButtonProps: { danger: true }
+      onOk: () => cancelInvoiceMutation.mutateAsync(),
+      okText: 'Yes, Cancel Invoice',
+      okButtonProps: { danger: true },
+      cancelText: 'No, Keep It'
     });
   };
 

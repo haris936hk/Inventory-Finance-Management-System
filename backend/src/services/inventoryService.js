@@ -351,12 +351,9 @@ class InventoryService {
       itemData.serialNumber = await generateSerialNumber(model.category.code, year);
     }
 
-    // Validate serial number uniqueness
-    const existing = await db.prisma.item.findUnique({
-      where: { serialNumber: itemData.serialNumber }
-    });
-
-    if (existing) {
+    // Validate serial number uniqueness using centralized method
+    const exists = await this.checkSerialNumberExists(itemData.serialNumber);
+    if (exists) {
       const error = new Error(`Serial number ${itemData.serialNumber} already exists`);
       error.status = 400;
       throw error;
@@ -437,10 +434,16 @@ class InventoryService {
       throw error;
     }
 
-    // CRITICAL FIX: Check if item is reserved, sold, or delivered
-    // Must prevent deletion of Reserved items to maintain invoice integrity
-    if (['Reserved', 'Sold', 'Delivered'].includes(item.inventoryStatus)) {
-      const error = new Error('Cannot delete reserved, sold, or delivered items');
+    // CRITICAL: Only allow deletion in default/initial state (to fix user mistakes during creation)
+    // NEW items: Available + In Store (default state)
+    // USED items: Under Repair + In Lab + repaired=No (default state)
+    const isNewItemDefaultState = item.inventoryStatus === 'Available' && item.status === 'In Store';
+    const isUsedItemDefaultState = item.inventoryStatus === 'Under Repair' &&
+                                   item.status === 'In Lab' &&
+                                   item.repaired === 'No';
+
+    if (!isNewItemDefaultState && !isUsedItemDefaultState) {
+      const error = new Error('Cannot delete item. Items can only be deleted in their initial state (NEW: Available+In Store, USED: Under Repair+In Lab+repaired=No)');
       error.status = 400;
       throw error;
     }
@@ -451,13 +454,28 @@ class InventoryService {
       throw error;
     }
 
-    // Soft delete the item
-    await db.prisma.item.update({
-      where: { id },
-      data: { deletedAt: new Date() }
+    // Hard delete the item and related audit records in a transaction
+    await db.transaction(async (prisma) => {
+      // Delete related audit records first to avoid foreign key constraints
+      await prisma.inventoryMovement.deleteMany({
+        where: { itemId: id }
+      });
+
+      await prisma.inventoryStatusHistory.deleteMany({
+        where: { itemId: id }
+      });
+
+      await prisma.itemReservation.deleteMany({
+        where: { itemId: id }
+      });
+
+      // Now hard delete the item
+      await prisma.item.delete({
+        where: { id }
+      });
     });
 
-    logger.info(`Item deleted: ${item.serialNumber}`);
+    logger.info(`Item hard deleted: ${item.serialNumber}`);
     return { message: 'Item deleted successfully' };
   }
 
@@ -608,9 +626,12 @@ class InventoryService {
         throw new Error('Item not found');
       }
 
-      // Validate: Only allow "Handover" (items cannot move between In Store/In Lab)
+      // CRITICAL: Only allow "Handover" status changes
+      // Physical status transitions are automatic:
+      // - NEW items: Always "In Store"
+      // - USED items: "In Lab" -> "In Store" (automatic when repaired = "Yes")
       if (statusData.status !== 'Handover') {
-        throw new Error('Only "Handover" status is allowed. Items cannot move between "In Store" and "In Lab".');
+        throw new Error('Manual physical status changes not allowed. Only "Handover" for delivery is permitted. Physical status changes automatically based on item condition and repair status.');
       }
 
       // Validate handover fields when status is Handover
@@ -836,7 +857,7 @@ class InventoryService {
   }
 
   async getVendors(includeDeleted = false) {
-    return await db.findMany('vendor', {
+    const vendors = await db.findMany('vendor', {
       includeDeleted,
       include: {
         _count: {
@@ -844,14 +865,29 @@ class InventoryService {
             items: true,
             purchaseOrders: true
           }
+        },
+        ledgerEntries: {
+          orderBy: { createdAt: 'desc' },
+          take: 1, // Get only the latest entry
+          select: { balance: true }
         }
       },
       orderBy: { name: 'asc' }
     });
+
+    // Use ledger balance as source of truth
+    const { formatAmount } = require('../utils/transactionWrapper');
+    return vendors.map(vendor => ({
+      ...vendor,
+      currentBalance: vendor.ledgerEntries[0]?.balance
+        ? formatAmount(vendor.ledgerEntries[0].balance)
+        : formatAmount(vendor.openingBalance || 0),
+      ledgerEntries: undefined // Remove from response (not needed)
+    }));
   }
 
   async getVendorById(id) {
-    return await db.prisma.vendor.findUnique({
+    const vendor = await db.prisma.vendor.findUnique({
       where: { id },
       include: {
         items: {
@@ -877,6 +913,47 @@ class InventoryService {
         }
       }
     });
+
+    if (!vendor) {
+      return null;
+    }
+
+    // Get current balance from ledger (single source of truth)
+    const currentBalance = await this.getVendorCurrentBalance(id);
+
+    return {
+      ...vendor,
+      currentBalance // Override with ledger-based balance
+    };
+  }
+
+  /**
+   * Get vendor current balance from ledger (SINGLE SOURCE OF TRUTH)
+   * The ledger already handles all cancellations and voids via reversing entries
+   * @param {string} vendorId - Vendor ID
+   * @returns {Promise<number>} Current balance from latest ledger entry
+   */
+  async getVendorCurrentBalance(vendorId) {
+    const { formatAmount } = require('../utils/transactionWrapper');
+
+    // Get the most recent ledger entry - its balance IS the current balance
+    const latestEntry = await db.prisma.vendorLedger.findFirst({
+      where: { vendorId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
+    });
+
+    if (latestEntry) {
+      return formatAmount(latestEntry.balance);
+    }
+
+    // If no ledger entries exist yet, return opening balance
+    const vendor = await db.prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { openingBalance: true }
+    });
+
+    return formatAmount(vendor?.openingBalance || 0);
   }
 
   async updateVendor(id, data) {
@@ -948,12 +1025,9 @@ class InventoryService {
             serialNumber = await generateSerialNumber(model.category.code, year);
           }
 
-          // Validate serial number uniqueness
-          const existing = await prisma.item.findUnique({
-            where: { serialNumber: serialNumber }
-          });
-
-          if (existing) {
+          // Validate serial number uniqueness using centralized method
+          const exists = await this.checkSerialNumberExists(serialNumber, prisma);
+          if (exists) {
             throw new Error(`Serial number ${serialNumber} already exists`);
           }
 
@@ -1079,12 +1153,9 @@ class InventoryService {
       // 5. Create all items within THIS transaction
       for (const itemData of itemsData) {
         try {
-          // Validate serial number uniqueness
-          const existing = await prisma.item.findFirst({
-            where: { serialNumber: itemData.serialNumber, deletedAt: null }
-          });
-
-          if (existing) {
+          // Validate serial number uniqueness using centralized method
+          const exists = await this.checkSerialNumberExists(itemData.serialNumber, prisma);
+          if (exists) {
             throw new Error(`Serial number ${itemData.serialNumber} already exists`);
           }
 
@@ -1106,10 +1177,11 @@ class InventoryService {
               vendorId: po.vendorId,
               categoryId: itemData.categoryId,
               modelId: itemData.modelId,
-              price: formatAmount(itemData.price),
-              notes: itemData.notes || null,
+              purchasePrice: itemData.purchasePrice ? formatAmount(itemData.purchasePrice) : null,
+              sellingPrice: itemData.sellingPrice ? formatAmount(itemData.sellingPrice) : null,
+              purchaseDate: itemData.purchaseDate ? new Date(itemData.purchaseDate) : null,
               specifications: itemData.specifications || {},
-              inboundDate: new Date(),
+              inboundDate: itemData.inboundDate ? new Date(itemData.inboundDate) : new Date(),
               createdById: userId
             }
           });
@@ -1244,13 +1316,20 @@ class InventoryService {
   }
 
   /**
-   * Check if a serial number already exists
+   * Check if a serial number already exists (excluding soft-deleted items)
+   * Fast, unified method for duplicate checking across the entire system
    * @param {string} serialNumber - Serial number to check
+   * @param {object} prisma - Optional prisma instance (for use within transactions)
    * @returns {Promise<boolean>} - True if exists, false otherwise
    */
-  async checkSerialNumberExists(serialNumber) {
-    const item = await db.prisma.item.findUnique({
-      where: { serialNumber: serialNumber.trim() },
+  async checkSerialNumberExists(serialNumber, prisma = null) {
+    const client = prisma || db.prisma;
+
+    const item = await client.item.findFirst({
+      where: {
+        serialNumber: serialNumber.trim(),
+        deletedAt: null
+      },
       select: { id: true }
     });
 

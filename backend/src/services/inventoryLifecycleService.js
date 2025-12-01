@@ -91,8 +91,7 @@ class InventoryLifecycleService {
           invalidItems.push({
             id: item.id,
             serialNumber: item.serialNumber,
-            currentStatus: item.inventoryStatus,
-            reservedForId: item.reservedForId
+            currentStatus: item.inventoryStatus
           });
           continue;
         }
@@ -113,11 +112,7 @@ class InventoryLifecycleService {
         prisma.item.update({
           where: { id: item.id },
           data: {
-            inventoryStatus: 'Reserved',
-            reservedAt: new Date(),
-            reservedBy: userId,
-            reservedForType: 'Invoice',
-            reservedForId: invoiceId
+            inventoryStatus: 'Reserved'
           }
         })
       );
@@ -170,20 +165,15 @@ class InventoryLifecycleService {
   async releaseItemsForInvoiceCancellation(invoiceId, userId, tx = null) {
     // CRITICAL FIX: Support both standalone and within-transaction usage
     const executeOperation = async (prisma) => {
-      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
-      const itemIdsResult = await prisma.item.findMany({
-        where: {
-          reservedForType: 'Invoice',
-          reservedForId: invoiceId,
-          inventoryStatus: 'Reserved',
-          deletedAt: null
-        },
-        select: { id: true },
-        orderBy: { id: 'asc' }
+      // Fetch item IDs from InvoiceItem relationship
+      const invoiceItems = await prisma.invoiceItem.findMany({
+        where: { invoiceId },
+        select: { itemId: true },
+        orderBy: { itemId: 'asc' }
       });
 
-      if (itemIdsResult.length === 0) {
-        logger.warn(`No reserved items found for Invoice ${invoiceId}`);
+      if (invoiceItems.length === 0) {
+        logger.warn(`No items found for Invoice ${invoiceId}`);
         return {
           releasedItems: [],
           releaseCount: 0,
@@ -191,8 +181,10 @@ class InventoryLifecycleService {
         };
       }
 
+      const itemIds = invoiceItems.map(ii => ii.itemId);
+
       // Lock items in sorted order to prevent deadlocks
-      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      const sortedItemIds = [...itemIds].sort();
       for (const itemId of sortedItemIds) {
         await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
       }
@@ -201,6 +193,7 @@ class InventoryLifecycleService {
       const reservedItems = await prisma.item.findMany({
         where: {
           id: { in: sortedItemIds },
+          inventoryStatus: 'Reserved',
           deletedAt: null
         },
         orderBy: { id: 'asc' }
@@ -211,12 +204,7 @@ class InventoryLifecycleService {
         prisma.item.update({
           where: { id: item.id },
           data: {
-            inventoryStatus: 'Available',
-            reservedAt: null,
-            reservedBy: null,
-            reservedForType: null,
-            reservedForId: null,
-            reservationExpiry: null
+            inventoryStatus: 'Available'
           }
         })
       );
@@ -269,20 +257,15 @@ class InventoryLifecycleService {
   async markItemsAsSoldForInvoice(invoiceId, userId, tx = null) {
     // CRITICAL FIX: Support both standalone and within-transaction usage
     const executeOperation = async (prisma) => {
-      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
-      const itemIdsResult = await prisma.item.findMany({
-        where: {
-          reservedForType: 'Invoice',
-          reservedForId: invoiceId,
-          inventoryStatus: 'Reserved',
-          deletedAt: null
-        },
-        select: { id: true },
-        orderBy: { id: 'asc' }
+      // Fetch item IDs from InvoiceItem relationship
+      const invoiceItems = await prisma.invoiceItem.findMany({
+        where: { invoiceId },
+        select: { itemId: true },
+        orderBy: { itemId: 'asc' }
       });
 
-      if (itemIdsResult.length === 0) {
-        logger.warn(`No reserved items found for Invoice ${invoiceId}`);
+      if (invoiceItems.length === 0) {
+        logger.warn(`No items found for Invoice ${invoiceId}`);
         return {
           soldItems: [],
           saleCount: 0,
@@ -290,28 +273,32 @@ class InventoryLifecycleService {
         };
       }
 
+      const itemIds = invoiceItems.map(ii => ii.itemId);
+
       // Lock items in sorted order to prevent deadlocks
-      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      const sortedItemIds = [...itemIds].sort();
       for (const itemId of sortedItemIds) {
         await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
       }
 
-      // Now fetch the locked items with full data
+      // Now fetch the locked items with full data (only Reserved items)
       const reservedItems = await prisma.item.findMany({
         where: {
           id: { in: sortedItemIds },
+          inventoryStatus: 'Reserved',
           deletedAt: null
         },
         orderBy: { id: 'asc' }
       });
 
       // Update all items to Sold status
+      // CRITICAL: Keep physical status unchanged (should remain 'In Store' or current status)
       const updatePromises = reservedItems.map(item =>
         prisma.item.update({
           where: { id: item.id },
           data: {
             inventoryStatus: 'Sold',
-            status: 'Sold', // Also update physical status
+            // Physical status remains unchanged (In Store, In Lab, or Handover)
             outboundDate: new Date()
           }
         })
@@ -366,25 +353,32 @@ class InventoryLifecycleService {
   async reverseItemsFromSoldToReserved(invoiceId, userId, tx = null) {
     // Support both standalone and within-transaction usage
     const executeOperation = async (prisma) => {
-      // Find all items sold for this invoice
-      const soldItems = await prisma.item.findMany({
-        where: {
-          reservedForType: 'Invoice',
-          reservedForId: invoiceId,
-          inventoryStatus: 'Sold',
-          deletedAt: null
-        },
-        orderBy: { id: 'asc' }
+      // Fetch item IDs from InvoiceItem relationship
+      const invoiceItems = await prisma.invoiceItem.findMany({
+        where: { invoiceId },
+        select: { itemId: true }
       });
 
-      if (soldItems.length === 0) {
-        logger.warn(`No sold items found for Invoice ${invoiceId} to reverse`);
+      if (invoiceItems.length === 0) {
+        logger.warn(`No items found for Invoice ${invoiceId}`);
         return {
           reversedItems: [],
           reversalCount: 0,
           invoiceId
         };
       }
+
+      const itemIds = invoiceItems.map(ii => ii.itemId);
+
+      // Find all items sold for this invoice
+      const soldItems = await prisma.item.findMany({
+        where: {
+          id: { in: itemIds },
+          inventoryStatus: 'Sold',
+          deletedAt: null
+        },
+        orderBy: { id: 'asc' }
+      });
 
       // Reverse items back to Reserved status
       const updatePromises = soldItems.map(item =>
@@ -447,44 +441,43 @@ class InventoryLifecycleService {
   async markItemsAsDeliveredForInvoice(invoiceId, userId, deliveryInfo = {}, tx = null) {
     // CRITICAL FIX: Support both standalone and within-transaction usage
     const executeOperation = async (prisma) => {
-      // CRITICAL FIX: First fetch item IDs, then acquire locks to prevent race conditions
-      const itemIdsResult = await prisma.item.findMany({
-        where: {
-          reservedForType: 'Invoice',
-          reservedForId: invoiceId,
-          inventoryStatus: 'Sold',
-          deletedAt: null
-        },
-        select: { id: true },
-        orderBy: { id: 'asc' }
+      // Fetch item IDs from InvoiceItem relationship
+      const invoiceItems = await prisma.invoiceItem.findMany({
+        where: { invoiceId },
+        select: { itemId: true },
+        orderBy: { itemId: 'asc' }
       });
 
-      if (itemIdsResult.length === 0) {
-        throw new Error(`No sold items found for Invoice ${invoiceId}`);
+      if (invoiceItems.length === 0) {
+        throw new Error(`No items found for Invoice ${invoiceId}`);
       }
 
+      const itemIds = invoiceItems.map(ii => ii.itemId);
+
       // Lock items in sorted order to prevent deadlocks
-      const sortedItemIds = itemIdsResult.map(i => i.id).sort();
+      const sortedItemIds = [...itemIds].sort();
       for (const itemId of sortedItemIds) {
         await prisma.$queryRaw`SELECT * FROM "Item" WHERE id = ${itemId} FOR UPDATE NOWAIT`;
       }
 
-      // Now fetch the locked items with full data
+      // Now fetch the locked items with full data (only Sold items)
       const soldItems = await prisma.item.findMany({
         where: {
           id: { in: sortedItemIds },
+          inventoryStatus: 'Sold',
           deletedAt: null
         },
         orderBy: { id: 'asc' }
       });
 
       // Update all items to Delivered status
+      // CRITICAL: Physical status must be 'Handover' (not 'Delivered')
       const updatePromises = soldItems.map(item =>
         prisma.item.update({
           where: { id: item.id },
           data: {
             inventoryStatus: 'Delivered',
-            status: 'Delivered',
+            status: 'Handover', // Physical status: Handover (valid: In Store, In Lab, Handover)
             handoverDate: new Date(),
             handoverBy: deliveryInfo.handoverBy || userId,
             handoverTo: deliveryInfo.handoverTo,
@@ -539,10 +532,26 @@ class InventoryLifecycleService {
    * @returns {Promise<Object>} Status report
    */
   async getInvoiceInventoryStatus(invoiceId) {
+    // Fetch item IDs from InvoiceItem relationship
+    const invoiceItems = await db.prisma.invoiceItem.findMany({
+      where: { invoiceId },
+      select: { itemId: true }
+    });
+
+    if (invoiceItems.length === 0) {
+      return {
+        invoiceId,
+        totalItems: 0,
+        statusSummary: {},
+        items: []
+      };
+    }
+
+    const itemIds = invoiceItems.map(ii => ii.itemId);
+
     const items = await db.prisma.item.findMany({
       where: {
-        reservedForType: 'Invoice',
-        reservedForId: invoiceId,
+        id: { in: itemIds },
         deletedAt: null
       },
       include: {
@@ -576,70 +585,76 @@ class InventoryLifecycleService {
         inventoryStatus: item.inventoryStatus,
         status: item.status,
         description: `${item.category.name} - ${item.model.company.name} ${item.model.name}`,
-        reservedAt: item.reservedAt,
         lastStatusChange: item.statusTracking[0]?.changeDate || item.updatedAt
       }))
     };
   }
 
   /**
-   * Cleanup expired temporary reservations
+   * Cleanup orphaned reserved items (no longer needed with simplified reservation)
+   * Reserved items are always tied to invoices via InvoiceItem relationship
    * @returns {Promise<Object>} Cleanup result
    */
-  async cleanupExpiredReservations() {
+  async cleanupOrphanedReservations() {
     return await db.transaction(async (prisma) => {
-      const expiredItems = await prisma.item.findMany({
+      // Find reserved items that don't have a corresponding InvoiceItem entry
+      const allReservedItems = await prisma.item.findMany({
         where: {
           inventoryStatus: 'Reserved',
-          reservationExpiry: {
-            lte: new Date()
-          },
           deletedAt: null
-        }
+        },
+        select: { id: true }
       });
 
-      if (expiredItems.length === 0) {
-        return { cleanedCount: 0, expiredItems: [] };
+      if (allReservedItems.length === 0) {
+        return { cleanedCount: 0, orphanedItems: [] };
       }
 
-      // Update expired items back to Available
-      const updatePromises = expiredItems.map(item =>
-        prisma.item.update({
-          where: { id: item.id },
-          data: {
-            inventoryStatus: 'Available',
-            reservedAt: null,
-            reservedBy: null,
-            reservedForType: null,
-            reservedForId: null,
-            reservationExpiry: null
-          }
-        })
-      );
+      const reservedItemIds = allReservedItems.map(i => i.id);
 
-      const cleanedItems = await Promise.all(updatePromises);
+      // Find which ones have invoice items
+      const itemsWithInvoices = await prisma.invoiceItem.findMany({
+        where: { itemId: { in: reservedItemIds } },
+        select: { itemId: true },
+        distinct: ['itemId']
+      });
+
+      const itemsWithInvoiceIds = new Set(itemsWithInvoices.map(ii => ii.itemId));
+
+      // Orphaned items are those without invoice items
+      const orphanedItemIds = reservedItemIds.filter(id => !itemsWithInvoiceIds.has(id));
+
+      if (orphanedItemIds.length === 0) {
+        return { cleanedCount: 0, orphanedItems: [] };
+      }
+
+      // Update orphaned items back to Available
+      await prisma.item.updateMany({
+        where: { id: { in: orphanedItemIds } },
+        data: { inventoryStatus: 'Available' }
+      });
 
       // Record cleanup history
-      const historyPromises = expiredItems.map(item =>
+      const historyPromises = orphanedItemIds.map(itemId =>
         prisma.inventoryStatusHistory.create({
           data: {
-            itemId: item.id,
+            itemId,
             fromStatus: 'Reserved',
             toStatus: 'Available',
             changeReason: InventoryLifecycleService.CHANGE_REASONS.SYSTEM_CLEANUP,
             changedBy: 'system',
-            notes: `Expired reservation cleanup`
+            notes: `Orphaned reservation cleanup (no invoice link)`
           }
         })
       );
 
       await Promise.all(historyPromises);
 
-      logger.info(`Cleaned up ${expiredItems.length} expired reservations`);
+      logger.info(`Cleaned up ${orphanedItemIds.length} orphaned reservations`);
 
       return {
-        cleanedCount: expiredItems.length,
-        expiredItems: cleanedItems
+        cleanedCount: orphanedItemIds.length,
+        orphanedItems: orphanedItemIds
       };
     });
   }
@@ -755,11 +770,12 @@ class InventoryLifecycleService {
       this.validateStatusTransition(item.inventoryStatus, 'Returned');
 
       // Update item to Returned status (terminal state)
+      // CRITICAL: Physical status stays 'In Lab' (valid: In Store, In Lab, Handover)
       const updatedItem = await prisma.item.update({
         where: { id: itemId },
         data: {
           inventoryStatus: 'Returned',
-          status: 'Returned',
+          // Physical status remains 'In Lab' (item stays in lab as returned)
           repaired: 'Returned'
         },
         include: {

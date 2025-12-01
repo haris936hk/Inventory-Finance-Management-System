@@ -61,10 +61,15 @@ const RecordPayment = () => {
   const paymentMutation = useMutation(
     (data) => axios.post('/finance/payments', data),
     {
-      onSuccess: () => {
+      onSuccess: (response, variables) => {
         message.success('Payment recorded successfully!');
         queryClient.invalidateQueries(['payments']);
         queryClient.invalidateQueries(['customer-invoices']);
+        queryClient.invalidateQueries('customers'); // Refresh customer list balances
+        // Invalidate specific customer query if customerId was provided
+        if (variables.customerId) {
+          queryClient.invalidateQueries(['customer', variables.customerId]);
+        }
         navigate('/app/finance/payments');
       },
       onError: (error) => {

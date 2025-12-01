@@ -71,6 +71,18 @@ const updateCustomer = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Delete customer (soft delete)
+// @route   DELETE /api/finance/customers/:id
+// @access  Private
+const deleteCustomer = asyncHandler(async (req, res) => {
+  await customerService.deleteCustomer(req.params.id);
+
+  res.json({
+    success: true,
+    message: 'Customer deleted successfully'
+  });
+});
+
 // @desc    Get customer ledger
 // @route   GET /api/finance/customers/:id/ledger
 // @access  Private
@@ -173,16 +185,8 @@ const updateInvoiceStatus = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/invoices/:id/cancel
 // @access  Private
 const cancelInvoice = asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-
-  if (!reason || reason.trim() === '') {
-    res.status(400);
-    throw new Error('Cancellation reason is required');
-  }
-
   const cancelled = await invoiceService.cancelInvoice(
     req.params.id,
-    reason.trim(),
     req.user.id
   );
 
@@ -284,16 +288,8 @@ const getPayments = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/payments/:id/void
 // @access  Private
 const voidCustomerPayment = asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-
-  if (!reason || reason.trim() === '') {
-    res.status(400);
-    throw new Error('Void reason is required');
-  }
-
   const voided = await customerPaymentService.voidPayment(
     req.params.id,
-    reason.trim(),
     req.user.id
   );
 
@@ -399,6 +395,22 @@ const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Cancel purchase order
+// @route   POST /api/finance/purchase-orders/:id/cancel
+// @access  Private
+const cancelPurchaseOrder = asyncHandler(async (req, res) => {
+  const purchaseOrder = await purchaseOrderService.cancelPurchaseOrder(
+    req.params.id,
+    req.user.id
+  );
+
+  res.json({
+    success: true,
+    data: purchaseOrder,
+    message: 'Purchase Order cancelled successfully'
+  });
+});
+
 // @desc    Get inventory items linked to a purchase order
 // @route   GET /api/finance/purchase-orders/:id/items
 // @access  Private
@@ -476,13 +488,10 @@ const updateVendorBill = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/vendor-bills/:id/cancel
 // @access  Private
 const cancelVendorBill = asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-
-  if (!reason) {
-    throw new ValidationError('Cancellation reason is required');
-  }
-
-  const bill = await billService.cancelBill(req.params.id, reason, req.user.id);
+  const bill = await billService.cancelBill(
+    req.params.id,
+    req.user.id
+  );
 
   res.json({
     success: true,
@@ -574,13 +583,7 @@ const recordVendorPayment = asyncHandler(async (req, res) => {
 // @route   POST /api/finance/vendor-payments/:id/void
 // @access  Private
 const voidVendorPayment = asyncHandler(async (req, res) => {
-  const { reason } = req.body;
-
-  if (!reason) {
-    throw new ValidationError('Void reason is required');
-  }
-
-  const payment = await paymentService.voidPayment(req.params.id, reason, req.user.id);
+  const payment = await paymentService.voidPayment(req.params.id, req.user.id);
 
   res.json({
     success: true,
@@ -686,6 +689,7 @@ module.exports = {
   getCustomer,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
   getCustomerLedger,
   // Vendors
   getVendorLedger,
@@ -706,6 +710,7 @@ module.exports = {
   getPurchaseOrder,
   updatePurchaseOrder,
   updatePurchaseOrderStatus,
+  cancelPurchaseOrder,
   getPurchaseOrderItems,
   // Vendor Bills
   getVendorBills,

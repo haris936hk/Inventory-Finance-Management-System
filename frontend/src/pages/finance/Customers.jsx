@@ -6,7 +6,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, EyeOutlined, PhoneOutlined,
-  MailOutlined
+  MailOutlined, DeleteOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
@@ -57,6 +57,20 @@ const Customers = () => {
       onError: (error) => {
         const operation = editingCustomer ? 'update' : 'create';
         const errorMessage = getErrorMessage(error, 'customer', operation);
+        message.error(errorMessage);
+      }
+    }
+  );
+
+  const deleteMutation = useMutation(
+    (id) => axios.delete(`/finance/customers/${id}`),
+    {
+      onSuccess: () => {
+        message.success('Customer deleted successfully');
+        queryClient.invalidateQueries('customers');
+      },
+      onError: (error) => {
+        const errorMessage = getErrorMessage(error, 'customer', 'delete');
         message.error(errorMessage);
       }
     }
@@ -143,6 +157,17 @@ const Customers = () => {
         <Space>
           <Button icon={<EyeOutlined />} onClick={() => handleView(record)} />
           <Button icon={<EditOutlined />} onClick={() => handleEdit(record)} />
+          <Button
+            icon={<DeleteOutlined />}
+            danger
+            onClick={() => {
+              Modal.confirm({
+                title: 'Delete Customer',
+                content: 'Are you sure? This will affect all related data.',
+                onOk: () => deleteMutation.mutate(record.id)
+              });
+            }}
+          />
         </Space>
       )
     }
@@ -244,16 +269,18 @@ const Customers = () => {
           </Form.Item>
 
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={editingCustomer ? 24 : 12}>
               <Form.Item label="Credit Limit (PKR)" name="creditLimit" initialValue={0} rules={creditLimitRules}>
                 <InputNumber style={{ width: '100%' }} precision={2} min={0} step={0.01} placeholder="0 for no limit" />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item label="Opening Balance (PKR)" name="openingBalance" initialValue={0}>
-                <InputNumber style={{ width: '100%' }} precision={2} min={0} step={0.01} placeholder="0.00" />
-              </Form.Item>
-            </Col>
+            {!editingCustomer && (
+              <Col span={12}>
+                <Form.Item label="Opening Balance (PKR)" name="openingBalance" initialValue={0}>
+                  <InputNumber style={{ width: '100%' }} precision={2} min={0} step={0.01} placeholder="0.00" />
+                </Form.Item>
+              </Col>
+            )}
           </Row>
 
           <div style={{ textAlign: 'right' }}>

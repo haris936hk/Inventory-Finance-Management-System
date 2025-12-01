@@ -208,11 +208,11 @@ const CreatePurchaseOrder = () => {
                 >
                   <InputNumber
                     style={{ width: '100%' }}
-                    precision={2}
+                    precision={0}
                     min={0}
                     max={100}
-                    step={0.01}
-                    placeholder="0.00"
+                    step={1}
+                    placeholder="0"
                     onChange={() => {
                       setTimeout(() => calculateTotals(), 0);
                     }}

@@ -4,11 +4,10 @@ import {
   Card, Table, Button, Space, Tag, Input, DatePicker, Select,
   Statistic, Row, Col, Typography, Modal, message
 } from 'antd';
-const { TextArea } = Input;
 import {
-  PlusOutlined, CreditCardOutlined, CalendarOutlined,
-  UserOutlined, DollarOutlined, FilterOutlined, DeleteOutlined,
-  EyeOutlined
+  PlusOutlined, DollarCircleOutlined, UserOutlined,
+  BankOutlined, CreditCardOutlined, MoneyCollectOutlined,
+  StopOutlined, ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
@@ -20,37 +19,55 @@ import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
 const { RangePicker } = DatePicker;
-const { Text } = Typography;
 
 const Payments = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [searchText, setSearchText] = useState('');
-  const [dateRange, setDateRange] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [filters, setFilters] = useState({});
+
 
   // Fetch payments
   const { data: paymentsData, isLoading } = useQuery(
-    ['payments', searchText, dateRange, paymentMethod],
+    ['payments', filters],
     async () => {
-      const params = {};
-      if (searchText) params.search = searchText;
-      if (dateRange && dateRange.length === 2) {
-        params.startDate = dateRange[0].format('YYYY-MM-DD');
-        params.endDate = dateRange[1].format('YYYY-MM-DD');
-      }
-      if (paymentMethod) params.method = paymentMethod;
-
-      const response = await axios.get('/finance/payments', { params });
+      const response = await axios.get('/finance/payments', { params: filters });
       return response.data.data;
     }
   );
 
-  const payments = paymentsData || [];
+  // Fetch customers for filter
+  const { data: customers } = useQuery('customers', async () => {
+    const response = await axios.get('/finance/customers');
+    return response.data.data;
+  });
+
+  // Calculate statistics
+  const statistics = React.useMemo(() => {
+    if (!paymentsData) return { total: 0, cash: 0, bank: 0, cheque: 0, count: 0 };
+
+    return paymentsData.reduce((acc, payment) => {
+      const amount = parseAmount(payment.amount);
+      acc.total = addAmounts(acc.total, amount);
+      acc.count++;
+
+      switch (payment.method) {
+        case 'Cash':
+          acc.cash = addAmounts(acc.cash, amount);
+          break;
+        case 'Bank Transfer':
+          acc.bank = addAmounts(acc.bank, amount);
+          break;
+        case 'Cheque':
+          acc.cheque = addAmounts(acc.cheque, amount);
+          break;
+      }
+      return acc;
+    }, { total: 0, cash: 0, bank: 0, cheque: 0, count: 0 });
+  }, [paymentsData]);
 
   // Void payment mutation
   const voidPaymentMutation = useMutation(
-    ({ id, reason }) => axios.post(`/finance/payments/${id}/void`, { reason }),
+    ({ id }) => axios.post(`/finance/payments/${id}/void`),
     {
       onSuccess: () => {
         message.success('Payment voided successfully');
@@ -65,50 +82,41 @@ const Payments = () => {
     }
   );
 
-  // Calculate stats from the payments data
-  const stats = {
-    totalAmount: payments.reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0),
-    totalCount: payments.length,
-    todayAmount: payments
-      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'day'))
-      .reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0),
-    monthAmount: payments
-      .filter(payment => dayjs(payment.paymentDate).isSame(dayjs(), 'month'))
-      .reduce((sum, payment) => addAmounts(sum, parseAmount(payment.amount)), 0)
+  const getMethodColor = (method) => {
+    const colors = {
+      'Cash': 'green',
+      'Bank Transfer': 'blue',
+      'Cheque': 'orange',
+      'Credit Card': 'purple',
+      'Online': 'cyan'
+    };
+    return colors[method] || 'default';
   };
 
-  const paymentMethodColors = {
-    'Cash': 'green',
-    'Bank Transfer': 'blue',
-    'Cheque': 'orange',
-    'Credit Card': 'purple',
-    'Online': 'cyan'
+  const getMethodIcon = (method) => {
+    const icons = {
+      'Cash': <MoneyCollectOutlined />,
+      'Bank Transfer': <BankOutlined />,
+      'Cheque': <CreditCardOutlined />,
+      'Credit Card': <CreditCardOutlined />,
+      'Online': <DollarCircleOutlined />
+    };
+    return icons[method] || <DollarCircleOutlined />;
   };
 
   const handleVoidPayment = (record) => {
-    let reason = '';
     Modal.confirm({
       title: 'Void Payment',
       content: (
         <div>
           <p>Are you sure you want to void payment <strong>{record.paymentNumber}</strong>?</p>
-          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
-            ⚠️ This will reverse all financial impacts. This action cannot be undone.
+          <p style={{ color: '#ff4d4f', marginTop: 8 }}>
+            <ExclamationCircleOutlined /> This will reverse the payment amount from the invoice and customer balance.
           </p>
-          <TextArea
-            placeholder="Enter void reason (required)"
-            rows={3}
-            onChange={(e) => { reason = e.target.value; }}
-            style={{ marginTop: 12 }}
-          />
         </div>
       ),
       onOk: () => {
-        if (!reason || reason.trim() === '') {
-          message.error('Please provide a void reason');
-          return Promise.reject();
-        }
-        return voidPaymentMutation.mutateAsync({ id: record.id, reason: reason.trim() });
+        return voidPaymentMutation.mutateAsync({ id: record.id });
       },
       okText: 'Void Payment',
       okButtonProps: { danger: true }
@@ -117,124 +125,137 @@ const Payments = () => {
 
   const columns = [
     {
-      title: 'Payment ID',
+      title: 'Payment #',
       dataIndex: 'paymentNumber',
       key: 'paymentNumber',
+      fixed: 'left',
+      width: 75,
       render: (text, record) => (
         <Space direction="vertical" size="small">
-          <Text strong style={{ color: record.voidedAt ? '#999' : '#1890ff' }}>
+          <span style={{ fontWeight: 'bold', color: record.voidedAt ? '#999' : '#1890ff' }}>
             {text}
-          </Text>
+          </span>
           {record.voidedAt && <Tag color="red" size="small">VOIDED</Tag>}
         </Space>
-      )
+      ),
     },
     {
       title: 'Date',
       dataIndex: 'paymentDate',
       key: 'paymentDate',
-      render: (date) => dayjs(date).format('DD/MM/YYYY')
+      width: 50,
+      render: (date) => new Date(date).toLocaleDateString('en-GB'),
     },
     {
       title: 'Customer',
       dataIndex: 'customer',
       key: 'customer',
+      width: 60,
       render: (customer) => (
-        <div>
-          <div>{customer?.name}</div>
-          <Text type="secondary" style={{ fontSize: '12px' }}>
-            {customer?.phone}
-          </Text>
-        </div>
-      )
+        <Space>
+          <UserOutlined />
+          <span>{customer?.name}</span>
+        </Space>
+      ),
     },
     {
-      title: 'Invoice',
+      title: 'Invoice Reference',
       dataIndex: 'invoice',
       key: 'invoice',
-      render: (invoice) => invoice?.invoiceNumber || '-'
+      width: 65,
+      render: (invoice) => invoice ? (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => navigate(`/app/finance/invoices/${invoice.id}`)}
+        >
+          {invoice.invoiceNumber}
+        </Button>
+      ) : <Tag color="blue">General Payment</Tag>,
     },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
+      width: 50,
+      align: 'right',
       render: (amount, record) => (
-        <Text
-          strong
-          style={{
-            color: record.voidedAt ? '#999' : '#52c41a',
-            textDecoration: record.voidedAt ? 'line-through' : 'none'
-          }}
-        >
-          {formatPKR(amount)}
-        </Text>
+        <span style={{
+          fontWeight: 'bold',
+          color: record.voidedAt ? '#999' : '#52c41a',
+          textDecoration: record.voidedAt ? 'line-through' : 'none'
+        }}>
+          {formatPKR(Number(amount))}
+        </span>
       ),
-      sorter: (a, b) => a.amount - b.amount
     },
     {
       title: 'Method',
       dataIndex: 'method',
       key: 'method',
+      width: 40,
       render: (method) => (
-        <Tag color={paymentMethodColors[method] || 'default'}>
-          {method}
-        </Tag>
-      )
+        <Space>
+          {getMethodIcon(method)}
+          <Tag color={getMethodColor(method)}>{method}</Tag>
+        </Space>
+      ),
     },
     {
       title: 'Reference',
       dataIndex: 'reference',
       key: 'reference',
-      render: (ref) => ref || '-'
+      width: 70,
+      render: (reference) => reference || '-',
+    },
+    {
+      title: 'Notes',
+      dataIndex: 'notes',
+      key: 'notes',
+      width: 70,
+      render: (notes) => notes ? (
+        <span title={notes}>
+          {notes.length > 50 ? `${notes.substring(0, 50)}...` : notes}
+        </span>
+      ) : '-',
     },
     {
       title: 'Recorded By',
       dataIndex: 'recordedBy',
       key: 'recordedBy',
-      render: (recordedBy) => recordedBy?.fullName || 'Unknown'
+      width: 90,
+      render: (recordedBy) => recordedBy?.fullName || 'Unknown',
     },
     {
       title: 'Actions',
       key: 'actions',
+      fixed: 'right',
+      width: 60,
       render: (_, record) => (
-        <Space>
-          <Button
-            icon={<EyeOutlined />}
-            size="small"
-            onClick={() => navigate(`/app/finance/payments/${record.id}`)}
-          />
-          <Button
-            icon={<DeleteOutlined />}
-            size="small"
-            danger
-            onClick={() => handleVoidPayment(record)}
-            disabled={record.voidedAt || record.deletedAt}
-          />
-        </Space>
-      )
-    }
+        <Button
+          size="small"
+          danger
+          icon={<StopOutlined />}
+          onClick={() => handleVoidPayment(record)}
+          disabled={!!record.voidedAt}
+        >
+          
+        </Button>
+      ),
+    },
   ];
 
   return (
-    <div>
-      {/* Stats Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+    <>
+      {/* Statistics Cards */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
               title="Total Payments"
-              value={stats.totalCount}
-              prefix={<CreditCardOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Total Amount"
-              value={stats.totalAmount}
+              value={statistics.total}
               prefix="PKR"
+              precision={0}
               valueStyle={{ color: '#52c41a' }}
             />
           </Card>
@@ -242,104 +263,121 @@ const Payments = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="Today's Payments"
-              value={stats.todayAmount}
+              title="Cash Payments"
+              value={statistics.cash}
               prefix="PKR"
-              valueStyle={{ color: '#fa8c16' }}
+              precision={0}
+              valueStyle={{ color: '#1890ff' }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="This Month"
-              value={stats.monthAmount}
+              title="Bank Transfers"
+              value={statistics.bank}
               prefix="PKR"
+              precision={0}
               valueStyle={{ color: '#722ed1' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="Total Count"
+              value={statistics.count}
+              valueStyle={{ color: '#fa8c16' }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* Main Table */}
+      {/* Main Table Card */}
       <Card
-        title="Payment Records"
+        title={
+          <Space>
+            <DollarCircleOutlined />
+            Customer Payments
+          </Space>
+        }
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => navigate('/app/finance/payments/record')}
-          >
-            Record Payment
-          </Button>
+          <Space>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/app/finance/payments/record')}
+            >
+              Record Payment
+            </Button>
+          </Space>
         }
       >
         {/* Filters */}
-        <div style={{ marginBottom: 16 }}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={8}>
-              <Search
-                placeholder="Search by customer or payment ID..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                allowClear
-              />
-            </Col>
-            <Col xs={24} sm={6}>
-              <RangePicker
-                value={dateRange}
-                onChange={setDateRange}
-                placeholder={['Start Date', 'End Date']}
-                style={{ width: '100%' }}
-              />
-            </Col>
-            <Col xs={24} sm={6}>
-              <Select
-                placeholder="Payment Method"
-                value={paymentMethod}
-                onChange={setPaymentMethod}
-                allowClear
-                style={{ width: '100%' }}
-              >
-                <Select.Option value="Cash">Cash</Select.Option>
-                <Select.Option value="Bank Transfer">Bank Transfer</Select.Option>
-                <Select.Option value="Cheque">Cheque</Select.Option>
-                <Select.Option value="Credit Card">Credit Card</Select.Option>
-                <Select.Option value="Online">Online</Select.Option>
-              </Select>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Button
-                icon={<FilterOutlined />}
-                onClick={() => {
-                  setSearchText('');
-                  setDateRange(null);
-                  setPaymentMethod('');
-                }}
-              >
-                Clear
-              </Button>
-            </Col>
-          </Row>
-        </div>
+        <Row gutter={16} style={{ marginBottom: 16 }}>
+          <Col xs={24} sm={8} md={6}>
+            <Search
+              placeholder="Search payment number..."
+              onSearch={(value) => setFilters({...filters, search: value})}
+              style={{ width: '100%' }}
+            />
+          </Col>
+          <Col xs={24} sm={8} md={6}>
+            <Select
+              placeholder="All Customers"
+              allowClear
+              style={{ width: '100%' }}
+              onChange={(value) => setFilters({...filters, customerId: value})}
+            >
+              {customers?.map(customer => (
+                <Select.Option key={customer.id} value={customer.id}>
+                  {customer.name}
+                </Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={8} md={6}>
+            <Select
+              placeholder="All Methods"
+              allowClear
+              style={{ width: '100%' }}
+              onChange={(value) => setFilters({...filters, method: value})}
+            >
+              <Select.Option value="Cash">Cash</Select.Option>
+              <Select.Option value="Bank Transfer">Bank Transfer</Select.Option>
+              <Select.Option value="Cheque">Cheque</Select.Option>
+              <Select.Option value="Credit Card">Credit Card</Select.Option>
+              <Select.Option value="Online">Online</Select.Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={8} md={6}>
+            <RangePicker
+              style={{ width: '100%' }}
+              onChange={(dates) => {
+                setFilters({
+                  ...filters,
+                  dateFrom: dates?.[0]?.format('YYYY-MM-DD'),
+                  dateTo: dates?.[1]?.format('YYYY-MM-DD')
+                });
+              }}
+            />
+          </Col>
+        </Row>
 
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={payments}
+          dataSource={paymentsData}
           loading={isLoading}
+          scroll={{ x: 1250 }}
           pagination={{
-            total: paymentsData?.total,
-            pageSize: 20,
             showSizeChanger: true,
             showQuickJumper: true,
-            showTotal: (total, range) =>
-              `${range[0]}-${range[1]} of ${total} payments`
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
           }}
-          scroll={{ x: 800 }}
         />
       </Card>
-    </div>
+    </>
   );
 };
 

@@ -1,7 +1,7 @@
 // ========== src/App.js ==========
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from 'react-query';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider, useQueryClient } from 'react-query';
 import { ConfigProvider, message } from 'antd';
 import { useAuthStore } from './stores/authStore';
 
@@ -94,6 +94,20 @@ axios.interceptors.response.use(
   }
 );
 
+// Component to handle route changes and invalidate cache
+function RouteChangeHandler() {
+  const location = useLocation();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    // Invalidate all queries when route changes
+    queryClient.invalidateQueries();
+    console.log('Cache invalidated on route change:', location.pathname);
+  }, [location.pathname, queryClient]);
+
+  return null;
+}
+
 function App() {
   const { checkAuth } = useAuthStore();
 
@@ -123,6 +137,7 @@ function App() {
     <ConfigProvider {...antdConfig}>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          <RouteChangeHandler />
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<PublicLayout />}>

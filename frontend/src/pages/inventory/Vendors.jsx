@@ -194,11 +194,11 @@ const Vendors = () => {
           form={form}
           layout="vertical"
           onFinish={(values) => {
-            // Convert balance fields to numbers for backend
+            // Convert opening balance to number for backend
             const processedValues = {
               ...values,
-              openingBalance: values.openingBalance ? parseAmount(values.openingBalance) : 0,
-              currentBalance: values.currentBalance ? parseAmount(values.currentBalance) : 0
+              openingBalance: values.openingBalance ? parseAmount(values.openingBalance) : 0
+              // NOTE: currentBalance removed - VendorLedger is the single source of truth
             };
             vendorMutation.mutate(processedValues);
           }}
@@ -246,7 +246,7 @@ const Vendors = () => {
             <Input.TextArea rows={2} placeholder="Complete address" maxLength={500} showCount />
           </Form.Item>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: editingVendor ? '1fr 1fr' : '1fr 1fr 1fr', gap: 16 }}>
             <Form.Item label="Tax Number" name="taxNumber">
               <Input placeholder="e.g., 12345-6789012-3" maxLength={50} />
             </Form.Item>
@@ -255,21 +255,15 @@ const Vendors = () => {
               <Input placeholder="e.g., Net 30, Due on Receipt" maxLength={100} />
             </Form.Item>
 
-            <Form.Item
-              label="Opening Balance (PKR)"
-              name="openingBalance"
-              rules={optionalAmountRules}
-            >
-              <InputNumber style={{ width: '100%' }} precision={2} min={0} max={VALIDATION.MAX_AMOUNT} step={0.01} placeholder="0.00" />
-            </Form.Item>
-
-            <Form.Item
-              label="Current Balance (PKR)"
-              name="currentBalance"
-              rules={optionalAmountRules}
-            >
-              <InputNumber style={{ width: '100%' }} precision={2} min={0} max={VALIDATION.MAX_AMOUNT} step={0.01} placeholder="0.00" />
-            </Form.Item>
+            {!editingVendor && (
+              <Form.Item
+                label="Opening Balance (PKR)"
+                name="openingBalance"
+                rules={optionalAmountRules}
+              >
+                <InputNumber style={{ width: '100%' }} precision={2} min={0} max={VALIDATION.MAX_AMOUNT} step={0.01} placeholder="0.00" />
+              </Form.Item>
+            )}
           </div>
 
           <div style={{ textAlign: 'right' }}>

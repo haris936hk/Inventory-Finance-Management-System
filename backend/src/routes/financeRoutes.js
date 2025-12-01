@@ -14,7 +14,8 @@ router.route('/customers')
 
 router.route('/customers/:id')
   .get(hasPermission(['finance.view']), financeController.getCustomer)
-  .put(hasPermission(['finance.edit']), financeController.updateCustomer);
+  .put(hasPermission(['finance.edit']), financeController.updateCustomer)
+  .delete(hasPermission(['finance.delete']), financeController.deleteCustomer);
 
 router.get('/customers/:id/statement',
   hasPermission(['finance.view']),
@@ -83,6 +84,11 @@ router.route('/purchase-orders/:id')
 router.put('/purchase-orders/:id/status',
   hasPermission(['finance.edit']),
   financeController.updatePurchaseOrderStatus
+);
+
+router.post('/purchase-orders/:id/cancel',
+  hasPermission(['finance.edit']),
+  financeController.cancelPurchaseOrder
 );
 
 router.get('/purchase-orders/:id/items',

@@ -2,6 +2,7 @@
 // Using PostgreSQL via Supabase
 
 
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,6 +12,7 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+        
         
 
 // ==================== USER & ACCESS MANAGEMENT ====================
@@ -43,7 +45,6 @@ model User {
   paymentsVoided         Payment[]                @relation("PaymentsVoided")
   vendorPaymentsCreated  VendorPayment[]          @relation("VendorPaymentsCreated")
   inventoryMovements     InventoryMovement[]      @relation("InventoryMovements")
-  itemReservations       ItemReservation[]        @relation("ReservedByUser")
   inventoryStatusChanges InventoryStatusHistory[] @relation("InventoryStatusChanges")
   poBillAudits           POBillAudit[]            @relation("POBillAudits")
   invoicePaymentAudits   InvoicePaymentAudit[]    @relation("InvoicePaymentAudits")
@@ -145,16 +146,10 @@ model Item {
   condition    String @default("New") // "New", "Used"
 
   // Enhanced inventory status tracking
-  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered", "Under Repair"
-  status          String // "In Store", "In Lab", "Handover" (physical location)
+  inventoryStatus String  @default("Available") // "Available", "Reserved", "Sold", "Delivered", "Under Repair", "Returned"
+  status          String  @default("In Store") // "In Store", "In Lab", "Handover" (physical location)
   statusHistory   Json[] // Array of {status, date, userId, notes}
   repaired        String? // "No", "Yes", "Returned" (only for "In Lab" items)
-
-  // Reservation tracking (when inventoryStatus = "Reserved")
-  reservedAt      DateTime? // When the item was reserved
-  reservedBy      String? // User ID who reserved the item
-  reservedForType String? // Type of document: "Invoice", "PurchaseOrder", etc.
-  reservedForId   String? // ID of the document the item is reserved for
 
   // Specifications (hybrid approach - JSON for flexibility)
   specifications Json? // {voltage: "48V", cells: 16, bms: "Supported", ...}
@@ -198,9 +193,6 @@ model Item {
   // Inventory movements and status tracking
   movements      InventoryMovement[]
   statusTracking InventoryStatusHistory[]
-
-  // Reservations
-  reservations ItemReservation[] @relation("ItemReservations")
 
   // User tracking
   createdById String
@@ -258,9 +250,8 @@ model Vendor {
   taxNumber     String? // Tax registration number
   paymentTerms  String? // "Net 30", "Due on Receipt", etc.
 
-  // Financial
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+  // Financial - currentBalance removed, use VendorLedger as single source of truth
+  openingBalance Decimal @default(0) @db.Decimal(18, 4)
 
   // Relationships
   items          Item[]
@@ -287,10 +278,9 @@ model Customer {
   nic     String? // National ID
   company String? // Company name
 
-  // Financial
-  creditLimit    Decimal @default(0) @db.Decimal(10, 2)
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
+  // Financial - currentBalance removed, use CustomerLedger as single source of truth
+  creditLimit    Decimal @default(0) @db.Decimal(18, 4)
+  openingBalance Decimal @default(0) @db.Decimal(18, 4)
 
   // Relationships
   items         Item[]
@@ -304,59 +294,6 @@ model Customer {
 
   @@index([phone])
   @@index([nic])
-  @@index([deletedAt])
-}
-
-// ==================== FINANCIAL - GENERAL LEDGER ====================
-
-model Account {
-  id       String    @id @default(uuid())
-  code     String    @unique // "1000", "1100", etc.
-  name     String // "Cash", "Accounts Receivable", etc.
-  type     String // "Asset", "Liability", "Income", "Expense", "Equity"
-  parentId String?
-  parent   Account?  @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children Account[] @relation("AccountHierarchy")
-
-  // Balance
-  openingBalance Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2)
-
-  // Relationships
-  journalEntries JournalEntry[]
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([type])
-  @@index([parentId])
-  @@index([deletedAt])
-}
-
-model JournalEntry {
-  id          String   @id @default(uuid())
-  entryDate   DateTime
-  reference   String? // Invoice#, PO#, etc.
-  description String
-
-  // Double entry
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id])
-  debit     Decimal @default(0) @db.Decimal(10, 2)
-  credit    Decimal @default(0) @db.Decimal(10, 2)
-
-  // Source tracking
-  sourceType String? // "Invoice", "Bill", "Payment", "Manual"
-  sourceId   String? // Reference to source document
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  @@index([accountId])
-  @@index([entryDate])
-  @@index([sourceType, sourceId])
   @@index([deletedAt])
 }
 
@@ -379,6 +316,9 @@ model PurchaseOrder {
 
   // Track received quantities per line item {lineItemId: count}
   receivedQuantities Json @default("{}")
+
+  // Cancellation tracking
+  cancelledAt DateTime?
 
   // Relationships
   vendorId  String
@@ -440,7 +380,6 @@ model Bill {
 
   // Soft-cancel instead of hard delete
   cancelledAt  DateTime?
-  cancelReason String? // Why was this bill cancelled
 
   // Relationships
   vendorId        String
@@ -492,7 +431,6 @@ model Invoice {
 
   // Soft-cancel mechanism
   cancelledAt     DateTime?
-  cancelReason    String?
   cancelledBy     String?
   cancelledByUser User?     @relation("InvoicesCancelled", fields: [cancelledBy], references: [id])
 
@@ -561,7 +499,6 @@ model Payment {
 
   // Void mechanism instead of delete
   voidedAt     DateTime?
-  voidReason   String?
   voidedBy     String?
   voidedByUser User?     @relation("PaymentsVoided", fields: [voidedBy], references: [id])
 
@@ -601,7 +538,6 @@ model VendorPayment {
 
   // Void mechanism instead of delete (payments are immutable)
   voidedAt   DateTime?
-  voidReason String?
   voidedBy   String?
 
   auditLogs POBillAudit[] @relation("PaymentAudits")
@@ -649,9 +585,9 @@ model CustomerLedger {
   id          String   @id @default(uuid())
   entryDate   DateTime
   description String
-  debit       Decimal  @default(0) @db.Decimal(10, 2)
-  credit      Decimal  @default(0) @db.Decimal(10, 2)
-  balance     Decimal  @db.Decimal(18, 2)
+  debit       Decimal  @default(0) @db.Decimal(18, 4)
+  credit      Decimal  @default(0) @db.Decimal(18, 4)
+  balance     Decimal  @db.Decimal(18, 4)
 
   // Relationships
   customerId String
@@ -669,9 +605,9 @@ model VendorLedger {
   id          String   @id @default(uuid())
   entryDate   DateTime
   description String
-  debit       Decimal  @default(0) @db.Decimal(10, 2)
-  credit      Decimal  @default(0) @db.Decimal(10, 2)
-  balance     Decimal  @db.Decimal(18, 2)
+  debit       Decimal  @default(0) @db.Decimal(18, 4)
+  credit      Decimal  @default(0) @db.Decimal(18, 4)
+  balance     Decimal  @db.Decimal(18, 4)
 
   // Relationships
   vendorId String
@@ -706,30 +642,6 @@ model InventoryMovement {
   @@index([itemId])
   @@index([movementType])
   @@index([createdAt])
-}
-
-// ==================== ITEM RESERVATION SYSTEM ====================
-
-model ItemReservation {
-  id         String   @id @default(uuid())
-  itemId     String
-  item       Item     @relation("ItemReservations", fields: [itemId], references: [id])
-  sessionId  String // Unique session ID for grouping reservations
-  reservedBy String
-  user       User     @relation("ReservedByUser", fields: [reservedBy], references: [id])
-  reason     String // "INVOICE_CREATION", "MANUAL_HOLD"
-  reservedAt DateTime @default(now())
-  expiresAt  DateTime // Auto-expire reservations after X minutes
-
-  // Optional reference to document being created
-  referenceType String? // "Invoice", "PurchaseOrder", etc.
-  referenceId   String? // ID of the document
-
-  @@unique([itemId, sessionId]) // Prevent double-reservation of same item in same session
-  @@index([itemId])
-  @@index([sessionId])
-  @@index([reservedBy])
-  @@index([expiresAt])
 }
 
 // ==================== PO BILL AUDIT TRAIL ====================

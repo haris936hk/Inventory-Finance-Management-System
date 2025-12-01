@@ -1213,8 +1213,8 @@ class ImportExportService {
             email: clientData.email,
             address: clientData.address,
             creditLimit: 0,
-            openingBalance: 0,
-            currentBalance: 0
+            openingBalance: 0
+            // NOTE: currentBalance removed - CustomerLedger is the single source of truth
           }
         });
         logger.info(`Created customer: ${customer.name} (ID: ${customer.id})`);

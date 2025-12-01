@@ -25,12 +25,21 @@ const CreateVendorBill = () => {
   const [form] = Form.useForm();
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState(null);
+  const [subtotal, setSubtotal] = useState(0);
+  const [taxAmount, setTaxAmount] = useState(0);
+  const [total, setTotal] = useState(0);
 
   const purchaseOrderId = searchParams.get('purchaseOrderId');
 
   // Fetch vendors
   const { data: vendors } = useQuery('vendors', async () => {
     const response = await axios.get('/inventory/vendors');
+    return response.data.data;
+  });
+
+  // Fetch settings for default tax rate
+  const { data: settings } = useQuery('settings', async () => {
+    const response = await axios.get('/settings');
     return response.data.data;
   });
 
@@ -75,17 +84,54 @@ const CreateVendorBill = () => {
     }
   );
 
+  // Calculate totals based on subtotal and tax rate
+  const calculateTotals = (currentSubtotal = subtotal) => {
+    const taxRate = form.getFieldValue('taxRate') || 0;
+    const calculatedTax = (currentSubtotal * taxRate) / 100;
+    const calculatedTotal = currentSubtotal + calculatedTax;
+
+    setSubtotal(currentSubtotal);
+    setTaxAmount(calculatedTax);
+    setTotal(calculatedTotal);
+  };
+
   // Set initial values when specific PO is loaded
   useEffect(() => {
     if (specificPO) {
       setSelectedVendor(specificPO.vendorId);
       setSelectedPurchaseOrder(specificPO);
+
+      // Calculate remaining unbilled amount
+      const poTotal = parseAmount(specificPO.total);
+      const billedAmount = parseAmount(specificPO.billedAmount || 0);
+      const remainingUnbilled = subtractAmounts(poTotal, billedAmount);
+
+      // Calculate proportional subtotal and tax from remaining unbilled
+      const poSubtotal = parseAmount(specificPO.subtotal);
+      const poTaxAmount = parseAmount(specificPO.taxAmount);
+      const poTotalCalc = addAmounts(poSubtotal, poTaxAmount);
+
+      const ratio = poTotalCalc > 0 ? remainingUnbilled / poTotalCalc : 0;
+      const calculatedSubtotal = multiplyAmount(poSubtotal, ratio, 2);
+
+      // Calculate tax rate from PO
+      const calculatedTaxRate = poSubtotal > 0 ? (poTaxAmount / poSubtotal) * 100 : 0;
+
+      // Calculate tax amount and total directly with the calculated values
+      const calculatedTax = (calculatedSubtotal * calculatedTaxRate) / 100;
+      const calculatedTotal = calculatedSubtotal + calculatedTax;
+
       form.setFieldsValue({
         vendorId: specificPO.vendorId,
         purchaseOrderId: specificPO.id,
-        subtotal: parseAmount(specificPO.subtotal),
-        taxAmount: parseAmount(specificPO.taxAmount)
+        subtotal: calculatedSubtotal,
+        taxRate: calculatedTaxRate
       });
+
+      // Update state with calculated values
+      setSubtotal(calculatedSubtotal);
+      setTaxAmount(calculatedTax);
+      setTotal(calculatedTotal);
     }
   }, [specificPO, form]);
 
@@ -94,18 +140,22 @@ const CreateVendorBill = () => {
     setSelectedPurchaseOrder(null);
     form.setFieldsValue({
       purchaseOrderId: undefined,
-      subtotal: undefined,
-      taxAmount: undefined
+      subtotal: undefined
     });
+    setSubtotal(0);
+    setTaxAmount(0);
+    setTotal(0);
   };
 
   const handlePurchaseOrderChange = (poId) => {
     if (!poId) {
       setSelectedPurchaseOrder(null);
       form.setFieldsValue({
-        subtotal: undefined,
-        taxAmount: undefined
+        subtotal: undefined
       });
+      setSubtotal(0);
+      setTaxAmount(0);
+      setTotal(0);
       return;
     }
 
@@ -125,28 +175,34 @@ const CreateVendorBill = () => {
 
       const ratio = poTotalCalc > 0 ? remainingUnbilled / poTotalCalc : 0;
       const calculatedSubtotal = multiplyAmount(poSubtotal, ratio, 2);
-      const calculatedTax = multiplyAmount(poTaxAmount, ratio, 2);
+
+      // Calculate tax rate from PO
+      const calculatedTaxRate = poSubtotal > 0 ? (poTaxAmount / poSubtotal) * 100 : 0;
 
       form.setFieldsValue({
         subtotal: calculatedSubtotal,
-        taxAmount: calculatedTax
+        taxRate: calculatedTaxRate
       });
+
+      // Update state
+      setSubtotal(calculatedSubtotal);
+      calculateTotals(calculatedSubtotal);
+
       message.success(`Populated remaining unbilled amount (${formatPKR(remainingUnbilled)}) from PO ${selectedPO.poNumber}`);
     }
   };
 
   const handleSubmit = (values) => {
-    const subtotal = parseAmount(values.subtotal);
-    const taxAmount = parseAmount(values.taxAmount);
-
     const billData = {
       ...values,
       billDate: values.billDate.toISOString(),
       dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-      subtotal: subtotal,
-      taxAmount: taxAmount,
-      total: addAmounts(subtotal, taxAmount)
+      subtotal: formatAmount(subtotal, 2),
+      taxAmount: formatAmount(taxAmount, 2),
+      total: formatAmount(total, 2)
     };
+    // Remove taxRate from the data sent to backend as backend expects taxAmount, not taxRate
+    delete billData.taxRate;
     billMutation.mutate(billData);
   };
 
@@ -214,7 +270,7 @@ const CreateVendorBill = () => {
           onFinish={handleSubmit}
           initialValues={{
             billDate: dayjs(),
-            taxAmount: 0
+            taxRate: settings?.finance?.taxRate || 0
           }}
         >
           <Row gutter={[24, 0]}>
@@ -292,72 +348,81 @@ const CreateVendorBill = () => {
 
                 <Divider />
 
+                <Form.Item
+                  label="Subtotal (PKR)"
+                  name="subtotal"
+                  rules={[
+                    { required: true, message: 'Please enter subtotal' },
+                    { type: 'number', min: 0, message: 'Amount must be positive' },
+                    {
+                      validator: (_, value) => {
+                        if (!selectedPurchaseOrder) {
+                          return Promise.resolve();
+                        }
+
+                        const calculatedSubtotal = parseAmount(value);
+                        const calculatedTotal = calculatedSubtotal + taxAmount;
+
+                        const poTotal = parseAmount(selectedPurchaseOrder.total);
+                        const billedAmount = parseAmount(selectedPurchaseOrder.billedAmount);
+                        const remainingUnbilled = subtractAmounts(poTotal, billedAmount);
+
+                        if (calculatedTotal > remainingUnbilled + 0.01) {
+                          return Promise.reject(
+                            new Error(`Bill total (${formatPKR(calculatedTotal)}) cannot exceed remaining unbilled amount (${formatPKR(remainingUnbilled)})`)
+                          );
+                        }
+
+                        return Promise.resolve();
+                      }
+                    }
+                  ]}
+                >
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    precision={2}
+                    min={0}
+                    max={VALIDATION.MAX_AMOUNT}
+                    step={0.01}
+                    placeholder="0.00"
+                    onChange={(value) => {
+                      const newSubtotal = parseAmount(value);
+                      calculateTotals(newSubtotal);
+                    }}
+                  />
+                </Form.Item>
+
+                <Divider />
+
                 <Row gutter={16}>
                   <Col span={12}>
                     <Form.Item
-                      label="Subtotal (PKR)"
-                      name="subtotal"
+                      label="Tax Rate (%)"
+                      name="taxRate"
                       rules={[
-                        { required: true, message: 'Please enter subtotal' },
-                        { type: 'number', min: 0, message: 'Amount must be positive' },
-                        {
-                          validator: (_, value) => {
-                            if (!selectedPurchaseOrder) {
-                              return Promise.resolve();
-                            }
-
-                            const subtotal = parseAmount(value);
-                            const taxAmount = parseAmount(form.getFieldValue('taxAmount'));
-                            const billTotal = addAmounts(subtotal, taxAmount);
-
-                            const poTotal = parseAmount(selectedPurchaseOrder.total);
-                            const billedAmount = parseAmount(selectedPurchaseOrder.billedAmount);
-                            const remainingUnbilled = subtractAmounts(poTotal, billedAmount);
-
-                            if (billTotal > remainingUnbilled + 0.01) {
-                              return Promise.reject(
-                                new Error(`Bill total (${formatPKR(billTotal)}) cannot exceed remaining unbilled amount (${formatPKR(remainingUnbilled)})`)
-                              );
-                            }
-
-                            return Promise.resolve();
-                          }
-                        }
+                        { type: 'number', min: 0, max: 100, message: 'Tax rate must be between 0 and 100' }
                       ]}
                     >
                       <InputNumber
                         style={{ width: '100%' }}
                         precision={2}
                         min={0}
-                        max={VALIDATION.MAX_AMOUNT}
+                        max={100}
                         step={0.01}
                         placeholder="0.00"
                         onChange={() => {
-                          // Re-validate when subtotal changes
-                          form.validateFields(['taxAmount']).catch(() => {});
+                          setTimeout(() => calculateTotals(), 0);
                         }}
                       />
                     </Form.Item>
                   </Col>
                   <Col span={12}>
-                    <Form.Item
-                      label="Tax Amount (PKR)"
-                      name="taxAmount"
-                      rules={[
-                        { type: 'number', min: 0, message: 'Amount must be positive' }
-                      ]}
-                    >
+                    <Form.Item label="Tax Amount (PKR)">
                       <InputNumber
                         style={{ width: '100%' }}
                         precision={2}
-                        min={0}
-                        max={VALIDATION.MAX_AMOUNT}
-                        step={0.01}
-                        placeholder="0.00"
-                        onChange={() => {
-                          // Re-validate subtotal when tax amount changes
-                          form.validateFields(['subtotal']).catch(() => {});
-                        }}
+                        value={taxAmount}
+                        disabled
                       />
                     </Form.Item>
                   </Col>
@@ -367,12 +432,7 @@ const CreateVendorBill = () => {
                   <InputNumber
                     style={{ width: '100%' }}
                     precision={2}
-                    value={
-                      addAmounts(
-                        parseAmount(form.getFieldValue('subtotal')),
-                        parseAmount(form.getFieldValue('taxAmount'))
-                      )
-                    }
+                    value={total}
                     disabled
                   />
                 </Form.Item>

@@ -22,8 +22,8 @@ export const SYSTEM_CONFIG = {
   }
 };
 
-// Currency formatting helper - Pakistani style with decimals
-export const formatCurrency = (amount, decimals = 2) => {
+// Currency formatting helper - Pakistani style (no decimals)
+export const formatCurrency = (amount, decimals = 0) => {
   return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
     style: 'currency',
     currency: SYSTEM_CONFIG.CURRENCY.CODE,
@@ -32,17 +32,16 @@ export const formatCurrency = (amount, decimals = 2) => {
   }).format(amount || 0);
 };
 
-// Number formatting helper - Pakistani style with decimals
-export const formatNumber = (number, decimals = 2) => {
+// Number formatting helper - Pakistani style (no decimals)
+export const formatNumber = (number, decimals = 0) => {
   return new Intl.NumberFormat(SYSTEM_CONFIG.CURRENCY.LOCALE, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   }).format(number || 0);
 };
 
-// PKR formatting helper with proper decimal precision
-// Shows 2 decimals by default (suitable for financial display)
-export const formatPKR = (amount, decimals = 2) => {
+// PKR formatting helper - no decimals (PKR doesn't use decimal places)
+export const formatPKR = (amount, decimals = 0) => {
   return `PKR ${formatNumber(amount, decimals)}`;
 };
 
@@ -145,23 +144,17 @@ export const INVENTORY_STATUS_OPTIONS = [
   { value: 'Returned', label: 'Returned', color: 'red' }
 ];
 
-// Physical Item Statuses
+// Physical Item Statuses (Physical Location Only)
 export const ITEM_STATUS = {
   IN_STORE: 'In Store',
   IN_LAB: 'In Lab',
-  HANDOVER: 'Handover',
-  SOLD: 'Sold',
-  DELIVERED: 'Delivered',
-  RETURNED: 'Returned'
+  HANDOVER: 'Handover'
 };
 
 export const ITEM_STATUS_OPTIONS = [
   { value: 'In Store', label: 'In Store', color: 'green' },
   { value: 'In Lab', label: 'In Lab', color: 'blue' },
-  { value: 'Handover', label: 'Handover', color: 'orange' },
-  { value: 'Sold', label: 'Sold', color: 'purple' },
-  { value: 'Delivered', label: 'Delivered', color: 'cyan' },
-  { value: 'Returned', label: 'Returned', color: 'red' }
+  { value: 'Handover', label: 'Handover', color: 'orange' }
 ];
 
 // Item Conditions

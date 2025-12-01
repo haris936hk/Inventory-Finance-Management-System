@@ -1,8 +1,19 @@
-const prisma = require('../config/database');
+const db = require('../config/database');
+const { formatAmount } = require('../utils/transactionWrapper');
+
+// Get prisma client from database wrapper
+const prisma = db.prisma;
 
 /**
  * Dashboard Service
  * Provides aggregated statistics and data for the main dashboard
+ *
+ * REVAMPED: 2025-01-21
+ * - Fixed all Prisma query errors (balanceDue, invalid statuses)
+ * - Added proper cancelledAt/voidedAt filters
+ * - Revenue now based on actual payments, not invoices
+ * - Added Purchase Order metrics
+ * - Simplified to essential metrics only
  */
 
 /**
@@ -11,140 +22,164 @@ const prisma = require('../config/database');
 const getDashboardStats = async () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
 
   // Run all queries in parallel for better performance
   const [
     inventoryStats,
     financialStats,
     customerStats,
-    topProducts,
+    purchaseOrderStats,
+    payablesStats,
     recentInvoices,
-    recentPayments,
+    recentPurchaseOrders,
   ] = await Promise.all([
     getInventoryStats(startOfMonth),
-    getFinancialStats(startOfMonth, startOfYear),
+    getFinancialStats(startOfMonth),
     getCustomerStats(startOfMonth),
-    getTopSellingProducts(5),
+    getPurchaseOrderStats(startOfMonth),
+    getPayablesStats(startOfMonth),
     getRecentInvoices(5),
-    getRecentPayments(5),
+    getRecentPurchaseOrders(5),
   ]);
 
   return {
     inventory: inventoryStats,
     financial: financialStats,
     customers: customerStats,
-    topProducts,
+    purchaseOrders: purchaseOrderStats,
+    payables: payablesStats,
     recentTransactions: {
       invoices: recentInvoices,
-      payments: recentPayments,
+      purchaseOrders: recentPurchaseOrders,
     },
   };
 };
 
 /**
  * Get inventory statistics
+ * FIXED: Now uses inventoryStatus (availability) instead of status (physical location)
  */
 const getInventoryStats = async (startOfMonth) => {
-  // Total items count
+  // Total items in stock (physical location)
   const totalItems = await prisma.item.count({
-    where: { deletedAt: null },
+    where: {
+      status: 'In Store',
+      deletedAt: null,
+    },
   });
 
-  // Available items count
+  // Available items (inventory availability status)
   const availableItems = await prisma.item.count({
     where: {
-      status: 'Available',
+      inventoryStatus: 'Available',
       deletedAt: null,
     },
   });
 
-  // Items sold this month
-  const soldThisMonth = await prisma.item.count({
-    where: {
-      status: { in: ['Sold', 'Delivered'] },
-      updatedAt: { gte: startOfMonth },
-      deletedAt: null,
-    },
-  });
-
-  // Calculate utilization rate (sold + reserved / total)
+  // Reserved items (pending sale)
   const reservedItems = await prisma.item.count({
     where: {
-      status: 'Reserved',
+      inventoryStatus: 'Reserved',
       deletedAt: null,
     },
   });
 
+  // Items sold this month (based on outbound date)
+  const soldThisMonth = await prisma.item.count({
+    where: {
+      inventoryStatus: { in: ['Sold', 'Delivered'] },
+      outboundDate: { gte: startOfMonth },
+      deletedAt: null,
+    },
+  });
+
+  // Calculate utilization rate (non-available / total in stock)
   const utilizationRate = totalItems > 0
-    ? (((totalItems - availableItems) / totalItems) * 100).toFixed(2)
-    : '0.00';
+    ? formatAmount(((totalItems - availableItems) / totalItems) * 100, 2)
+    : 0;
 
   return {
     totalItems,
     availableItems,
-    soldThisMonth,
     reservedItems,
+    soldThisMonth,
     utilizationRate,
   };
 };
 
 /**
  * Get financial statistics
+ * FIXED:
+ * - Revenue now calculated from actual payments (Payment model)
+ * - Outstanding calculated from invoice.total - invoice.paidAmount
+ * - Removed invalid 'Pending' status
+ * - Added cancelledAt and voidedAt filters
  */
-const getFinancialStats = async (startOfMonth, startOfYear) => {
-  // Total revenue (all time - from paid invoices)
-  const totalRevenueResult = await prisma.invoice.aggregate({
+const getFinancialStats = async (startOfMonth) => {
+  // Total revenue (all time) - sum of actual payments received
+  const totalRevenueResult = await prisma.payment.aggregate({
     where: {
-      status: { in: ['Paid', 'Partial'] },
+      voidedAt: null,
       deletedAt: null,
     },
     _sum: {
-      total: true,
+      amount: true,
     },
   });
 
-  // Monthly revenue
-  const monthlyRevenueResult = await prisma.invoice.aggregate({
+  // Monthly revenue - payments received this month
+  const monthlyRevenueResult = await prisma.payment.aggregate({
     where: {
-      status: { in: ['Paid', 'Partial'] },
-      invoiceDate: { gte: startOfMonth },
+      paymentDate: { gte: startOfMonth },
+      voidedAt: null,
       deletedAt: null,
     },
     _sum: {
-      total: true,
+      amount: true,
     },
   });
 
-  // Outstanding amount (pending + overdue invoices)
-  const outstandingResult = await prisma.invoice.aggregate({
+  // Outstanding amount - calculate total - paidAmount for unpaid invoices
+  const unpaidInvoices = await prisma.invoice.findMany({
     where: {
-      status: { in: ['Pending', 'Overdue', 'Partial'] },
+      status: { in: ['Sent', 'Partial', 'Overdue'] },
+      cancelledAt: null,
       deletedAt: null,
     },
-    _sum: {
-      balanceDue: true,
+    select: {
+      total: true,
+      paidAmount: true,
     },
   });
+
+  const outstandingAmount = unpaidInvoices.reduce((sum, invoice) => {
+    return formatAmount(sum + (invoice.total - invoice.paidAmount));
+  }, 0);
+
+  // Count of unpaid invoices (Sent, Partial, Overdue)
+  const unpaidCount = unpaidInvoices.length;
 
   // Count overdue invoices
   const overdueCount = await prisma.invoice.count({
     where: {
       status: 'Overdue',
+      cancelledAt: null,
       deletedAt: null,
     },
   });
 
   return {
-    totalRevenue: totalRevenueResult._sum.total || 0,
-    monthlyRevenue: monthlyRevenueResult._sum.total || 0,
-    outstandingAmount: outstandingResult._sum.balanceDue || 0,
+    totalRevenue: totalRevenueResult._sum.amount || 0,
+    monthlyRevenue: monthlyRevenueResult._sum.amount || 0,
+    outstandingAmount,
+    unpaidInvoices: unpaidCount,
     overdueInvoices: overdueCount,
   };
 };
 
 /**
  * Get customer statistics
+ * FIXED: Active customers now uses groupBy instead of problematic distinct
  */
 const getCustomerStats = async (startOfMonth) => {
   // Total customers
@@ -161,31 +196,172 @@ const getCustomerStats = async (startOfMonth) => {
   });
 
   // Active customers (those who made purchases this month)
-  const activeThisMonth = await prisma.invoice.findMany({
+  // FIXED: Use groupBy instead of distinct
+  const activeCustomersData = await prisma.invoice.groupBy({
+    by: ['customerId'],
     where: {
       invoiceDate: { gte: startOfMonth },
+      cancelledAt: null,
       deletedAt: null,
     },
-    distinct: ['customerId'],
-    select: { customerId: true },
   });
 
   return {
     total,
     newThisMonth,
-    activeThisMonth: activeThisMonth.length,
+    activeThisMonth: activeCustomersData.length,
   };
 };
 
 /**
+ * Get Purchase Order statistics
+ * NEW: Added to support PO metrics on dashboard
+ */
+const getPurchaseOrderStats = async (startOfMonth) => {
+  // Active POs (Sent, Partial, Paid statuses)
+  const activePOs = await prisma.purchaseOrder.count({
+    where: {
+      status: { in: ['Sent', 'Partial', 'Paid'] },
+      deletedAt: null,
+    },
+  });
+
+  // Total PO value this month
+  const monthlyPOValueResult = await prisma.purchaseOrder.aggregate({
+    where: {
+      orderDate: { gte: startOfMonth },
+      status: { notIn: ['Cancelled'] },
+      deletedAt: null,
+    },
+    _sum: {
+      total: true,
+    },
+  });
+
+  // Pending bills count (POs in Sent status with no bills created yet)
+  const pendingBills = await prisma.purchaseOrder.count({
+    where: {
+      status: 'Sent',
+      billedAmount: 0,
+      deletedAt: null,
+    },
+  });
+
+  return {
+    activePOs,
+    monthlyPOValue: monthlyPOValueResult._sum.total || 0,
+    pendingBills,
+  };
+};
+
+/**
+ * Get payables statistics (amounts owed to vendors)
+ * NEW: Added to support Outstanding Payables on dashboard
+ * Similar to getFinancialStats but for Bills instead of Invoices
+ */
+const getPayablesStats = async (startOfMonth) => {
+  // Outstanding payables - calculate total - paidAmount for unpaid bills
+  const unpaidBills = await prisma.bill.findMany({
+    where: {
+      status: { in: ['Unpaid', 'Partial'] },
+      cancelledAt: null,
+      deletedAt: null,
+    },
+    select: {
+      total: true,
+      paidAmount: true,
+      dueDate: true,
+    },
+  });
+
+  const outstandingPayables = unpaidBills.reduce((sum, bill) => {
+    return formatAmount(sum + (bill.total - bill.paidAmount));
+  }, 0);
+
+  // Count of unpaid bills (Unpaid, Partial)
+  const unpaidCount = unpaidBills.length;
+
+  // Count overdue bills (past due date and still unpaid)
+  const now = new Date();
+  const overdueCount = unpaidBills.filter(bill =>
+    bill.dueDate && new Date(bill.dueDate) < now
+  ).length;
+
+  return {
+    outstandingPayables,
+    unpaidBills: unpaidCount,
+    overdueBills: overdueCount,
+  };
+};
+
+/**
+ * Get recent invoices
+ * FIXED: Added cancelledAt filter to exclude cancelled invoices
+ */
+const getRecentInvoices = async (limit = 5) => {
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      cancelledAt: null,
+      deletedAt: null,
+    },
+    include: {
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+    take: limit,
+  });
+
+  return invoices;
+};
+
+/**
+ * Get recent purchase orders
+ * NEW: Added to show recent PO activity on dashboard
+ */
+const getRecentPurchaseOrders = async (limit = 5) => {
+  const purchaseOrders = await prisma.purchaseOrder.findMany({
+    where: {
+      deletedAt: null,
+      // Note: We show all POs including cancelled ones for visibility
+    },
+    include: {
+      vendor: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+    take: limit,
+  });
+
+  return purchaseOrders;
+};
+
+// ===== LEGACY FUNCTIONS (kept for backward compatibility, not used in main dashboard) =====
+
+/**
  * Get top selling products
+ * LEGACY: Not used in revamped dashboard
  */
 const getTopSellingProducts = async (limit = 5) => {
   // Get sold items grouped by model
   const soldItems = await prisma.item.groupBy({
     by: ['modelId'],
     where: {
-      status: { in: ['Sold', 'Delivered'] },
+      inventoryStatus: { in: ['Sold', 'Delivered'] },
       deletedAt: null,
     },
     _count: {
@@ -222,35 +398,72 @@ const getTopSellingProducts = async (limit = 5) => {
 };
 
 /**
- * Get recent invoices
+ * Get monthly revenue trend
+ * LEGACY: Not used in revamped dashboard (removed charts)
  */
-const getRecentInvoices = async (limit = 5) => {
-  const invoices = await prisma.invoice.findMany({
-    where: { deletedAt: null },
-    include: {
-      customer: {
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-        },
-      },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: limit,
-  });
+const getMonthlyRevenueTrend = async (months = 6) => {
+  const trends = [];
+  const now = new Date();
 
-  return invoices;
+  for (let i = months - 1; i >= 0; i--) {
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+
+    // FIXED: Use Payment model instead of Invoice for accurate revenue
+    const revenue = await prisma.payment.aggregate({
+      where: {
+        paymentDate: {
+          gte: monthStart,
+          lte: monthEnd,
+        },
+        voidedAt: null,
+        deletedAt: null,
+      },
+      _sum: {
+        amount: true,
+      },
+    });
+
+    trends.push({
+      month: monthStart.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
+      revenue: revenue._sum.amount || 0,
+    });
+  }
+
+  return trends;
 };
 
 /**
- * Get recent payments
+ * Get inventory status breakdown
+ * LEGACY: Not used in revamped dashboard
+ */
+const getInventoryStatusBreakdown = async () => {
+  // FIXED: Use inventoryStatus instead of status
+  const statusCounts = await prisma.item.groupBy({
+    by: ['inventoryStatus'],
+    where: { deletedAt: null },
+    _count: {
+      id: true,
+    },
+  });
+
+  return statusCounts.map(item => ({
+    status: item.inventoryStatus,
+    count: item._count.id,
+  }));
+};
+
+/**
+ * Get recent payments (customer payments)
+ * LEGACY: Not used in revamped dashboard (replaced with Recent POs)
+ * FIXED: Added voidedAt filter
  */
 const getRecentPayments = async (limit = 5) => {
-  const payments = await prisma.customerPayment.findMany({
-    where: { deletedAt: null },
+  const payments = await prisma.payment.findMany({
+    where: {
+      voidedAt: null,
+      deletedAt: null,
+    },
     include: {
       customer: {
         select: {
@@ -269,65 +482,17 @@ const getRecentPayments = async (limit = 5) => {
   return payments;
 };
 
-/**
- * Get monthly revenue trend (last 6 months)
- */
-const getMonthlyRevenueTrend = async (months = 6) => {
-  const trends = [];
-  const now = new Date();
-
-  for (let i = months - 1; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-
-    const revenue = await prisma.invoice.aggregate({
-      where: {
-        status: { in: ['Paid', 'Partial'] },
-        invoiceDate: {
-          gte: monthStart,
-          lte: monthEnd,
-        },
-        deletedAt: null,
-      },
-      _sum: {
-        total: true,
-      },
-    });
-
-    trends.push({
-      month: monthStart.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
-      revenue: revenue._sum.total || 0,
-    });
-  }
-
-  return trends;
-};
-
-/**
- * Get inventory status breakdown
- */
-const getInventoryStatusBreakdown = async () => {
-  const statusCounts = await prisma.item.groupBy({
-    by: ['status'],
-    where: { deletedAt: null },
-    _count: {
-      id: true,
-    },
-  });
-
-  return statusCounts.map(item => ({
-    status: item.status,
-    count: item._count.id,
-  }));
-};
-
 module.exports = {
   getDashboardStats,
   getInventoryStats,
   getFinancialStats,
   getCustomerStats,
-  getTopSellingProducts,
+  getPurchaseOrderStats,
+  getPayablesStats,
   getRecentInvoices,
+  getRecentPurchaseOrders,
+  // Legacy functions (backward compatibility)
+  getTopSellingProducts,
   getRecentPayments,
   getMonthlyRevenueTrend,
   getInventoryStatusBreakdown,

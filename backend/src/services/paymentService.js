@@ -26,7 +26,7 @@ const { updateBillStatus } = require('./billService');
  * Record a vendor payment
  *
  * @param {Object} data - Payment data
- * @param {string} data.billId - Bill ID
+ * @param {string} [data.billId] - Bill ID (optional - for general payments)
  * @param {string} data.vendorId - Vendor ID
  * @param {Date} data.paymentDate - Payment date
  * @param {number} data.amount - Payment amount
@@ -38,56 +38,14 @@ const { updateBillStatus } = require('./billService');
  */
 async function recordPayment(data, userId) {
   return withTransaction(async (tx) => {
-    // 1. Lock the bill (critical for concurrency)
-    const bill = await lockForUpdate(tx, 'Bill', data.billId);
-
-    // 2. Validate bill can receive payment
-    if (bill.cancelledAt) {
-      throw new ValidationError('Cannot record payment for cancelled bill');
-    }
-
-    // 3. Validate vendor matches
-    if (bill.vendorId !== data.vendorId) {
-      throw new ValidationError('Vendor must match bill vendor');
-    }
-
-    // CRITICAL FIX: Validate bill's PO is not cancelled
-    const po = await tx.purchaseOrder.findUnique({
-      where: { id: bill.purchaseOrderId }
-    });
-
-    if (!po) {
-      throw new ValidationError('Purchase Order not found');
-    }
-
-    if (po.status === 'Cancelled') {
-      throw new ValidationError(
-        'Cannot record payment for bill from cancelled Purchase Order'
-      );
-    }
-
-    // 4. Format and validate payment amount
+    // 1. Format and validate payment amount first (before any bill checks)
     const paymentAmount = formatAmount(data.amount);
 
     if (paymentAmount <= 0) {
       throw new ValidationError('Payment amount must be greater than zero');
     }
 
-    // 5. CRITICAL: Check remaining balance (SUM(payments) <= bill.total)
-    const currentPaidAmount = formatAmount(bill.paidAmount);
-    const billTotal = formatAmount(bill.total);
-    const remainingBalance = formatAmount(billTotal - currentPaidAmount);
-
-    if (paymentAmount > remainingBalance + 0.01) { // Allow 1 cent tolerance
-      throw new InsufficientBalanceError(
-        `Payment amount (${paymentAmount}) exceeds remaining bill balance. ` +
-        `Bill Total: ${billTotal}, Already Paid: ${currentPaidAmount}, Remaining: ${remainingBalance}`,
-        remainingBalance,
-        paymentAmount
-      );
-    }
-
-    // 6. Validate payment method
+    // 2. Validate payment method
     const validMethods = ['Cash', 'Bank Transfer', 'Cheque'];
     if (!validMethods.includes(data.method)) {
       throw new ValidationError(
@@ -95,10 +53,69 @@ async function recordPayment(data, userId) {
       );
     }
 
-    // 7. Generate payment number
+    // 3. Verify vendor exists
+    const vendor = await tx.vendor.findUnique({
+      where: { id: data.vendorId, deletedAt: null }
+    });
+
+    if (!vendor) {
+      throw new ValidationError('Vendor not found');
+    }
+
+    let bill = null;
+    let po = null;
+    let currentPaidAmount = 0;
+    let newBillStatus = null;
+
+    // 4. If billId is provided, validate and lock the bill
+    if (data.billId) {
+      // Lock the bill (critical for concurrency)
+      bill = await lockForUpdate(tx, 'Bill', data.billId);
+
+      // Validate bill can receive payment
+      if (bill.cancelledAt) {
+        throw new ValidationError('Cannot record payment for cancelled bill');
+      }
+
+      // Validate vendor matches
+      if (bill.vendorId !== data.vendorId) {
+        throw new ValidationError('Vendor must match bill vendor');
+      }
+
+      // Validate bill's PO is not cancelled
+      po = await tx.purchaseOrder.findUnique({
+        where: { id: bill.purchaseOrderId }
+      });
+
+      if (!po) {
+        throw new ValidationError('Purchase Order not found');
+      }
+
+      if (po.status === 'Cancelled') {
+        throw new ValidationError(
+          'Cannot record payment for bill from cancelled Purchase Order'
+        );
+      }
+
+      // Check remaining balance (SUM(payments) <= bill.total)
+      currentPaidAmount = formatAmount(bill.paidAmount);
+      const billTotal = formatAmount(bill.total);
+      const remainingBalance = formatAmount(billTotal - currentPaidAmount);
+
+      if (paymentAmount > remainingBalance + 0.01) { // Allow 1 cent tolerance
+        throw new InsufficientBalanceError(
+          `Payment amount (${paymentAmount}) exceeds remaining bill balance. ` +
+          `Bill Total: ${billTotal}, Already Paid: ${currentPaidAmount}, Remaining: ${remainingBalance}`,
+          remainingBalance,
+          paymentAmount
+        );
+      }
+    }
+
+    // 5. Generate payment number
     const paymentNumber = await generatePaymentNumber('VPAY');
 
-    // 8. Create the payment (immutable)
+    // 6. Create the payment (immutable)
     const payment = await tx.vendorPayment.create({
       data: {
         paymentNumber,
@@ -108,90 +125,93 @@ async function recordPayment(data, userId) {
         reference: data.reference || null,
         notes: data.notes || null,
         vendorId: data.vendorId,
-        billId: data.billId,
+        billId: data.billId || null,
         createdBy: userId
       },
       include: {
         vendor: true,
-        bill: {
+        bill: data.billId ? {
           include: {
             purchaseOrder: true
           }
+        } : false
+      }
+    });
+
+    // 7. If bill-specific payment, update bill paid amount and status
+    if (data.billId && bill) {
+      const newPaidAmount = formatAmount(currentPaidAmount + paymentAmount);
+
+      await tx.bill.update({
+        where: { id: data.billId },
+        data: {
+          paidAmount: newPaidAmount
         }
-      }
+      });
+
+      // Update bill status based on new paid amount
+      newBillStatus = await updateBillStatus(tx, data.billId);
+    }
+
+    // 8. Create vendor ledger entry
+    // Get current balance from ledger
+    const latestLedger = await tx.vendorLedger.findFirst({
+      where: { vendorId: data.vendorId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    // 9. Update bill paid amount atomically
-    const newPaidAmount = formatAmount(currentPaidAmount + paymentAmount);
+    const currentVendorBalance = latestLedger?.balance || vendor?.openingBalance || 0;
+    const newVendorBalance = formatAmount(formatAmount(currentVendorBalance) - paymentAmount);
 
-    await tx.bill.update({
-      where: { id: data.billId },
-      data: {
-        paidAmount: newPaidAmount
-      }
-    });
+    const ledgerDescription = data.billId && bill
+      ? `Payment ${paymentNumber} for Bill ${bill.billNumber}`
+      : `General Payment ${paymentNumber}`;
 
-    // 10. Update bill status based on new paid amount
-    const newBillStatus = await updateBillStatus(tx, data.billId);
-
-    // 11. CRITICAL FIX: Fetch vendor BEFORE balance update, calculate explicitly
-    const vendor = await tx.vendor.findUnique({
-      where: { id: data.vendorId }
-    });
-
-    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) - paymentAmount);
-
-    // 12. Update vendor balance (decrease payable) with explicit value
-    await tx.vendor.update({
-      where: { id: data.vendorId },
-      data: {
-        currentBalance: newVendorBalance  // FIX: Explicit value instead of decrement
-      }
-    });
-
-    // 13. Create vendor ledger entry with correct new balance
     await tx.vendorLedger.create({
       data: {
         vendorId: data.vendorId,
         entryDate: data.paymentDate ? new Date(data.paymentDate) : new Date(),
-        description: `Payment ${paymentNumber} for Bill ${bill.billNumber}`,
+        description: ledgerDescription,
         debit: 0,
         credit: paymentAmount,
-        balance: newVendorBalance,  // FIX: Use new balance, not stale balance
-        billId: data.billId
+        balance: newVendorBalance,
+        billId: data.billId || null
       }
     });
 
-    // 13. Create audit trail
-    await tx.pOBillAudit.create({
-      data: {
-        purchaseOrderId: bill.purchaseOrderId,
-        action: 'PAYMENT_RECORDED',
-        billId: data.billId,
-        paymentId: payment.id,
-        beforeState: {
-          billStatus: bill.status,
-          paidAmount: currentPaidAmount
-        },
-        afterState: {
-          billStatus: newBillStatus,
-          paidAmount: newPaidAmount,
-          paymentAmount: paymentAmount
-        },
-        performedBy: userId,
-        metadata: {
-          paymentNumber,
-          method: data.method,
-          reference: data.reference
+    // 10. Create audit trail (only if bill-specific payment)
+    if (data.billId && bill && po) {
+      await tx.pOBillAudit.create({
+        data: {
+          purchaseOrderId: bill.purchaseOrderId,
+          action: 'PAYMENT_RECORDED',
+          billId: data.billId,
+          paymentId: payment.id,
+          beforeState: {
+            billStatus: bill.status,
+            paidAmount: currentPaidAmount
+          },
+          afterState: {
+            billStatus: newBillStatus,
+            paidAmount: formatAmount(currentPaidAmount + paymentAmount),
+            paymentAmount: paymentAmount
+          },
+          performedBy: userId,
+          metadata: {
+            paymentNumber,
+            method: data.method,
+            reference: data.reference
+          }
         }
-      }
-    });
+      });
+    }
 
     logger.info(`Payment recorded: ${paymentNumber}`, {
       paymentId: payment.id,
-      billNumber: bill.billNumber,
+      billNumber: bill?.billNumber || 'General Payment',
       amount: paymentAmount,
-      billStatus: `${bill.status} → ${newBillStatus}`
+      billStatus: bill ? `${bill.status} → ${newBillStatus}` : 'N/A'
     });
 
     return payment;
@@ -202,11 +222,10 @@ async function recordPayment(data, userId) {
  * Void a payment (not deletion, just mark as voided)
  *
  * @param {string} paymentId - Payment ID
- * @param {string} reason - Void reason
  * @param {string} userId - User voiding the payment
  * @returns {Promise<Object>} Voided payment
  */
-async function voidPayment(paymentId, reason, userId) {
+async function voidPayment(paymentId, userId) {
   return withTransaction(async (tx) => {
     // 1. Get the payment
     const payment = await tx.vendorPayment.findUnique({
@@ -229,92 +248,103 @@ async function voidPayment(paymentId, reason, userId) {
       throw new ValidationError('Payment is already voided');
     }
 
-    // 3. Lock the bill
-    const bill = await lockForUpdate(tx, 'Bill', payment.billId);
+    let bill = null;
+    let newBillStatus = null;
+
+    // 3. If payment is linked to a bill, lock and update it
+    if (payment.billId) {
+      bill = await lockForUpdate(tx, 'Bill', payment.billId);
+
+      // Reverse bill paid amount
+      const newPaidAmount = formatAmount(formatAmount(bill.paidAmount) - formatAmount(payment.amount));
+
+      await tx.bill.update({
+        where: { id: payment.billId },
+        data: {
+          paidAmount: newPaidAmount
+        }
+      });
+
+      // Update bill status
+      newBillStatus = await updateBillStatus(tx, payment.billId);
+    }
 
     // 4. Void the payment (mark, don't delete)
     const voided = await tx.vendorPayment.update({
       where: { id: paymentId },
       data: {
         voidedAt: new Date(),
-        voidReason: reason,
         voidedBy: userId
       },
       include: {
         vendor: true,
-        bill: true
+        bill: payment.billId ? true : false
       }
     });
 
-    // 5. Reverse bill paid amount (FIX: Use formatAmount for precision)
-    const newPaidAmount = formatAmount(formatAmount(bill.paidAmount) - formatAmount(payment.amount));
-
-    await tx.bill.update({
-      where: { id: payment.billId },
-      data: {
-        paidAmount: newPaidAmount
-      }
+    // 5. Get current balance from ledger
+    const latestLedger = await tx.vendorLedger.findFirst({
+      where: { vendorId: payment.vendorId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    // 6. Update bill status
-    const newBillStatus = await updateBillStatus(tx, payment.billId);
-
-    // 7. CRITICAL FIX: Fetch vendor BEFORE balance update, calculate explicitly
     const vendor = await tx.vendor.findUnique({
-      where: { id: payment.vendorId }
-    });
-
-    const paymentAmountFormatted = formatAmount(payment.amount);
-    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) + paymentAmountFormatted);
-
-    // 8. Reverse vendor balance with explicit value
-    await tx.vendor.update({
       where: { id: payment.vendorId },
-      data: {
-        currentBalance: newVendorBalance  // FIX: Explicit value instead of increment
-      }
+      select: { openingBalance: true }
     });
 
-    // 9. Create reverse ledger entry with correct new balance
+    const currentVendorBalance = latestLedger?.balance || vendor?.openingBalance || 0;
+    const paymentAmountFormatted = formatAmount(payment.amount);
+    const newVendorBalance = formatAmount(formatAmount(currentVendorBalance) + paymentAmountFormatted);
+
+    // NOTE: currentBalance field removed - VendorLedger is the single source of truth
+
+    // 6. Create reverse ledger entry
+    const ledgerDescription = payment.billId && bill
+      ? `Payment ${payment.paymentNumber} voided`
+      : `General Payment ${payment.paymentNumber} voided`;
+
     await tx.vendorLedger.create({
       data: {
         vendorId: payment.vendorId,
         entryDate: new Date(),
-        description: `Payment ${payment.paymentNumber} voided: ${reason}`,
-        debit: paymentAmountFormatted,  // FIX: Use formatAmount
+        description: ledgerDescription,
+        debit: paymentAmountFormatted,
         credit: 0,
-        balance: newVendorBalance,  // FIX: Use new balance, not stale balance
-        billId: payment.billId
+        balance: newVendorBalance,
+        billId: payment.billId || null
       }
     });
 
-    // 10. Create audit trail (FIX: Use formatAmount for consistency)
-    await tx.pOBillAudit.create({
-      data: {
-        purchaseOrderId: bill.purchaseOrderId,
-        action: 'PAYMENT_VOIDED',
-        billId: payment.billId,
-        paymentId: payment.id,
-        beforeState: {
-          billStatus: bill.status,
-          paidAmount: formatAmount(bill.paidAmount)  // FIX: formatAmount for precision
-        },
-        afterState: {
-          billStatus: newBillStatus,
-          paidAmount: newPaidAmount
-        },
-        performedBy: userId,
-        metadata: {
-          reason,
-          voidedAmount: paymentAmountFormatted  // FIX: Use already formatted amount
+    // 8. Create audit trail (only if bill-specific payment)
+    if (payment.billId && bill) {
+      await tx.pOBillAudit.create({
+        data: {
+          purchaseOrderId: bill.purchaseOrderId,
+          action: 'PAYMENT_VOIDED',
+          billId: payment.billId,
+          paymentId: payment.id,
+          beforeState: {
+            billStatus: bill.status,
+            paidAmount: formatAmount(bill.paidAmount)
+          },
+          afterState: {
+            billStatus: newBillStatus,
+            paidAmount: formatAmount(formatAmount(bill.paidAmount) - paymentAmountFormatted)
+          },
+          performedBy: userId,
+          metadata: {
+            voidedAmount: paymentAmountFormatted
+          }
         }
-      }
-    });
+      });
+    }
 
     logger.info(`Payment voided: ${payment.paymentNumber}`, {
       paymentId,
-      reason,
-      reversedAmount: paymentAmountFormatted  // FIX: Use already formatted amount
+      reversedAmount: paymentAmountFormatted,
+      billNumber: bill?.billNumber || 'General Payment'
     });
 
     return voided;

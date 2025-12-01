@@ -18,7 +18,7 @@
  * - Multiple bills can be created against one PO (partial billing)
  * - SUM(bills.total) <= PO.total (enforced with locks)
  * - Partial deliveries supported (items received in multiple shipments)
- * - PO can only be cancelled in Draft/Sent status (before bills/items)
+ * - PO can only be cancelled in Draft status (before being sent)
  * - Cannot cancel bill if items have been received in inventory
  * - Bill amounts cannot be updated (cancel + new bill for corrections)
  *
@@ -28,7 +28,7 @@
  * - Sent → Paid: Fully billed in single bill (SUM(bills) = PO.total)
  * - Partial → Paid: Remaining bills created (SUM(bills) = PO.total)
  * - Paid → Delivered: All items received (receivedQuantities = ordered quantities)
- * - Draft/Sent → Cancelled: Only if no bills and no items received
+ * - Draft → Cancelled: Only if no bills and no items received (immutable after sent)
  *
  * Data Integrity Enforcements:
  * - Bills: Lock PO before creating bill, validate SUM(bills) <= PO.total
@@ -56,16 +56,16 @@ const { generatePONumber } = require('../utils/generateId');
  * Valid PO status transitions
  * Draft → Sent → Partial (partial bills) → Paid (fully billed) → Delivered (items received in inventory)
  *
- * CRITICAL: PO can only be cancelled from Draft/Sent states (before bills are created)
- * Once bills exist (Partial status), cancellation is prohibited to maintain data integrity
+ * CRITICAL: PO can only be cancelled from Draft state (before being sent to vendor)
+ * Once sent or bills exist, cancellation is prohibited to maintain data integrity
  */
 const STATUS_TRANSITIONS = {
-  'Draft': ['Sent', 'Cancelled'],
-  'Sent': ['Partial', 'Paid', 'Cancelled'],
-  'Partial': ['Paid'],  // FIX: Cannot cancel once bills exist (was: ['Paid', 'Cancelled'])
-  'Paid': ['Delivered'], // Can only deliver after fully paid
-  'Delivered': [], // Terminal state
-  'Cancelled': [] // Terminal state
+  'Draft': ['Sent', 'Cancelled'],  // Only Draft can be cancelled
+  'Sent': ['Partial', 'Paid'],     // Cannot cancel after being sent
+  'Partial': ['Paid'],              // Cannot cancel once bills exist
+  'Paid': ['Delivered'],            // Can only deliver after fully paid
+  'Delivered': [],                  // Terminal state
+  'Cancelled': []                   // Terminal state
 };
 
 /**
@@ -322,22 +322,21 @@ async function updatePurchaseOrder(poId, updates) {
 
 /**
  * Cancel a Purchase Order
- * Can only cancel POs in Draft or Sent status (before bills/items received)
+ * Can only cancel POs in Draft status (before bills/items received)
  *
  * @param {string} poId - PO ID
- * @param {string} reason - Cancellation reason
  * @param {string} userId - User performing cancellation
  * @returns {Promise<Object>} Cancelled PO
  */
-async function cancelPurchaseOrder(poId, reason, userId) {
+async function cancelPurchaseOrder(poId, userId) {
   return withTransaction(async (tx) => {
     // 1. Lock the PO
     const po = await lockForUpdate(tx, 'PurchaseOrder', poId);
 
-    // 2. Validate PO can be cancelled (only Draft/Sent status)
-    if (!['Draft', 'Sent'].includes(po.status)) {
+    // 2. BUSINESS RULE: Validate PO can be cancelled (only Draft status)
+    if (po.status !== 'Draft') {
       throw new ValidationError(
-        `Cannot cancel PO in ${po.status} status. Only Draft or Sent POs can be cancelled.`
+        `Cannot cancel PO in ${po.status} status. Only Draft POs can be cancelled.`
       );
     }
 
@@ -375,8 +374,7 @@ async function cancelPurchaseOrder(poId, reason, userId) {
       where: { id: poId },
       data: {
         status: 'Cancelled',
-        cancelledAt: new Date(),
-        cancelReason: reason
+        cancelledAt: new Date()
       },
       include: {
         vendor: true,
@@ -393,12 +391,10 @@ async function cancelPurchaseOrder(poId, reason, userId) {
           status: po.status
         },
         afterState: {
-          status: 'Cancelled',
-          cancelReason: reason
+          status: 'Cancelled'
         },
         performedBy: userId,
         metadata: {
-          reason,
           poNumber: po.poNumber
         }
       }
@@ -406,7 +402,6 @@ async function cancelPurchaseOrder(poId, reason, userId) {
 
     logger.info(`PO cancelled: ${po.poNumber}`, {
       poId,
-      reason,
       previousStatus: po.status
     });
 

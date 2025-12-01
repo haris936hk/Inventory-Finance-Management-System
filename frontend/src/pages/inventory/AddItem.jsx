@@ -196,8 +196,7 @@ const AddItem = () => {
           'inboundDate', // This is required
           'vendorId',
           'purchasePrice',
-          'purchaseDate',
-          'notes'
+          'purchaseDate'
         ];
       default:
         return [];
@@ -433,15 +432,6 @@ const AddItem = () => {
               rules={[{ required: true, message: 'Inbound date is required' }]}
             >
               <DatePicker style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-
-          <Col xs={24}>
-            <Form.Item
-              label="Notes"
-              name="notes"
-            >
-              <TextArea rows={3} placeholder="Additional notes" />
             </Form.Item>
           </Col>
         </Row>

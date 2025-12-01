@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Row, Col, Descriptions, Tag, Button, Space, Timeline, Table,
-  Typography, Divider, Statistic, Alert, Modal, message, Tabs
+  Typography, Divider, Statistic, Alert, Modal, message, Tabs, Tooltip
 } from 'antd';
 import {
   ArrowLeftOutlined, EditOutlined, DeleteOutlined,
@@ -241,14 +241,23 @@ const ItemDetails = () => {
               </>
             )}
             {hasPermission('inventory.delete') && (
-              <Button
-                danger
-                icon={<DeleteOutlined />}
-                onClick={handleDelete}
-                loading={deleteMutation.isLoading}
+              <Tooltip
+                title={
+                  ['Reserved', 'Sold', 'Delivered'].includes(item.inventoryStatus)
+                    ? `Cannot delete ${item.inventoryStatus.toLowerCase()} items`
+                    : ''
+                }
               >
-                Delete
-              </Button>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={handleDelete}
+                  loading={deleteMutation.isLoading}
+                  disabled={['Reserved', 'Sold', 'Delivered'].includes(item.inventoryStatus)}
+                >
+                  Delete
+                </Button>
+              </Tooltip>
             )}
           </Space>
         </div>

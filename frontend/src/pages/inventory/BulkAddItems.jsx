@@ -146,9 +146,10 @@ const BulkAddItems = () => {
     setSelectedPO(po);
 
     if (po) {
-      // Auto-populate vendor
+      // Auto-populate vendor and purchase date
       form.setFieldsValue({
         vendorId: po.vendorId,
+        purchaseDate: po.orderDate ? dayjs(po.orderDate) : null,
         poLineItemId: undefined
       });
       setSelectedPOLineItem(null);
@@ -172,6 +173,11 @@ const BulkAddItems = () => {
         modelId: lineItem.productModelId,
         purchasePrice: parseAmount(lineItem.unitPrice),
         specifications: lineItem.specifications || {}
+      });
+
+      // Re-validate quantity field to check against new line item limits
+      form.validateFields(['quantity']).catch(() => {
+        // Validation error will be shown in the form
       });
     }
   };
@@ -304,8 +310,7 @@ const BulkAddItems = () => {
           'inboundDate',
           'vendorId',
           'purchasePrice',
-          'purchaseDate',
-          'notes'
+          'purchaseDate'
         ];
       case 2: // Serial Numbers
         return [];
@@ -404,7 +409,6 @@ const BulkAddItems = () => {
       sellingPrice: values.sellingPrice,
       purchaseDate: values.purchaseDate ? values.purchaseDate.toISOString() : null,
       inboundDate: values.inboundDate ? values.inboundDate.toISOString() : null,
-      notes: values.notes,
       // Add line item ID if from PO
       lineItemId: usePO && selectedPOLineItem ? selectedPOLineItem.id : undefined
     }));
@@ -538,12 +542,40 @@ const BulkAddItems = () => {
               <Form.Item
                 label="Quantity"
                 name="quantity"
-                rules={[{ required: true, message: 'Quantity is required' }]}
+                rules={[
+                  { required: true, message: 'Quantity is required' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      // Only validate if a PO line item is selected
+                      if (selectedPOLineItem && value) {
+                        const orderedQty = selectedPOLineItem.quantity;
+                        const receivedQty = selectedPO?.receivedQuantities?.[selectedPOLineItem.id] || 0;
+                        const remainingQty = orderedQty - receivedQty;
+
+                        if (value > remainingQty) {
+                          return Promise.reject(
+                            new Error(`Cannot receive more than ${remainingQty} item(s). Ordered: ${orderedQty}, Already received: ${receivedQty}`)
+                          );
+                        }
+                      }
+                      return Promise.resolve();
+                    }
+                  })
+                ]}
                 initialValue={1}
+                extra={
+                  selectedPOLineItem && (
+                    <Text type="secondary" style={{ fontSize: '12px' }}>
+                      Ordered: {selectedPOLineItem.quantity},
+                      Already received: {selectedPO?.receivedQuantities?.[selectedPOLineItem.id] || 0},
+                      Remaining: {selectedPOLineItem.quantity - (selectedPO?.receivedQuantities?.[selectedPOLineItem.id] || 0)}
+                    </Text>
+                  )
+                }
               >
                 <InputNumber
                   min={1}
-                  max={1000}
+                  max={selectedPOLineItem ? (selectedPOLineItem.quantity - (selectedPO?.receivedQuantities?.[selectedPOLineItem.id] || 0)) : 1000}
                   style={{ width: '100%' }}
                   placeholder="Enter number of items to add"
                   onChange={(value) => {
@@ -714,7 +746,10 @@ const BulkAddItems = () => {
               label="Purchase Date"
               name="purchaseDate"
             >
-              <DatePicker style={{ width: '100%' }} />
+              <DatePicker
+                style={{ width: '100%' }}
+                disabled={usePO && selectedPO}
+              />
             </Form.Item>
           </Col>
 
@@ -726,15 +761,6 @@ const BulkAddItems = () => {
               rules={[{ required: true, message: 'Inbound date is required' }]}
             >
               <DatePicker style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-
-          <Col xs={24}>
-            <Form.Item
-              label="Notes"
-              name="notes"
-            >
-              <TextArea rows={3} placeholder="Additional notes (will apply to all items)" />
             </Form.Item>
           </Col>
         </Row>

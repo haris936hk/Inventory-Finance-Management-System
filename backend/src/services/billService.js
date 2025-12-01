@@ -133,12 +133,21 @@ async function createBill(data, userId) {
       }
     });
 
-    // 9. Create vendor ledger entry (FIX: Use formatAmount for precision)
-    const vendor = await tx.vendor.findUnique({
-      where: { id: data.vendorId }
+    // 9. Create vendor ledger entry
+    // Get current balance from ledger
+    const latestLedger = await tx.vendorLedger.findFirst({
+      where: { vendorId: data.vendorId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) + total);
+    const vendor = await tx.vendor.findUnique({
+      where: { id: data.vendorId },
+      select: { openingBalance: true }
+    });
+
+    const currentBalance = latestLedger?.balance || vendor?.openingBalance || 0;
+    const newVendorBalance = formatAmount(formatAmount(currentBalance) + total);
 
     await tx.vendorLedger.create({
       data: {
@@ -152,13 +161,7 @@ async function createBill(data, userId) {
       }
     });
 
-    // 10. Update vendor balance
-    await tx.vendor.update({
-      where: { id: data.vendorId },
-      data: {
-        currentBalance: newVendorBalance
-      }
-    });
+    // NOTE: currentBalance field removed - VendorLedger is the single source of truth
 
     // 11. Create audit trail
     await tx.pOBillAudit.create({
@@ -199,11 +202,10 @@ async function createBill(data, userId) {
  * Only unpaid bills can be cancelled
  *
  * @param {string} billId - Bill ID
- * @param {string} reason - Cancellation reason
  * @param {string} userId - User performing cancellation
  * @returns {Promise<Object>} Cancelled bill
  */
-async function cancelBill(billId, reason, userId) {
+async function cancelBill(billId, userId) {
   return withTransaction(async (tx) => {
     // 1. Lock the bill
     const bill = await lockForUpdate(tx, 'Bill', billId);
@@ -248,8 +250,7 @@ async function cancelBill(billId, reason, userId) {
     const cancelled = await tx.bill.update({
       where: { id: billId },
       data: {
-        cancelledAt: new Date(),
-        cancelReason: reason
+        cancelledAt: new Date()
       },
       include: {
         vendor: true,
@@ -281,32 +282,35 @@ async function cancelBill(billId, reason, userId) {
       }
     });
 
-    // 6. Reverse vendor ledger entry (FIX: Use formatAmount for precision)
-    const vendor = await tx.vendor.findUnique({
-      where: { id: bill.vendorId }
+    // 6. Reverse vendor ledger entry
+    // Get current balance from ledger
+    const latestLedger = await tx.vendorLedger.findFirst({
+      where: { vendorId: bill.vendorId },
+      orderBy: { createdAt: 'desc' },
+      select: { balance: true }
     });
 
-    const newVendorBalance = formatAmount(formatAmount(vendor.currentBalance) - billTotalFormatted);
+    const vendor = await tx.vendor.findUnique({
+      where: { id: bill.vendorId },
+      select: { openingBalance: true }
+    });
+
+    const currentBalance = latestLedger?.balance || vendor?.openingBalance || 0;
+    const newVendorBalance = formatAmount(formatAmount(currentBalance) - billTotalFormatted);
 
     await tx.vendorLedger.create({
       data: {
         vendorId: bill.vendorId,
         entryDate: new Date(),
-        description: `Bill ${bill.billNumber} cancelled: ${reason}`,
+        description: `Bill ${bill.billNumber} cancelled`,
         debit: 0,
-        credit: billTotalFormatted,  // FIX: Use already formatted amount
+        credit: billTotalFormatted,
         balance: newVendorBalance,
         billId: bill.id
       }
     });
 
-    // 7. Update vendor balance
-    await tx.vendor.update({
-      where: { id: bill.vendorId },
-      data: {
-        currentBalance: newVendorBalance
-      }
-    });
+    // NOTE: currentBalance field removed - VendorLedger is the single source of truth
 
     // 8. Create audit trail
     await tx.pOBillAudit.create({
@@ -325,13 +329,12 @@ async function cancelBill(billId, reason, userId) {
           billedAmount: newBilledAmount
         },
         performedBy: userId,
-        metadata: { reason }
+        metadata: {}
       }
     });
 
     logger.info(`Bill cancelled: ${bill.billNumber}`, {
       billId,
-      reason,
       refundedToPO: formatAmount(bill.total)
     });
 

@@ -3,42 +3,29 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
-  Row, Col, Statistic, Badge, Dropdown, message, Modal, Form,
-  Divider, InputNumber
+  Row, Col, Statistic, Badge, Dropdown, message, Modal, Alert
 } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FilterOutlined,
-  EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined,
+  EyeOutlined, ShopOutlined,
   FilePdfOutlined, MoreOutlined, CheckOutlined,
-  SendOutlined, StopOutlined
+  SendOutlined, StopOutlined, FileTextOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
-import PurchaseOrderItemSelector from '../../components/PurchaseOrderItemSelector';
 import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts } from '../../utils/decimalUtils';
-import { requiredDateRules, percentageRules } from '../../utils/validationRules';
 import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-const { TextArea } = Input;
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingPO, setEditingPO] = useState(null);
-  const [form] = Form.useForm();
-  const [selectedItems, setSelectedItems] = useState([]);
-  const [subtotal, setSubtotal] = useState(0);
-  const [taxAmount, setTaxAmount] = useState(0);
-  const [total, setTotal] = useState(0);
 
   // Fetch purchase orders
   const { data: purchaseOrdersData, isLoading } = useQuery(
@@ -55,11 +42,6 @@ const PurchaseOrders = () => {
     return response.data.data;
   });
 
-  // Fetch settings for default tax rate
-  const { data: settings } = useQuery('settings', async () => {
-    const response = await axios.get('/settings');
-    return response.data.data;
-  });
 
   // Calculate statistics
   const statistics = React.useMemo(() => {
@@ -67,7 +49,12 @@ const PurchaseOrders = () => {
 
     return purchaseOrdersData.reduce((acc, po) => {
       const poTotal = parseAmount(po.total);
-      acc.total = addAmounts(acc.total, poTotal);
+
+      // CRITICAL: Only include non-cancelled POs in total value
+      if (po.status !== 'Cancelled') {
+        acc.total = addAmounts(acc.total, poTotal);
+      }
+
       switch (po.status) {
         case 'Draft':
           acc.draft = addAmounts(acc.draft, poTotal);
@@ -90,28 +77,6 @@ const PurchaseOrders = () => {
     }, { total: 0, draft: 0, sent: 0, paid: 0, delivered: 0, cancelled: 0 });
   }, [purchaseOrdersData]);
 
-  // Create/Update PO mutation
-  const poMutation = useMutation(
-    (data) => {
-      if (editingPO) {
-        return axios.put(`/finance/purchase-orders/${editingPO.id}`, data);
-      }
-      return axios.post('/finance/purchase-orders', data);
-    },
-    {
-      onSuccess: () => {
-        message.success(`Purchase Order ${editingPO ? 'updated' : 'created'} successfully`);
-        queryClient.invalidateQueries('purchase-orders');
-        handleCloseModal();
-      },
-      onError: (error) => {
-        const operation = editingPO ? 'update' : 'create';
-        const errorMessage = getErrorMessage(error, 'purchaseOrder', operation);
-        message.error(errorMessage);
-      }
-    }
-  );
-
   // Update status mutation
   const updateStatusMutation = useMutation(
     ({ id, status }) => axios.put(`/finance/purchase-orders/${id}/status`, { status }),
@@ -119,40 +84,30 @@ const PurchaseOrders = () => {
       onSuccess: () => {
         message.success('Purchase Order status updated');
         queryClient.invalidateQueries('purchase-orders');
+        queryClient.invalidateQueries('purchase-order'); // Invalidate detail queries too
+      },
+      onError: (error) => {
+        message.error(error.response?.data?.message || 'Failed to update status');
       }
     }
   );
 
-  const handleCloseModal = () => {
-    setModalVisible(false);
-    setEditingPO(null);
-    setSelectedItems([]);
-    setSubtotal(0);
-    setTaxAmount(0);
-    setTotal(0);
-    form.resetFields();
-  };
-
-  const handleItemsChange = (newItems) => {
-    setSelectedItems(newItems);
-  };
-
-  const handleSubtotalChange = (newSubtotal) => {
-    setSubtotal(newSubtotal);
-    calculateTotals(newSubtotal);
-  };
-
-  const calculateTotals = (currentSubtotal = subtotal) => {
-    const taxRate = form.getFieldValue('taxRate') || 0;
-    const tax = (currentSubtotal * taxRate) / 100;
-    setTaxAmount(tax);
-    setTotal(currentSubtotal + tax);
-  };
-
-  // Recalculate totals when tax rate changes
-  React.useEffect(() => {
-    calculateTotals();
-  }, [form.getFieldValue('taxRate')]);
+  // Cancel PO mutation
+  const cancelPOMutation = useMutation(
+    (id) => axios.post(`/finance/purchase-orders/${id}/cancel`),
+    {
+      onSuccess: () => {
+        message.success('Purchase Order cancelled successfully');
+        queryClient.invalidateQueries('purchase-orders');
+        queryClient.invalidateQueries('purchase-order'); // Invalidate detail queries too
+        queryClient.invalidateQueries('vendors'); // Invalidate vendors if needed
+      },
+      onError: (error) => {
+        const errorMessage = getErrorMessage(error, 'purchase order', 'cancel');
+        message.error(errorMessage);
+      }
+    }
+  );
 
   const getStatusColor = (status) => {
     const colors = {
@@ -169,8 +124,39 @@ const PurchaseOrders = () => {
   const handleStatusChange = (record, newStatus) => {
     Modal.confirm({
       title: `Change Status to ${newStatus}`,
-      content: `Are you sure you want to change this PO status to ${newStatus}?`,
+      content: (
+        <div>
+          <p>Are you sure you want to change this PO status to <strong>{newStatus}</strong>?</p>
+          {newStatus === 'Sent' && (
+            <Alert
+              message="Important: Once sent, this purchase order cannot be cancelled"
+              description="Purchase orders can only be cancelled while in Draft status. After sending to vendor, cancellation will no longer be possible."
+              type="warning"
+              showIcon
+              style={{ marginTop: 12 }}
+            />
+          )}
+        </div>
+      ),
       onOk: () => updateStatusMutation.mutate({ id: record.id, status: newStatus })
+    });
+  };
+
+  const handleCancelPO = (record) => {
+    Modal.confirm({
+      title: 'Cancel Purchase Order',
+      content: (
+        <div>
+          <p>Are you sure you want to cancel purchase order <strong>{record.poNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            This will reverse all amounts and mark the purchase order as cancelled. This action cannot be undone.
+          </p>
+        </div>
+      ),
+      onOk: () => cancelPOMutation.mutateAsync(record.id),
+      okText: 'Yes, Cancel Purchase Order',
+      okButtonProps: { danger: true },
+      cancelText: 'No, Keep It'
     });
   };
 
@@ -196,13 +182,14 @@ const PurchaseOrders = () => {
         break;
     }
 
-    if (['Draft', 'Sent', 'Partial'].includes(record.status)) {
+    // BUSINESS RULE: Only Draft POs can be cancelled
+    if (record.status === 'Draft') {
       items.push({
         key: 'cancel',
         icon: <StopOutlined />,
         label: 'Cancel',
         danger: true,
-        onClick: () => handleStatusChange(record, 'Cancelled')
+        onClick: () => handleCancelPO(record)
       });
     }
 
@@ -215,7 +202,7 @@ const PurchaseOrders = () => {
       dataIndex: 'poNumber',
       key: 'poNumber',
       fixed: 'left',
-      width: 140,
+      width: 110,
       render: (text, record) => (
         <Button
           type="link"
@@ -230,7 +217,7 @@ const PurchaseOrders = () => {
       title: 'Vendor',
       dataIndex: 'vendor',
       key: 'vendor',
-      width: 180,
+      width: 90,
       render: (vendor) => (
         <Space>
           <ShopOutlined />
@@ -242,46 +229,30 @@ const PurchaseOrders = () => {
       title: 'Order Date',
       dataIndex: 'orderDate',
       key: 'orderDate',
-      width: 120,
+      width: 70,
       render: (date) => new Date(date).toLocaleDateString('en-GB'),
     },
     {
-      title: 'Expected Date',
+      title: 'Expected',
       dataIndex: 'expectedDate',
       key: 'expectedDate',
-      width: 120,
+      width: 70,
       render: (date) => date ? new Date(date).toLocaleDateString('en-GB') : '-',
     },
     {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 60,
       render: (status) => (
         <Tag color={getStatusColor(status)}>{status}</Tag>
       ),
     },
     {
-      title: 'Subtotal',
-      dataIndex: 'subtotal',
-      key: 'subtotal',
-      width: 120,
-      align: 'right',
-      render: (amount) => formatPKR(amount),
-    },
-    {
-      title: 'Tax',
-      dataIndex: 'taxAmount',
-      key: 'taxAmount',
-      width: 100,
-      align: 'right',
-      render: (amount) => formatPKR(amount),
-    },
-    {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      width: 120,
+      width: 80,
       align: 'right',
       render: (amount) => (
         <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
@@ -290,9 +261,9 @@ const PurchaseOrders = () => {
       ),
     },
     {
-      title: 'Line Items',
+      title: 'Items',
       key: 'lineItemsCount',
-      width: 80,
+      width: 35,
       align: 'center',
       render: (_, record) => (
         <Badge count={record._count?.lineItems || 0} showZero style={{ backgroundColor: '#52c41a' }} />
@@ -302,65 +273,18 @@ const PurchaseOrders = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 120,
+      width: 50,
       render: (_, record) => {
         const statusActions = getStatusActions(record);
         const menuItems = [
-          {
-            key: 'view',
-            icon: <EyeOutlined />,
-            label: 'View Details',
-            onClick: () => navigate(`/app/finance/purchase-orders/${record.id}`)
-          },
-          {
-            key: 'edit',
-            icon: <EditOutlined />,
-            label: 'Edit',
-            disabled: record.status !== 'Draft',
-            onClick: async () => {
-              try {
-                // Fetch full purchase order with line items
-                const response = await axios.get(`/finance/purchase-orders/${record.id}`);
-                const fullPO = response.data.data;
-
-                setEditingPO(fullPO);
-                form.setFieldsValue({
-                  ...fullPO,
-                  orderDate: fullPO.orderDate ? dayjs(fullPO.orderDate) : null,
-                  expectedDate: fullPO.expectedDate ? dayjs(fullPO.expectedDate) : null,
-                  taxRate: fullPO.taxAmount && fullPO.subtotal
-                    ? (Number(fullPO.taxAmount) / Number(fullPO.subtotal) * 100).toFixed(2)
-                    : 0
-                });
-
-                // Load existing line items
-                if (fullPO.lineItems && fullPO.lineItems.length > 0) {
-                  const items = fullPO.lineItems.map(item => ({
-                    productModelId: item.productModelId,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unitPrice: Number(item.unitPrice),
-                    totalPrice: Number(item.totalPrice),
-                    specifications: item.specifications || {},
-                    notes: item.notes || '',
-                    productModel: item.productModel
-                  }));
-                  setSelectedItems(items);
-                  setSubtotal(Number(fullPO.subtotal));
-                  setTaxAmount(Number(fullPO.taxAmount));
-                  setTotal(Number(fullPO.total));
-                }
-
-                setModalVisible(true);
-              } catch (error) {
-                message.error('Failed to load purchase order details');
-                console.error('Error loading PO:', error);
-              }
-            }
-          },
-          { type: 'divider' },
           ...statusActions,
-          { type: 'divider' },
+          {
+            key: 'create-bill',
+            icon: <FileTextOutlined />,
+            label: 'Create Bill',
+            onClick: () => navigate(`/app/finance/vendor-bills/create?purchaseOrderId=${record.id}`),
+            disabled: !['Sent', 'Partial', 'Paid'].includes(record.status) || !hasPermission('finance.create')
+          },
           {
             key: 'download-pdf',
             icon: <FilePdfOutlined />,
@@ -394,42 +318,16 @@ const PurchaseOrders = () => {
               icon={<EyeOutlined />}
               onClick={() => navigate(`/app/finance/purchase-orders/${record.id}`)}
             />
-            <Dropdown menu={{ items: menuItems }} placement="bottomRight">
-              <Button size="small" icon={<MoreOutlined />} />
-            </Dropdown>
+            {menuItems.length > 0 && (
+              <Dropdown menu={{ items: menuItems }} placement="bottomRight">
+                <Button size="small" icon={<MoreOutlined />} />
+              </Dropdown>
+            )}
           </Space>
         );
       },
     },
   ];
-
-  const handleFormSubmit = (values) => {
-    if (selectedItems.length === 0) {
-      message.error('Please add at least one product to the purchase order');
-      return;
-    }
-
-    const processedValues = {
-      ...values,
-      // Always set status to 'Draft' for new purchase orders, keep existing status when editing
-      status: editingPO ? editingPO.status : 'Draft',
-      orderDate: values.orderDate ? values.orderDate.toISOString() : new Date().toISOString(),
-      expectedDate: values.expectedDate ? values.expectedDate.toISOString() : null,
-      subtotal: subtotal,
-      taxAmount: taxAmount,
-      total: total,
-      lineItems: selectedItems.map(item => ({
-        productModelId: item.productModelId,
-        description: item.description,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice,
-        specifications: item.specifications,
-        notes: item.notes
-      }))
-    };
-    poMutation.mutate(processedValues);
-  };
 
   return (
     <>
@@ -570,11 +468,7 @@ const PurchaseOrders = () => {
           columns={columns}
           dataSource={purchaseOrdersData}
           loading={isLoading}
-          scroll={{ x: 1200 }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-          }}
+          scroll={{ x: 900 }}
           pagination={{
             showSizeChanger: true,
             showQuickJumper: true,
@@ -582,115 +476,6 @@ const PurchaseOrders = () => {
           }}
         />
       </Card>
-
-      {/* Create/Edit Modal */}
-      <Modal
-        title={editingPO ? 'Edit Purchase Order' : 'Create Purchase Order'}
-        open={modalVisible}
-        onCancel={handleCloseModal}
-        footer={null}
-        width={700}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleFormSubmit}
-          initialValues={{
-            orderDate: dayjs(),
-            status: 'Draft',
-            taxRate: settings?.finance?.taxRate || 0
-          }}
-        >
-          <Form.Item
-            label="Vendor"
-            name="vendorId"
-            rules={[{ required: true, message: 'Please select a vendor' }]}
-          >
-            <Select placeholder="Select vendor" showSearch optionFilterProp="children">
-              {vendors?.map(vendor => (
-                <Select.Option key={vendor.id} value={vendor.id}>
-                  {vendor.name} ({vendor.code})
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Order Date"
-                name="orderDate"
-                rules={requiredDateRules}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="Expected Date" name="expectedDate">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <div style={{ margin: '16px 0' }}>
-            <PurchaseOrderItemSelector
-              selectedItems={selectedItems}
-              onItemsChange={handleItemsChange}
-              onTotalChange={handleSubtotalChange}
-            />
-          </div>
-
-          <Divider />
-
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Tax Rate (%)"
-                name="taxRate"
-                initialValue={0}
-                rules={percentageRules}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  min={0}
-                  max={100}
-                  step={0.01}
-                  placeholder="0.00"
-                  onChange={() => {
-                    setTimeout(() => calculateTotals(), 0);
-                  }}
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <div style={{ marginTop: '30px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span>Subtotal:</span>
-                  <span style={{ fontWeight: 'bold' }}>{formatPKR(subtotal)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span>Tax:</span>
-                  <span>{formatPKR(taxAmount)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 'bold', color: '#1890ff' }}>
-                  <span>Total:</span>
-                  <span>{formatPKR(total)}</span>
-                </div>
-              </div>
-            </Col>
-          </Row>
-
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={handleCloseModal}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={poMutation.isLoading}>
-                {editingPO ? 'Update' : 'Create'}
-              </Button>
-            </Space>
-          </div>
-        </Form>
-      </Modal>
     </>
   );
 };

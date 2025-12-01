@@ -1,6 +1,7 @@
 // ========== src/controllers/reportController.js ==========
 const asyncHandler = require('express-async-handler');
 const reportService = require('../services/reportService');
+const dashboardService = require('../services/dashboardService');
 const financialReportsService = require('../services/financialReportsService');
 
 // @desc    Get dashboard KPIs
@@ -8,7 +9,8 @@ const financialReportsService = require('../services/financialReportsService');
 // @access  Private
 const getDashboard = asyncHandler(async (req, res) => {
   try {
-    const dashboard = await reportService.getDashboardData();
+    // Use the new dashboardService instead of reportService
+    const dashboard = await dashboardService.getDashboardStats();
 
     res.json({
       success: true,

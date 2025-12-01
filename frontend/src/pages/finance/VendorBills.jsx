@@ -3,40 +3,30 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
-  Row, Col, Statistic, Badge, Dropdown, message, Modal, Form,
-  Divider, InputNumber, Progress, Alert
+  Row, Col, Statistic, Badge, Dropdown, message, Modal, Progress
 } from 'antd';
 import {
   PlusOutlined, SearchOutlined, FilterOutlined,
-  EyeOutlined, EditOutlined, DeleteOutlined, ShopOutlined,
-  FilePdfOutlined, MoreOutlined, CheckOutlined,
+  EyeOutlined, DeleteOutlined, ShopOutlined,
+  MoreOutlined, CheckOutlined,
   SendOutlined, StopOutlined, DollarCircleOutlined, FileTextOutlined,
-  ExclamationCircleOutlined, ClockCircleOutlined, InfoCircleOutlined
+  ClockCircleOutlined, InfoCircleOutlined, ExclamationCircleOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
-import { parseAmount, addAmounts, subtractAmounts } from '../../utils/decimalUtils';
-import { requiredDateRules, amountRules, optionalAmountRules } from '../../utils/validationRules';
+import { parseAmount } from '../../utils/decimalUtils';
 import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-const { TextArea } = Input;
 
 const VendorBills = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
   const [filters, setFilters] = useState({});
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingBill, setEditingBill] = useState(null);
-  const [selectedPurchaseOrder, setSelectedPurchaseOrder] = useState(null);
-  const [selectedVendorId, setSelectedVendorId] = useState(null);
-  const [form] = Form.useForm();
 
   // Fetch vendor bills
   const { data: vendorBillsData, isLoading } = useQuery(
@@ -47,23 +37,10 @@ const VendorBills = () => {
     }
   );
 
-  // Fetch vendors for filter and form
+  // Fetch vendors for filter
   const { data: vendors } = useQuery('vendors', async () => {
     const response = await axios.get('/inventory/vendors');
     return response.data.data;
-  });
-
-  // Fetch purchase orders for form (only Sent and Partial)
-  const { data: purchaseOrders } = useQuery('purchase-orders-for-bills', async () => {
-    const response = await axios.get('/finance/purchase-orders', {
-      params: {
-        include: 'lineItems' // Request line items to be included
-      }
-    });
-    // Only show Sent and Partial purchase orders
-    return response.data.data.filter(po =>
-      po.status === 'Sent' || po.status === 'Partial'
-    );
   });
 
   // Calculate statistics
@@ -99,52 +76,15 @@ const VendorBills = () => {
     }, { total: 0, unpaid: 0, partial: 0, paid: 0, overdue: 0 });
   }, [vendorBillsData]);
 
-  // Create/Update Bill mutation
-  const billMutation = useMutation(
-    (data) => {
-      if (editingBill) {
-        return axios.put(`/finance/vendor-bills/${editingBill.id}`, data);
-      }
-      return axios.post('/finance/vendor-bills', data);
-    },
-    {
-      onSuccess: () => {
-        message.success(`Vendor Bill ${editingBill ? 'updated' : 'created'} successfully`);
-        queryClient.invalidateQueries('vendor-bills');
-        handleCloseModal();
-      },
-      onError: (error) => {
-        const operation = editingBill ? 'update' : 'create';
-        const errorMessage = getErrorMessage(error, 'bill', operation);
-        message.error(errorMessage);
-      }
-    }
-  );
-
-  // Update status mutation (deprecated - kept for backward compatibility)
-  const updateStatusMutation = useMutation(
-    ({ id, status }) => axios.put(`/finance/vendor-bills/${id}/status`, { status }),
-    {
-      onSuccess: () => {
-        message.success('Bill status updated');
-        queryClient.invalidateQueries('vendor-bills');
-        queryClient.invalidateQueries('purchase-orders');
-      },
-      onError: (error) => {
-        const errorMessage = getErrorMessage(error, 'bill', 'update');
-        message.error(errorMessage);
-      }
-    }
-  );
-
   // Cancel bill mutation
   const cancelBillMutation = useMutation(
-    ({ id, reason }) => axios.post(`/finance/vendor-bills/${id}/cancel`, { reason }),
+    (id) => axios.post(`/finance/vendor-bills/${id}/cancel`),
     {
       onSuccess: () => {
         message.success('Bill cancelled successfully');
         queryClient.invalidateQueries('vendor-bills');
         queryClient.invalidateQueries('purchase-orders');
+        queryClient.invalidateQueries('vendors');
       },
       onError: (error) => {
         const errorMessage = getErrorMessage(error, 'bill', 'cancel');
@@ -152,59 +92,6 @@ const VendorBills = () => {
       }
     }
   );
-
-  const handleCloseModal = () => {
-    setModalVisible(false);
-    setEditingBill(null);
-    setSelectedPurchaseOrder(null);
-    setSelectedVendorId(null);
-    form.resetFields();
-  };
-
-  // Handle vendor selection and reset PO when vendor changes
-  const handleVendorChange = (vendorId) => {
-    setSelectedVendorId(vendorId);
-
-    // Clear PO selection and amounts when vendor changes
-    setSelectedPurchaseOrder(null);
-    form.setFieldsValue({
-      purchaseOrderId: null,
-      subtotal: null,
-      taxAmount: null
-    });
-  };
-
-  // Handle purchase order selection and auto-populate form fields
-  const handlePurchaseOrderChange = (poId) => {
-    if (!poId) {
-      setSelectedPurchaseOrder(null);
-      // Reset financial fields when PO is cleared
-      form.setFieldsValue({
-        subtotal: null,
-        taxAmount: null
-      });
-      return;
-    }
-
-    const selectedPO = purchaseOrders?.find(po => po.id === poId);
-    if (selectedPO) {
-      setSelectedPurchaseOrder(selectedPO);
-
-      // Auto-populate financial fields from PO (no longer set vendor since it's already selected)
-      form.setFieldsValue({
-        subtotal: parseAmount(selectedPO.subtotal),
-        taxAmount: parseAmount(selectedPO.taxAmount)
-      });
-
-      message.success(`Populated bill amounts from PO ${selectedPO.poNumber}`);
-    }
-  };
-
-  // Filter purchase orders for selected vendor
-  const filteredPurchaseOrders = React.useMemo(() => {
-    if (!selectedVendorId || !purchaseOrders) return [];
-    return purchaseOrders.filter(po => po.vendorId === selectedVendorId);
-  }, [selectedVendorId, purchaseOrders]);
 
   const getStatusColor = (status) => {
     const colors = {
@@ -215,39 +102,21 @@ const VendorBills = () => {
     return colors[status] || 'default';
   };
 
-  const handleStatusChange = (record, newStatus) => {
-    Modal.confirm({
-      title: `Change Status to ${newStatus}`,
-      content: `Are you sure you want to change this bill status to ${newStatus}?`,
-      onOk: () => updateStatusMutation.mutate({ id: record.id, status: newStatus })
-    });
-  };
-
   const handleCancelBill = (record) => {
-    let reason = '';
     Modal.confirm({
       title: 'Cancel Bill',
       content: (
         <div>
           <p>Are you sure you want to cancel bill <strong>{record.billNumber}</strong>?</p>
-          <p style={{ color: '#ff4d4f', marginTop: 8 }}>
-            <ExclamationCircleOutlined /> This action will reverse the bill amount from the vendor balance and PO billed amount.
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            This will reverse all amounts and mark the bill as cancelled. This action cannot be undone.
           </p>
-          <TextArea
-            rows={3}
-            placeholder="Enter cancellation reason (required)"
-            onChange={(e) => { reason = e.target.value; }}
-            style={{ marginTop: 12 }}
-          />
         </div>
       ),
-      onOk: () => {
-        if (!reason || reason.trim() === '') {
-          message.error('Please provide a cancellation reason');
-          return Promise.reject();
-        }
-        return cancelBillMutation.mutateAsync({ id: record.id, reason: reason.trim() });
-      }
+      onOk: () => cancelBillMutation.mutateAsync(record.id),
+      okText: 'Yes, Cancel Bill',
+      cancelText: 'No, Keep It',
+      okType: 'danger'
     });
   };
 
@@ -269,11 +138,11 @@ const VendorBills = () => {
 
   const columns = [
     {
-      title: 'Bill Number',
+      title: 'Bill #',
       dataIndex: 'billNumber',
       key: 'billNumber',
       fixed: 'left',
-      width: 140,
+      width: 135,
       render: (text, record) => (
         <Button
           type="link"
@@ -288,7 +157,7 @@ const VendorBills = () => {
       title: 'Vendor',
       dataIndex: 'vendor',
       key: 'vendor',
-      width: 180,
+      width: 110,
       render: (vendor) => (
         <Space>
           <ShopOutlined />
@@ -300,14 +169,14 @@ const VendorBills = () => {
       title: 'Bill Date',
       dataIndex: 'billDate',
       key: 'billDate',
-      width: 120,
+      width: 90,
       render: (date) => new Date(date).toLocaleDateString('en-GB'),
     },
     {
       title: 'Due Date',
       dataIndex: 'dueDate',
       key: 'dueDate',
-      width: 120,
+      width: 90,
       render: (date, record) => {
         if (!date) return '-';
         const formatted = new Date(date).toLocaleDateString('en-GB');
@@ -324,7 +193,7 @@ const VendorBills = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: 55,
       render: (status, record) => {
         const overdue = isOverdue(record);
         return (
@@ -336,10 +205,10 @@ const VendorBills = () => {
       },
     },
     {
-      title: 'PO Number',
+      title: 'PO #',
       dataIndex: 'purchaseOrder',
       key: 'purchaseOrder',
-      width: 120,
+      width: 110,
       render: (po) => po ? (
         <Button
           type="link"
@@ -354,7 +223,7 @@ const VendorBills = () => {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      width: 120,
+      width: 100,
       align: 'right',
       render: (amount) => (
         <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
@@ -366,7 +235,7 @@ const VendorBills = () => {
       title: 'Paid',
       dataIndex: 'paidAmount',
       key: 'paidAmount',
-      width: 120,
+      width: 100,
       align: 'right',
       render: (paidAmount) => (
         <span style={{ color: '#52c41a' }}>
@@ -377,7 +246,7 @@ const VendorBills = () => {
     {
       title: 'Progress',
       key: 'progress',
-      width: 100,
+      width: 90,
       render: (_, record) => (
         <Progress
           percent={getPaymentProgress(record)}
@@ -387,9 +256,9 @@ const VendorBills = () => {
       ),
     },
     {
-      title: 'Payments',
+      title: 'Pay',
       key: 'paymentsCount',
-      width: 80,
+      width: 50,
       align: 'center',
       render: (_, record) => (
         <Badge
@@ -403,32 +272,10 @@ const VendorBills = () => {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 120,
+      width: 100,
       render: (_, record) => {
         const statusActions = getStatusActions(record);
         const menuItems = [
-          {
-            key: 'view',
-            icon: <EyeOutlined />,
-            label: 'View Details',
-            onClick: () => navigate(`/app/finance/vendor-bills/${record.id}`)
-          },
-          {
-            key: 'edit',
-            icon: <EditOutlined />,
-            label: 'Edit',
-            disabled: record.status !== 'Unpaid' || parseAmount(record.paidAmount) > 0,
-            onClick: () => {
-              setEditingBill(record);
-              form.setFieldsValue({
-                ...record,
-                billDate: record.billDate ? dayjs(record.billDate) : null,
-                dueDate: record.dueDate ? dayjs(record.dueDate) : null
-              });
-              setModalVisible(true);
-            }
-          },
-          { type: 'divider' },
           {
             key: 'payment',
             icon: <DollarCircleOutlined />,
@@ -443,31 +290,6 @@ const VendorBills = () => {
             danger: true,
             disabled: record.status !== 'Unpaid' || parseAmount(record.paidAmount) > 0,
             onClick: () => handleCancelBill(record)
-          },
-          { type: 'divider' },
-          {
-            key: 'download-pdf',
-            icon: <FilePdfOutlined />,
-            label: 'Download PDF',
-            onClick: async () => {
-              try {
-                message.loading({ content: 'Generating PDF...', key: 'pdf' });
-                const response = await axios.get(`/finance/vendor-bills/${record.id}/pdf`, {
-                  responseType: 'blob'
-                });
-                const url = window.URL.createObjectURL(new Blob([response.data]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `vendor_bill_${record.billNumber}.pdf`);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                window.URL.revokeObjectURL(url);
-                message.success({ content: 'PDF downloaded successfully', key: 'pdf' });
-              } catch (error) {
-                message.error({ content: 'Failed to download PDF', key: 'pdf' });
-              }
-            }
           }
         ];
 
@@ -486,18 +308,6 @@ const VendorBills = () => {
       },
     },
   ];
-
-  const handleFormSubmit = (values) => {
-    const processedValues = {
-      ...values,
-      billDate: values.billDate ? values.billDate.toISOString() : new Date().toISOString(),
-      dueDate: values.dueDate ? values.dueDate.toISOString() : null,
-      subtotal: parseAmount(values.subtotal),
-      taxAmount: parseAmount(values.taxAmount),
-      total: addAmounts(values.subtotal, values.taxAmount)
-    };
-    billMutation.mutate(processedValues);
-  };
 
   return (
     <>
@@ -624,11 +434,7 @@ const VendorBills = () => {
           columns={columns}
           dataSource={vendorBillsData}
           loading={isLoading}
-          scroll={{ x: 1400 }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-          }}
+          scroll={{ x: 1100 }}
           pagination={{
             showSizeChanger: true,
             showQuickJumper: true,
@@ -636,219 +442,6 @@ const VendorBills = () => {
           }}
         />
       </Card>
-
-      {/* Create/Edit Modal */}
-      <Modal
-        title={editingBill ? 'Edit Vendor Bill' : 'Create Vendor Bill'}
-        open={modalVisible}
-        onCancel={handleCloseModal}
-        footer={null}
-        width={900}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleFormSubmit}
-          initialValues={{
-            billDate: dayjs(),
-            status: 'Unpaid',
-            taxAmount: 0
-          }}
-        >
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Vendor"
-                name="vendorId"
-                rules={[{ required: true, message: 'Please select a vendor' }]}
-              >
-                <Select
-                  placeholder="Select vendor first"
-                  showSearch
-                  optionFilterProp="children"
-                  onChange={handleVendorChange}
-                >
-                  {vendors?.map(vendor => (
-                    <Select.Option key={vendor.id} value={vendor.id}>
-                      {vendor.name} ({vendor.code})
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Purchase Order (Optional)"
-                name="purchaseOrderId"
-              >
-                <Select
-                  placeholder={
-                    !selectedVendorId
-                      ? "Select vendor first"
-                      : filteredPurchaseOrders.length === 0
-                      ? "No POs available for this vendor"
-                      : "Select PO to auto-populate amounts"
-                  }
-                  allowClear
-                  showSearch
-                  optionFilterProp="children"
-                  onChange={handlePurchaseOrderChange}
-                  disabled={!selectedVendorId || filteredPurchaseOrders.length === 0}
-                  notFoundContent={
-                    !selectedVendorId
-                      ? "Please select a vendor first"
-                      : "No purchase orders found for this vendor"
-                  }
-                >
-                  {filteredPurchaseOrders.map(po => (
-                    <Select.Option key={po.id} value={po.id}>
-                      {po.poNumber} ({formatPKR(Number(po.total || 0))})
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Bill Date"
-                name="billDate"
-                rules={requiredDateRules}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item label="Due Date" name="dueDate">
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Informational Alert */}
-          <Alert
-            message="Smart Bill Creation"
-            description="First select a vendor, then choose a Purchase Order to automatically populate subtotal and tax amounts. You can still adjust the amounts if needed."
-            type="info"
-            icon={<InfoCircleOutlined />}
-            style={{ marginBottom: 16 }}
-            showIcon
-          />
-
-          <Divider />
-
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Subtotal (PKR)"
-                name="subtotal"
-                rules={amountRules}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  min={0}
-                  step={0.01}
-                  placeholder="0.00"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item
-                label="Tax Amount (PKR)"
-                name="taxAmount"
-                rules={optionalAmountRules}
-              >
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  min={0}
-                  step={0.01}
-                  placeholder="0.00"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Purchase Order Line Items Preview */}
-          {selectedPurchaseOrder && (
-            <>
-              <Divider />
-              <Card
-                size="small"
-                title={`Purchase Order ${selectedPurchaseOrder.poNumber} - Line Items`}
-                style={{ backgroundColor: '#f9f9f9' }}
-              >
-                <Table
-                  size="small"
-                  dataSource={selectedPurchaseOrder.lineItems || []}
-                  pagination={false}
-                  rowKey="id"
-                  columns={[
-                    {
-                      title: 'Description',
-                      dataIndex: 'description',
-                      key: 'description'
-                    },
-                    {
-                      title: 'Quantity',
-                      dataIndex: 'quantity',
-                      key: 'quantity',
-                      align: 'center',
-                      width: 80
-                    },
-                    {
-                      title: 'Unit Price',
-                      dataIndex: 'unitPrice',
-                      key: 'unitPrice',
-                      align: 'right',
-                      width: 100,
-                      render: (price) => formatPKR(Number(price))
-                    },
-                    {
-                      title: 'Total',
-                      dataIndex: 'totalPrice',
-                      key: 'totalPrice',
-                      align: 'right',
-                      width: 100,
-                      render: (total) => (
-                        <span style={{ fontWeight: 'bold' }}>
-                          {formatPKR(Number(total))}
-                        </span>
-                      )
-                    }
-                  ]}
-                  summary={() => (
-                    <Table.Summary>
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0} colSpan={3}>
-                          <span style={{ fontWeight: 'bold' }}>Total</span>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={3}>
-                          <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
-                            {formatPKR(Number(selectedPurchaseOrder.total || 0))}
-                          </span>
-                        </Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    </Table.Summary>
-                  )}
-                />
-              </Card>
-            </>
-          )}
-
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={handleCloseModal}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={billMutation.isLoading}>
-                {editingBill ? 'Update' : 'Create'}
-              </Button>
-            </Space>
-          </div>
-        </Form>
-      </Modal>
     </>
   );
 };

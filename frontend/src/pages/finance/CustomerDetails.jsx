@@ -187,8 +187,8 @@ const CustomerDetails = () => {
                 },
                 {
                   title: 'Total',
-                  dataIndex: 'totalAmount',
-                  key: 'totalAmount',
+                  dataIndex: 'total',
+                  key: 'total',
                   align: 'right',
                   render: (amount, record) => (
                     <span style={{
@@ -216,7 +216,7 @@ const CustomerDetails = () => {
                   align: 'right',
                   render: (_, record) => {
                     if (record.cancelledAt) return '-';
-                    const balance = subtractAmounts(record.totalAmount, record.paidAmount);
+                    const balance = subtractAmounts(record.total, record.paidAmount);
                     return (
                       <span style={{
                         color: balance > 0 ? '#f5222d' : '#52c41a',
@@ -294,8 +294,8 @@ const CustomerDetails = () => {
                 },
                 {
                   title: 'Method',
-                  dataIndex: 'paymentMethod',
-                  key: 'paymentMethod',
+                  dataIndex: 'method',
+                  key: 'method',
                   render: (method, record) => (
                     <span style={{ color: record.voidedAt ? '#999' : 'inherit' }}>
                       {method}

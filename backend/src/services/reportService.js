@@ -105,9 +105,9 @@ class ReportService {
       by: ['modelId'],
       where: {
         status: 'Sold',
-        NOT: {
-          modelId: null
-        },
+        NOT: [
+          { modelId: null }
+        ],
         outboundDate: {
           gte: startOfMonth
         }
