@@ -1,29 +1,26 @@
 // ========== src/pages/reports/Reports.jsx ==========
 import React, { useState } from 'react';
 import {
-  Card, Tabs, DatePicker, Button, Table, Row, Col,
-  Statistic, Select, Space, Spin, message, Typography
+  Card, Tabs, Table, Row, Col,
+  Statistic, Typography, Spin
 } from 'antd';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import {
-  DownloadOutlined, ReloadOutlined
-} from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
 import dayjs from 'dayjs';
 
-// Import comprehensive financial reports
-import ProfitLossStatement from '../../components/reports/ProfitLossStatement';
-import BalanceSheet from '../../components/reports/BalanceSheet';
-import CashFlowReport from '../../components/reports/CashFlowReport';
+// Import financial reports
 import ARAgingReport from '../../components/reports/ARAgingReport';
 import InventoryTurnoverReport from '../../components/reports/InventoryTurnoverReport';
 import GrossProfitMarginReport from '../../components/reports/GrossProfitMarginReport';
+// Import new simple ledger reports
+import SalesTrendsReport from '../../components/reports/SalesTrendsReport';
+import CashSummaryReport from '../../components/reports/CashSummaryReport';
+import CustomerAnalysisReport from '../../components/reports/CustomerAnalysisReport';
 
-const { RangePicker } = DatePicker;
 const { TabPane } = Tabs;
 const { Text } = Typography;
 
@@ -34,7 +31,7 @@ const Reports = () => {
     dayjs().startOf('month'),
     dayjs().endOf('month')
   ]);
-  const [reportType, setReportType] = useState('inventory');
+  const [reportType, setReportType] = useState('sales-trends');
 
   // Fetch report data
   const { data: reportData, isLoading, refetch } = useQuery(
@@ -63,20 +60,6 @@ const Reports = () => {
     }
   );
 
-  const handleExport = async () => {
-    try {
-      const response = await axios.post('/reports/export', {
-        reportType,
-        filters: {
-          startDate: dateRange[0].toISOString(),
-          endDate: dateRange[1].toISOString()
-        }
-      });
-      window.open(response.data.data.url, '_blank');
-    } catch (error) {
-      message.error('Export failed');
-    }
-  };
 
   const renderInventoryReport = () => {
     if (!reportData?.data?.data) return null;
@@ -235,20 +218,6 @@ const Reports = () => {
   return (
     <Card
       title="Reports & Analytics"
-      extra={
-        <Space>
-          <RangePicker
-            value={dateRange}
-            onChange={(dates) => dates && setDateRange(dates)}
-          />
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
-            Refresh
-          </Button>
-          <Button icon={<DownloadOutlined />} onClick={handleExport}>
-            Export
-          </Button>
-        </Space>
-      }
     >
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 50 }}>
@@ -256,20 +225,20 @@ const Reports = () => {
         </div>
       ) : (
         <Tabs activeKey={reportType} onChange={setReportType}>
+          <TabPane tab="Sales Trends" key="sales-trends">
+            <SalesTrendsReport />
+          </TabPane>
+          <TabPane tab="Cash Flow" key="cash-summary">
+            <CashSummaryReport />
+          </TabPane>
+          <TabPane tab="Customer Analysis" key="customer-analysis">
+            <CustomerAnalysisReport />
+          </TabPane>
           <TabPane tab="Real-time Stock Levels" key="inventory">
             {renderInventoryReport()}
           </TabPane>
           <TabPane tab="Stock Valuation" key="valuation">
             {renderStockValuation()}
-          </TabPane>
-          <TabPane tab="Profit & Loss" key="profit-loss">
-            <ProfitLossStatement />
-          </TabPane>
-          <TabPane tab="Balance Sheet" key="balance-sheet">
-            <BalanceSheet />
-          </TabPane>
-          <TabPane tab="Cash Flow Statement" key="cash-flow">
-            <CashFlowReport />
           </TabPane>
           <TabPane tab="Inventory Turnover" key="inventory-turnover">
             <InventoryTurnoverReport />

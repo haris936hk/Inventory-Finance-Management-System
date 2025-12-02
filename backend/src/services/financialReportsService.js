@@ -85,7 +85,8 @@ class FinancialReportsService {
           status: {
             in: ['Sent', 'Paid', 'Partial']  // Include all finalized invoices
           },
-          deletedAt: null
+          deletedAt: null,
+          cancelledAt: null  // FIX: Exclude cancelled invoices
         }
       },
       include: {
@@ -486,7 +487,8 @@ class FinancialReportsService {
       const unpaidInvoices = await prisma.invoice.findMany({
         where: {
           status: { in: ['Sent', 'Partial'] },
-          deletedAt: null
+          deletedAt: null,
+          cancelledAt: null  // FIX: Exclude cancelled invoices
         },
         include: {
           customer: {
@@ -941,7 +943,8 @@ class FinancialReportsService {
             lte: new Date(endDate)
           },
           status: { in: ['Sent', 'Paid', 'Partial'] },
-          deletedAt: null
+          deletedAt: null,
+          cancelledAt: null  // FIX: Exclude cancelled invoices
         }
       },
       _sum: {
@@ -993,7 +996,8 @@ class FinancialReportsService {
             lte: new Date(endDate)
           },
           status: { in: ['Sent', 'Paid', 'Partial'] },
-          deletedAt: null
+          deletedAt: null,
+          cancelledAt: null  // FIX: Exclude cancelled invoices
         },
         _sum: {
           total: true
@@ -1036,7 +1040,8 @@ class FinancialReportsService {
           lte: new Date(endDate)
         },
         status: { in: ['Sent', 'Paid', 'Partial'] },
-        deletedAt: null
+        deletedAt: null,
+        cancelledAt: null  // FIX: Exclude cancelled invoices
       },
       include: {
         items: {

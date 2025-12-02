@@ -1,7 +1,7 @@
 // ========== src/layouts/PrivateLayout.jsx ==========
 import React, { useState, useEffect } from 'react';
 import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Avatar, Dropdown, Space, Badge, Button, Drawer } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Space, Button, Drawer } from 'antd';
 import {
   DashboardOutlined,
   ShoppingCartOutlined,
@@ -12,7 +12,6 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined,
   AppstoreOutlined,
   TeamOutlined,
   BankOutlined,
@@ -288,14 +287,6 @@ const PrivateLayout = () => {
           </div>
 
           <Space size="large">
-            <Badge count={0}>
-              <Button
-                type="text"
-                icon={<BellOutlined />}
-                style={{ fontSize: 18 }}
-              />
-            </Badge>
-
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1890ff' }} />
@@ -313,12 +304,12 @@ const PrivateLayout = () => {
           <Outlet />
         </Content>
 
-        <Footer style={{ 
+        <Footer style={{
           textAlign: 'center',
           background: '#fff',
           borderTop: '1px solid #f0f0f0',
         }}>
-          Inventory & Finance Management System ©{new Date().getFullYear()}
+          Made by <a href="https://hariskhan-portfolio.netlify.app" target="_blank" rel="noopener noreferrer">Haris Khan</a>
         </Footer>
       </Layout>
 

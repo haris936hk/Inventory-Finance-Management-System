@@ -81,4 +81,20 @@ router.get('/gross-profit-margin',
   reportController.getGrossProfitMargin
 );
 
+// =========== NEW SIMPLE LEDGER REPORTS ===========
+router.get('/sales-trends',
+  hasPermission(['reports.view']),
+  reportController.getSalesTrends
+);
+
+router.get('/cash-summary',
+  hasPermission(['reports.view']),
+  reportController.getCashSummary
+);
+
+router.get('/customer-analysis',
+  hasPermission(['reports.view']),
+  reportController.getCustomerAnalysis
+);
+
 module.exports = router;

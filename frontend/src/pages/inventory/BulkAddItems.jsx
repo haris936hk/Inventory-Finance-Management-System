@@ -6,7 +6,7 @@ import {
   Row, Col, Space, message, Steps, Divider, Switch, Table, Tag, Typography
 } from 'antd';
 import {
-  SaveOutlined, ArrowLeftOutlined, ScanOutlined
+  SaveOutlined, ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';

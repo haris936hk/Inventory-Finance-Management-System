@@ -15,7 +15,6 @@ const DEFAULT_SETTINGS = {
   },
   inventory: {
     lowStockThreshold: 10,
-    enableBarcodeScanning: true,
     requireSerialNumbers: true,
     autoGenerateSerialNumbers: false
   },
@@ -23,11 +22,6 @@ const DEFAULT_SETTINGS = {
     defaultPaymentTerms: 30,
     taxRate: 0,
     openingCashBalance: 0
-  },
-  notifications: {
-    lowStockAlerts: true,
-    paymentReminders: true,
-    systemUpdates: true
   }
 };
 
@@ -168,10 +162,6 @@ class SettingsService {
         if (value.openingCashBalance !== undefined && value.openingCashBalance < 0) {
           throw new Error('Opening cash balance cannot be negative');
         }
-        break;
-
-      case 'notifications':
-        // No specific validation needed for boolean flags
         break;
 
       default:

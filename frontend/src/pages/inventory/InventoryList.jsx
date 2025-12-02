@@ -2,20 +2,19 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Table, Card, Button, Space, Tag, Input, Select, DatePicker,
-  Row, Col, Drawer, Descriptions, Badge, Tooltip, message,
-  Popconfirm, Modal, Form, Dropdown
+  Table, Card, Button, Space, Tag, Input,
+  Row, Col, Tooltip, message,
+  Modal, Dropdown
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined,
-  EditOutlined, DeleteOutlined, EyeOutlined, BarcodeOutlined,
-  MoreOutlined, ScanOutlined, AppstoreAddOutlined,
+  PlusOutlined, SearchOutlined,
+  EditOutlined, DeleteOutlined, EyeOutlined,
+  MoreOutlined, AppstoreAddOutlined,
   TruckOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
-import BarcodeScanner from '../../components/BarcodeScanner';
 import HandoverModal from '../../components/HandoverModal';
 import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
 import BulkHandoverModal from '../../components/BulkHandoverModal';
@@ -23,7 +22,6 @@ import BulkRepairedStatusModal from '../../components/BulkRepairedStatusModal';
 import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
-const { RangePicker } = DatePicker;
 
 const InventoryList = () => {
   const navigate = useNavigate();
@@ -33,8 +31,6 @@ const InventoryList = () => {
   const [filters, setFilters] = useState({});
   const [searchText, setSearchText] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [scannerVisible, setScannerVisible] = useState(false);
   const [handoverModalVisible, setHandoverModalVisible] = useState(false);
   const [repairedModalVisible, setRepairedModalVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -287,15 +283,6 @@ const InventoryList = () => {
         const isNotDeletable = ['Reserved', 'Sold', 'Delivered'].includes(record.inventoryStatus);
 
         const menuItems = [
-          {
-            key: 'view',
-            label: 'View Details',
-            icon: <EyeOutlined />,
-            onClick: () => {
-              setSelectedItem(record);
-              setDrawerVisible(true);
-            }
-          },
           ...(isReserved ? [{
             key: 'handover',
             label: 'Handover',
@@ -316,9 +303,9 @@ const InventoryList = () => {
             },
             disabled: !hasPermission('inventory.edit')
           }] : []),
-          {
+          ...(isReserved || (record.inventoryStatus === 'Under Repair' && record.status === 'In Lab' && record.repaired === 'No') ? [{
             type: 'divider'
-          },
+          }] : []),
           {
             key: 'delete',
             label: 'Delete',
@@ -360,12 +347,6 @@ const InventoryList = () => {
 
   const handleSearch = (value) => {
     setFilters({ ...filters, serialNumber: value });
-  };
-
-  const handleScanResult = (result) => {
-    setScannerVisible(false);
-    setFilters({ ...filters, serialNumber: result });
-    message.success(`Scanned: ${result}`);
   };
 
   const handleDelete = (record) => {
@@ -462,86 +443,33 @@ const InventoryList = () => {
       </style>
       <Card>
         <div style={{ marginBottom: 16 }}>
-          <Row gutter={[8, 8]} align="middle">
-            <Col xs={24} sm={12} md={8} lg={5}>
+          <Row gutter={[8, 8]} align="middle" justify="space-between">
+            <Col xs={24} sm={12} md={8}>
               <Search
                 placeholder="Search by serial number"
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
-                addonAfter={
-                  <Button
-                    type="text"
-                    icon={<ScanOutlined />}
-                    onClick={() => setScannerVisible(true)}
-                  />
-                }
               />
             </Col>
 
-            <Col xs={12} sm={6} md={4} lg={3}>
-              <Select
-                placeholder="Category"
-                allowClear
-                style={{ width: '100%' }}
-                onChange={(value) => setFilters({ ...filters, categoryId: value })}
-              >
-                {categories?.map(cat => (
-                  <Select.Option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Col>
-
-            <Col xs={12} sm={6} md={4} lg={3}>
-              <Select
-                placeholder="Status"
-                allowClear
-                style={{ width: '100%' }}
-                onChange={(value) => setFilters({ ...filters, status: value })}
-              >
-                <Select.Option value="In Store">In Store</Select.Option>
-                <Select.Option value="In Lab">In Lab</Select.Option>
-                <Select.Option value="Handover">Handover</Select.Option>
-              </Select>
-            </Col>
-
-            <Col xs={24} sm={12} md={8} lg={5}>
-              <RangePicker
-                style={{ width: '100%' }}
-                onChange={(dates) => {
-                  if (dates) {
-                    setFilters({
-                      ...filters,
-                      inboundFrom: dates[0].toISOString(),
-                      inboundTo: dates[1].toISOString()
-                    });
-                  } else {
-                    const { inboundFrom, inboundTo, ...rest } = filters;
-                    setFilters(rest);
-                  }
-                }}
-              />
-            </Col>
-
-            <Col xs={24} sm={24} md={24} lg={8} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Col xs={24} sm={12} md={8} style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Space wrap>
                 {hasPermission('inventory.create') && (
                   <>
-                    <Button
-                      type="primary"
-                      icon={<PlusOutlined />}
-                      onClick={() => navigate('/app/inventory/items/add')}
-                    >
-                      Add Item
-                    </Button>
                     <Button
                       type="default"
                       icon={<AppstoreAddOutlined />}
                       onClick={() => navigate('/app/inventory/items/bulk-add')}
                     >
                       Bulk Add
+                    </Button>
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => navigate('/app/inventory/items/add')}
+                    >
+                      Add Item
                     </Button>
                   </>
                 )}
@@ -625,179 +553,6 @@ const InventoryList = () => {
           }}
         />
       </Card>
-
-      {/* Item Details Drawer */}
-      <Drawer
-        title="Item Details"
-        placement="right"
-        width={600}
-        onClose={() => setDrawerVisible(false)}
-        open={drawerVisible}
-      >
-        {selectedItem && (
-          <>
-            <Descriptions bordered column={1}>
-              <Descriptions.Item label="Serial Number">
-                <Badge status="processing" text={selectedItem.serialNumber} />
-              </Descriptions.Item>
-              <Descriptions.Item label="Category">
-                {selectedItem.category.name}
-              </Descriptions.Item>
-              <Descriptions.Item label="Company">
-                {selectedItem.model?.company.name}
-              </Descriptions.Item>
-              <Descriptions.Item label="Model">
-                {selectedItem.model?.name}
-              </Descriptions.Item>
-              <Descriptions.Item label="Inventory Status">
-                <Tag color={getInventoryStatusColor(selectedItem.inventoryStatus || 'Available')}>
-                  {selectedItem.inventoryStatus || 'Available'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Physical Status">
-                <Tag color={getPhysicalStatusColor(selectedItem.status)}>
-                  {selectedItem.status}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Condition">
-                <Tag color={selectedItem.condition === 'New' ? 'green' : 'orange'}>
-                  {selectedItem.condition}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Purchase Price">
-                PKR {selectedItem.purchasePrice || '-'}
-              </Descriptions.Item>
-              {selectedItem.sellingPrice && (
-                <Descriptions.Item label="Selling Price">
-                  PKR {selectedItem.sellingPrice}
-                </Descriptions.Item>
-              )}
-              <Descriptions.Item label="Vendor">
-                {selectedItem.vendor?.name || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="Inbound Date">
-                {new Date(selectedItem.inboundDate).toLocaleDateString()}
-              </Descriptions.Item>
-              {selectedItem.outboundDate && (
-                <Descriptions.Item label="Outbound Date">
-                  {new Date(selectedItem.outboundDate).toLocaleDateString()}
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-
-            {selectedItem.specifications && (
-              <>
-                <h3 style={{ marginTop: 24 }}>Specifications</h3>
-                <Descriptions bordered column={1}>
-                  {Object.entries(selectedItem.specifications).map(([key, value]) => (
-                    <Descriptions.Item key={key} label={key}>
-                      {value}
-                    </Descriptions.Item>
-                  ))}
-                </Descriptions>
-              </>
-            )}
-
-            {selectedItem.customer && (
-              <>
-                <h3 style={{ marginTop: 24 }}>Customer Information</h3>
-                <Descriptions bordered column={1}>
-                  <Descriptions.Item label="Name">
-                    {selectedItem.customer.name}
-                  </Descriptions.Item>
-                  {selectedItem.customer.company && (
-                    <Descriptions.Item label="Company">
-                      {selectedItem.customer.company}
-                    </Descriptions.Item>
-                  )}
-                  {selectedItem.customer.phone && (
-                    <Descriptions.Item label="Phone">
-                      {selectedItem.customer.phone}
-                    </Descriptions.Item>
-                  )}
-                  {selectedItem.customer.email && (
-                    <Descriptions.Item label="Email">
-                      {selectedItem.customer.email}
-                    </Descriptions.Item>
-                  )}
-                  {selectedItem.customer.nic && (
-                    <Descriptions.Item label="NIC">
-                      {selectedItem.customer.nic}
-                    </Descriptions.Item>
-                  )}
-                  {selectedItem.customer.address && (
-                    <Descriptions.Item label="Address">
-                      {selectedItem.customer.address}
-                    </Descriptions.Item>
-                  )}
-                </Descriptions>
-              </>
-            )}
-
-            {selectedItem.handoverTo && (
-              <>
-                <h3 style={{ marginTop: 24 }}>Handover Details</h3>
-                <Descriptions bordered column={1}>
-                  <Descriptions.Item label="Handed To">
-                    {selectedItem.handoverTo}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Handed By">
-                    {selectedItem.handoverByUser?.fullName}
-                  </Descriptions.Item>
-                  {selectedItem.handoverDetails && (
-                    <Descriptions.Item label="Details">
-                      {selectedItem.handoverDetails}
-                    </Descriptions.Item>
-                  )}
-                  {selectedItem.handoverDate && (
-                    <Descriptions.Item label="Date">
-                      {new Date(selectedItem.handoverDate).toLocaleDateString()}
-                    </Descriptions.Item>
-                  )}
-                </Descriptions>
-              </>
-            )}
-
-            <div style={{ marginTop: 24 }}>
-              <Space>
-                <Button
-                  type="primary"
-                  onClick={() => navigate(`/app/inventory/items/${selectedItem.serialNumber}`)}
-                >
-                  View Full Details
-                </Button>
-                {hasPermission('inventory.edit') && (
-                  <>
-                    {selectedItem?.inventoryStatus === 'Reserved' && (
-                      <Button onClick={() => {
-                        setHandoverModalVisible(true);
-                        setDrawerVisible(false);
-                      }}>
-                        Handover
-                      </Button>
-                    )}
-                    {selectedItem?.inventoryStatus === 'Under Repair' && selectedItem?.status === 'In Lab' && selectedItem?.repaired === 'No' && (
-                      <Button onClick={() => {
-                        setRepairedModalVisible(true);
-                        setDrawerVisible(false);
-                      }}>
-                        Update Repaired Status
-                      </Button>
-                    )}
-                  </>
-                )}
-              </Space>
-            </div>
-          </>
-        )}
-      </Drawer>
-
-      {/* Barcode Scanner Modal */}
-      <BarcodeScanner
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScan={handleScanResult}
-      />
 
       {/* Handover Modal */}
       <HandoverModal

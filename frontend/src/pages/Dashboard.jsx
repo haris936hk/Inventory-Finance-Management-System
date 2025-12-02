@@ -22,11 +22,10 @@ const { Text, Title } = Typography;
 /**
  * Dashboard Component
  * REVAMPED: 2025-01-21
- * - Simplified to 4 essential stat cards
+ * - Simplified to 3 essential stat cards
  * - Card 1: Inventory Levels (Total, Available, Reserved)
  * - Card 2: Outstanding Receivables (from unpaid invoices)
- * - Card 3: Purchase Order metrics (Active POs, monthly value)
- * - Card 4: Outstanding Payables (amounts owed to vendors)
+ * - Card 3: Outstanding Payables (amounts owed to vendors)
  * - Quick Actions: Create Invoice, Record Payment, Create Bill, Record Vendor Payment, Add Item, Bulk Add Items, Create PO
  * - Removed charts, top products, complex visualizations
  * - Spacious layout with large cards
@@ -110,10 +109,10 @@ const Dashboard = () => {
         </Text>
       </div>
 
-      {/* 4 Large Stat Cards - Spacious Layout */}
+      {/* 3 Large Stat Cards - Spacious Layout */}
       <Row gutter={24} style={{ marginBottom: 32 }}>
         {/* Card 1: Inventory Levels */}
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={8}>
           <Card
             hoverable
             className="hover-card"
@@ -147,7 +146,7 @@ const Dashboard = () => {
         </Col>
 
         {/* Card 2: Outstanding Receivables */}
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={8}>
           <Card
             hoverable
             className="hover-card"
@@ -181,39 +180,8 @@ const Dashboard = () => {
           </Card>
         </Col>
 
-        {/* Card 3: Purchase Orders */}
-        <Col xs={24} sm={12} lg={6}>
-          <Card
-            hoverable
-            className="hover-card"
-            style={{ height: '160px' }}
-          >
-            <Statistic
-              title="Purchase Orders"
-              value={data.purchaseOrders.activePOs}
-              prefix={<ShoppingOutlined />}
-              valueStyle={{ color: '#722ed1', fontSize: '32px' }}
-            />
-            <div style={{ marginTop: 12 }}>
-              <div>
-                <Text type="secondary" style={{ fontSize: '12px' }}>PO Value This Month:</Text>
-                <br />
-                <Text strong style={{ fontSize: '14px' }}>
-                  {formatPKR(data.purchaseOrders.monthlyPOValue)}
-                </Text>
-              </div>
-              <div style={{ marginTop: 4 }}>
-                <Text type="secondary" style={{ fontSize: '12px' }}>Pending Bills: </Text>
-                <Text strong style={{ fontSize: '14px' }}>
-                  {data.purchaseOrders.pendingBills}
-                </Text>
-              </div>
-            </div>
-          </Card>
-        </Col>
-
-        {/* Card 4: Outstanding Payables */}
-        <Col xs={24} sm={12} lg={6}>
+        {/* Card 3: Outstanding Payables */}
+        <Col xs={24} sm={12} lg={8}>
           <Card
             hoverable
             className="hover-card"

@@ -541,6 +541,300 @@ class ReportService {
       }
     };
   }
+
+  // ===================== NEW REPORTS FOR SIMPLE LEDGER SYSTEM =====================
+
+  /**
+   * Get sales revenue trends over time
+   * Shows invoiced revenue (accrual) vs collected revenue (cash) with gap analysis
+   */
+  async getSalesTrends(startDate, endDate, groupBy = 'day') {
+    const { formatAmount, addAmounts } = require('../utils/transactionWrapper');
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+
+    // Get invoices (accrual basis - when revenue is recognized)
+    const invoices = await db.prisma.invoice.findMany({
+      where: {
+        invoiceDate: { gte: startDateObj, lte: endDateObj },
+        cancelledAt: null,  // Exclude cancelled invoices
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        invoiceDate: true,
+        total: true,
+        paidAmount: true
+      }
+    });
+
+    // Get payments (cash basis - when cash is received)
+    const payments = await db.prisma.payment.findMany({
+      where: {
+        paymentDate: { gte: startDateObj, lte: endDateObj },
+        voidedAt: null,  // Exclude voided payments
+        deletedAt: null
+      },
+      select: {
+        paymentDate: true,
+        amount: true
+      }
+    });
+
+    // Group by time period
+    const trendsMap = new Map();
+
+    invoices.forEach(invoice => {
+      const period = this.getGroupPeriod(invoice.invoiceDate, groupBy);
+      if (!trendsMap.has(period)) {
+        trendsMap.set(period, { period, invoiced: 0, collected: 0 });
+      }
+      const trend = trendsMap.get(period);
+      trend.invoiced = addAmounts(trend.invoiced, invoice.total);
+    });
+
+    payments.forEach(payment => {
+      const period = this.getGroupPeriod(payment.paymentDate, groupBy);
+      if (!trendsMap.has(period)) {
+        trendsMap.set(period, { period, invoiced: 0, collected: 0 });
+      }
+      const trend = trendsMap.get(period);
+      trend.collected = addAmounts(trend.collected, payment.amount);
+    });
+
+    const trends = Array.from(trendsMap.values())
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map(t => ({
+        period: t.period,
+        invoiced: formatAmount(t.invoiced),
+        collected: formatAmount(t.collected),
+        outstanding: formatAmount(t.invoiced - t.collected)
+      }));
+
+    // Calculate summary
+    const totalInvoiced = formatAmount(
+      invoices.reduce((sum, inv) => addAmounts(sum, inv.total), 0)
+    );
+    const totalCollected = formatAmount(
+      payments.reduce((sum, pmt) => addAmounts(sum, pmt.amount), 0)
+    );
+    const outstanding = formatAmount(totalInvoiced - totalCollected);
+    const collectionRate = totalInvoiced > 0
+      ? formatAmount((totalCollected / totalInvoiced) * 100, 2)
+      : 0;
+
+    return {
+      period: { startDate, endDate, groupBy },
+      trends,
+      summary: {
+        totalInvoiced,
+        totalCollected,
+        outstanding,
+        collectionRate
+      }
+    };
+  }
+
+  /**
+   * Get simple cash flow summary (cash in vs cash out)
+   * No fancy operating/investing/financing breakdown - just simple cash tracking
+   */
+  async getCashSummary(startDate, endDate, groupBy = 'month') {
+    const { formatAmount, addAmounts } = require('../utils/transactionWrapper');
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+
+    // Cash inflow (customer payments)
+    const customerPayments = await db.prisma.payment.findMany({
+      where: {
+        paymentDate: { gte: startDateObj, lte: endDateObj },
+        voidedAt: null,
+        deletedAt: null
+      },
+      select: {
+        paymentDate: true,
+        amount: true,
+        method: true
+      }
+    });
+
+    // Cash outflow (vendor payments)
+    const vendorPayments = await db.prisma.vendorPayment.findMany({
+      where: {
+        paymentDate: { gte: startDateObj, lte: endDateObj },
+        voidedAt: null,
+        deletedAt: null
+      },
+      select: {
+        paymentDate: true,
+        amount: true,
+        method: true
+      }
+    });
+
+    // Group by time period
+    const cashFlowMap = new Map();
+
+    customerPayments.forEach(payment => {
+      const period = this.getGroupPeriod(payment.paymentDate, groupBy);
+      if (!cashFlowMap.has(period)) {
+        cashFlowMap.set(period, { period, inflow: 0, outflow: 0 });
+      }
+      const flow = cashFlowMap.get(period);
+      flow.inflow = addAmounts(flow.inflow, payment.amount);
+    });
+
+    vendorPayments.forEach(payment => {
+      const period = this.getGroupPeriod(payment.paymentDate, groupBy);
+      if (!cashFlowMap.has(period)) {
+        cashFlowMap.set(period, { period, inflow: 0, outflow: 0 });
+      }
+      const flow = cashFlowMap.get(period);
+      flow.outflow = addAmounts(flow.outflow, payment.amount);
+    });
+
+    const cashFlow = Array.from(cashFlowMap.values())
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map(cf => ({
+        period: cf.period,
+        inflow: formatAmount(cf.inflow),
+        outflow: formatAmount(cf.outflow),
+        netCashFlow: formatAmount(cf.inflow - cf.outflow)
+      }));
+
+    // Calculate summary
+    const totalInflow = formatAmount(
+      customerPayments.reduce((sum, pmt) => addAmounts(sum, pmt.amount), 0)
+    );
+    const totalOutflow = formatAmount(
+      vendorPayments.reduce((sum, pmt) => addAmounts(sum, pmt.amount), 0)
+    );
+    const netCashFlow = formatAmount(totalInflow - totalOutflow);
+
+    return {
+      period: { startDate, endDate, groupBy },
+      cashFlow,
+      summary: {
+        totalInflow,
+        totalOutflow,
+        netCashFlow
+      }
+    };
+  }
+
+  /**
+   * Get customer analysis - top customers by revenue, distribution, etc.
+   */
+  async getCustomerAnalysis(startDate, endDate, topN = 10) {
+    const { formatAmount, addAmounts } = require('../utils/transactionWrapper');
+    const startDateObj = new Date(startDate);
+    const endDateObj = new Date(endDate);
+
+    // Get all invoices grouped by customer
+    const invoices = await db.prisma.invoice.findMany({
+      where: {
+        invoiceDate: { gte: startDateObj, lte: endDateObj },
+        cancelledAt: null,
+        deletedAt: null
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            company: true
+          }
+        }
+      }
+    });
+
+    // Get payments for the same period
+    const payments = await db.prisma.payment.findMany({
+      where: {
+        paymentDate: { gte: startDateObj, lte: endDateObj },
+        voidedAt: null,
+        deletedAt: null
+      },
+      select: {
+        customerId: true,
+        amount: true
+      }
+    });
+
+    // Group by customer
+    const customerMap = new Map();
+
+    invoices.forEach(invoice => {
+      const customerId = invoice.customer.id;
+      if (!customerMap.has(customerId)) {
+        customerMap.set(customerId, {
+          customer: invoice.customer,
+          revenue: 0,
+          payments: 0,
+          invoiceCount: 0
+        });
+      }
+      const data = customerMap.get(customerId);
+      data.revenue = addAmounts(data.revenue, invoice.total);
+      data.payments = addAmounts(data.payments, invoice.paidAmount || 0);
+      data.invoiceCount++;
+    });
+
+    payments.forEach(payment => {
+      if (customerMap.has(payment.customerId)) {
+        // Note: payment amounts already counted in invoice.paidAmount above
+        // This is just for reference if needed
+      }
+    });
+
+    // Convert to array and calculate metrics
+    const customerAnalysis = Array.from(customerMap.values())
+      .map(c => ({
+        customer: c.customer,
+        revenue: formatAmount(c.revenue),
+        payments: formatAmount(c.payments),
+        outstanding: formatAmount(c.revenue - c.payments),
+        invoiceCount: c.invoiceCount,
+        collectionRate: c.revenue > 0 ? formatAmount((c.payments / c.revenue) * 100, 2) : 0
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const topCustomers = customerAnalysis.slice(0, topN);
+    const totalRevenue = formatAmount(
+      customerAnalysis.reduce((sum, c) => addAmounts(sum, c.revenue), 0)
+    );
+
+    return {
+      period: { startDate, endDate },
+      topCustomers,
+      summary: {
+        totalCustomers: customerAnalysis.length,
+        totalRevenue,
+        averageRevenuePerCustomer: customerAnalysis.length > 0
+          ? formatAmount(totalRevenue / customerAnalysis.length)
+          : 0
+      }
+    };
+  }
+
+  /**
+   * Helper method to group dates by period (day/week/month)
+   */
+  getGroupPeriod(date, groupBy) {
+    const d = new Date(date);
+    switch (groupBy) {
+      case 'day':
+        return d.toISOString().split('T')[0];  // YYYY-MM-DD
+      case 'week':
+        const weekNum = Math.ceil(d.getDate() / 7);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-W${weekNum}`;
+      case 'month':
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;  // YYYY-MM
+      default:
+        return d.toISOString().split('T')[0];
+    }
+  }
 }
 
 module.exports = new ReportService();

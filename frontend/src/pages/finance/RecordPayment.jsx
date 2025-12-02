@@ -51,8 +51,18 @@ const RecordPayment = () => {
     ['customer-invoices', selectedCustomer],
     async () => {
       if (!selectedCustomer) return [];
-      const response = await axios.get(`/finance/invoices?customerId=${selectedCustomer}&status=Sent,Partial,Overdue`);
-      return response.data.data;
+      // Fetch all non-cancelled, non-draft invoices
+      const response = await axios.get(`/finance/invoices?customerId=${selectedCustomer}`);
+      const allInvoices = response.data.data;
+
+      // Filter to only include invoices with remaining balance (paidAmount < total)
+      // Exclude Draft and Cancelled invoices
+      return allInvoices.filter(invoice => {
+        const remainingBalance = subtractAmounts(invoice.total, invoice.paidAmount || 0);
+        const isNotDraft = invoice.status !== 'Draft';
+        const isNotCancelled = !invoice.cancelledAt && invoice.status !== 'Cancelled';
+        return isNotDraft && isNotCancelled && remainingBalance > 0;
+      });
     },
     { enabled: !!selectedCustomer }
   );

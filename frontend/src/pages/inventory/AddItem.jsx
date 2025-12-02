@@ -6,11 +6,10 @@ import {
   Row, Col, Space, message, Steps, Divider, Checkbox, Switch
 } from 'antd';
 import {
-  SaveOutlined, ArrowLeftOutlined, PlusOutlined, ScanOutlined
+  SaveOutlined, ArrowLeftOutlined, PlusOutlined
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import axios from 'axios';
-import BarcodeScanner from '../../components/BarcodeScanner';
 import dayjs from 'dayjs';
 import { getErrorMessage } from '../../utils/errorMessages';
 
@@ -22,7 +21,6 @@ const AddItem = () => {
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
-  const [scannerVisible, setScannerVisible] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
@@ -81,12 +79,6 @@ const AddItem = () => {
       }
     }
   );
-
-  const handleScanResult = (result) => {
-    form.setFieldsValue({ serialNumber: result });
-    setScannerVisible(false);
-    message.success(`Scanned: ${result}`);
-  };
 
   const onCategoryChange = (categoryId) => {
     const category = categories?.find(c => c.id === categoryId);
@@ -254,14 +246,7 @@ const AddItem = () => {
                 rules={[{ required: true, message: 'Serial number is required' }]}
               >
                 <Input
-                  placeholder="Enter or scan serial number"
-                  addonAfter={
-                    <Button
-                      type="text"
-                      icon={<ScanOutlined />}
-                      onClick={() => setScannerVisible(true)}
-                    />
-                  }
+                  placeholder="Enter serial number"
                 />
               </Form.Item>
             </Col>
@@ -508,13 +493,6 @@ const AddItem = () => {
           </div>
         </Form>
       </Card>
-
-      {/* Barcode Scanner */}
-      <BarcodeScanner
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScan={handleScanResult}
-      />
     </>
   );
 };

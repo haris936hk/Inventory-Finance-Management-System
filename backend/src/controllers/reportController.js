@@ -277,13 +277,72 @@ const getGrossProfitMargin = asyncHandler(async (req, res) => {
   });
 });
 
+// ===== NEW REPORT CONTROLLERS FOR SIMPLE LEDGER SYSTEM =====
+
+// @desc    Get sales revenue trends
+// @route   GET /api/reports/sales-trends
+// @access  Private
+const getSalesTrends = asyncHandler(async (req, res) => {
+  const { startDate, endDate, groupBy = 'day' } = req.query;
+
+  if (!startDate || !endDate) {
+    res.status(400);
+    throw new Error('Start date and end date are required');
+  }
+
+  const report = await reportService.getSalesTrends(startDate, endDate, groupBy);
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
+// @desc    Get cash flow summary
+// @route   GET /api/reports/cash-summary
+// @access  Private
+const getCashSummary = asyncHandler(async (req, res) => {
+  const { startDate, endDate, groupBy = 'month' } = req.query;
+
+  if (!startDate || !endDate) {
+    res.status(400);
+    throw new Error('Start date and end date are required');
+  }
+
+  const report = await reportService.getCashSummary(startDate, endDate, groupBy);
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
+// @desc    Get customer analysis
+// @route   GET /api/reports/customer-analysis
+// @access  Private
+const getCustomerAnalysis = asyncHandler(async (req, res) => {
+  const { startDate, endDate, topN = 10 } = req.query;
+
+  if (!startDate || !endDate) {
+    res.status(400);
+    throw new Error('Start date and end date are required');
+  }
+
+  const report = await reportService.getCustomerAnalysis(startDate, endDate, parseInt(topN));
+
+  res.json({
+    success: true,
+    data: report
+  });
+});
+
 module.exports = {
   getDashboard,
   getInventoryReport,
   getFinancialSummary,
   getSalesReport,
   getStockValuation,
-  // New comprehensive financial reports
+  // Comprehensive financial reports
   getProfitLossStatement,
   getBalanceSheet,
   getCashFlowStatement,
@@ -292,5 +351,9 @@ module.exports = {
   getFinancialDashboard,
   getVendorBillsAging,
   getInventoryTurnover,
-  getGrossProfitMargin
+  getGrossProfitMargin,
+  // New simple ledger reports
+  getSalesTrends,
+  getCashSummary,
+  getCustomerAnalysis
 };

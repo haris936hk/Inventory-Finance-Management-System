@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
   Card, Table, DatePicker, Button, Row, Col, Statistic,
-  Typography, Space, message, Spin
+  Typography, Space, Spin
 } from 'antd';
 import {
-  DownloadOutlined, ReloadOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
 import { useQuery } from 'react-query';
 import axios from 'axios';
@@ -33,21 +33,6 @@ const InventoryTurnoverReport = () => {
     }
   );
 
-  const handleExport = async () => {
-    try {
-      await axios.post('/reports/export', {
-        reportType: 'inventory-turnover',
-        format: 'pdf',
-        parameters: {
-          startDate: dateRange[0].format('YYYY-MM-DD'),
-          endDate: dateRange[1].format('YYYY-MM-DD')
-        }
-      });
-      message.success('Inventory Turnover Report exported successfully');
-    } catch (error) {
-      message.error('Export failed');
-    }
-  };
 
   const renderSummaryCards = () => {
     if (!turnoverData || !turnoverData.summary) return null;
@@ -168,9 +153,6 @@ const InventoryTurnoverReport = () => {
             />
             <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
               Refresh
-            </Button>
-            <Button icon={<DownloadOutlined />} onClick={handleExport}>
-              Export
             </Button>
           </Space>
         }

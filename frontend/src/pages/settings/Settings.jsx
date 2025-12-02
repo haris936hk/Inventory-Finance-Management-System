@@ -7,7 +7,6 @@ import {
 import {
   SettingOutlined,
   DatabaseOutlined,
-  BellOutlined,
   SecurityScanOutlined,
   SaveOutlined,
   ReloadOutlined,
@@ -51,11 +50,6 @@ const Settings = () => {
           defaultPaymentTerms: 30,
           taxRate: 0,
           openingCashBalance: 0
-        },
-        notifications: {
-          lowStockAlerts: true,
-          paymentReminders: true,
-          systemUpdates: true
         },
       };
     }
@@ -349,68 +343,6 @@ const Settings = () => {
               showIcon
               style={{ marginTop: 16 }}
             />
-          </Col>
-        </Row>
-      )
-    },
-    {
-      key: 'notifications',
-      label: (
-        <span>
-          <BellOutlined />
-          Notifications
-        </span>
-      ),
-      children: isEditMode ? (
-        <Row gutter={24}>
-          <Col span={12}>
-            <Form.Item
-              label="Low Stock Alerts"
-              name={['notifications', 'lowStockAlerts']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item
-              label="Payment Reminders"
-              name={['notifications', 'paymentReminders']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-
-            <Form.Item
-              label="System Updates"
-              name={['notifications', 'systemUpdates']}
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-          </Col>
-        </Row>
-      ) : (
-        <Row gutter={24}>
-          <Col span={24}>
-            <Descriptions column={2} bordered>
-              <Descriptions.Item label="Low Stock Alerts">
-                <Tag color={settings?.notifications?.lowStockAlerts ? 'green' : 'red'}>
-                  {settings?.notifications?.lowStockAlerts ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Payment Reminders">
-                <Tag color={settings?.notifications?.paymentReminders ? 'green' : 'red'}>
-                  {settings?.notifications?.paymentReminders ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="System Updates">
-                <Tag color={settings?.notifications?.systemUpdates ? 'green' : 'red'}>
-                  {settings?.notifications?.systemUpdates ? 'Enabled' : 'Disabled'}
-                </Tag>
-              </Descriptions.Item>
-            </Descriptions>
           </Col>
         </Row>
       )
