@@ -221,6 +221,26 @@ const getItems = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get grouped items for invoice selection
+// @route   GET /api/inventory/items/grouped
+// @access  Private
+const getGroupedItems = asyncHandler(async (req, res) => {
+  const filters = {
+    availableForInvoice: req.query.availableForInvoice === 'true',
+    condition: req.query.condition,
+    categoryId: req.query.categoryId,
+    modelId: req.query.modelId
+  };
+
+  const groupedItems = await inventoryService.getGroupedItems(filters);
+
+  res.json({
+    success: true,
+    count: groupedItems.length,
+    data: groupedItems
+  });
+});
+
 // @desc    Get item by serial number
 // @route   GET /api/inventory/items/:serialNumber
 // @access  Private
@@ -503,6 +523,7 @@ module.exports = {
   deleteModel,
   // Items
   getItems,
+  getGroupedItems,
   getItem,
   createItem,
   bulkCreateItems,

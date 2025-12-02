@@ -482,23 +482,14 @@ class InventoryService {
   async getItems(filters = {}) {
     const where = { deletedAt: null };
 
-    // CRITICAL FIX: Filter for invoice-available items only
-    // Must check BOTH physical status AND inventoryStatus to prevent showing Reserved/Sold items
-    // CRITICAL: Also exclude items with repaired='No' (items under repair cannot be sold)
+    // CRITICAL: Filter for invoice-available items only
+    // Only allow items with BOTH conditions:
+    // - Physical Status: In Store
+    // - Inventory Status: Available
     if (filters.availableForInvoice) {
       where.AND = [
-        {
-          OR: [
-            { status: 'In Store' },
-            { status: 'In Lab', repaired: 'Yes' }
-          ]
-        },
-        { inventoryStatus: 'Available' },  // FIX: Only show Available items (not Reserved/Sold)
-        {
-          NOT: {
-            repaired: 'No'  // CRITICAL: Block items under repair from invoice selection
-          }
-        }
+        { status: 'In Store' },           // Only In Store
+        { inventoryStatus: 'Available' }  // Only Available
       ];
     }
 
@@ -1334,6 +1325,73 @@ class InventoryService {
     });
 
     return !!item;
+  }
+
+  /**
+   * Normalize specifications object for consistent grouping
+   * Sorts keys alphabetically and stringifies
+   * @param {object} specs - Specifications object
+   * @returns {string} - Normalized JSON string
+   */
+  normalizeSpecifications(specs) {
+    if (!specs || typeof specs !== 'object') {
+      return '{}';
+    }
+
+    // Sort keys alphabetically and create new object
+    const sortedSpecs = {};
+    Object.keys(specs).sort().forEach(key => {
+      sortedSpecs[key] = specs[key];
+    });
+
+    return JSON.stringify(sortedSpecs);
+  }
+
+  /**
+   * Get grouped items for invoice selection
+   * Groups items by model, condition, and specifications
+   * Returns available count and sample price for each group
+   * CRITICAL: Items are grouped ONLY if ALL specifications match exactly
+   * Even a single different specification field will create a separate group
+   * @param {object} filters - Filter options
+   * @returns {Promise<Array>} - Grouped items
+   */
+  async getGroupedItems(filters = {}) {
+    // Get all items matching the filters
+    const items = await this.getItems(filters);
+
+    // Group items by modelId, condition, and specifications
+    const groups = {};
+
+    items.forEach(item => {
+      // Create a unique key for grouping with normalized specifications
+      // This ensures items are grouped ONLY when model, condition, AND all specs match
+      const specsKey = this.normalizeSpecifications(item.specifications);
+      const groupKey = `${item.modelId}_${item.condition}_${specsKey}`;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          modelId: item.modelId,
+          condition: item.condition,
+          specifications: item.specifications,
+          category: item.category,
+          model: item.model,
+          items: [],
+          availableCount: 0,
+          samplePrice: item.sellingPrice || 0
+        };
+      }
+
+      groups[groupKey].items.push(item);
+      groups[groupKey].availableCount++;
+    });
+
+    // Convert to array and sort by model name
+    return Object.values(groups).sort((a, b) => {
+      const nameA = `${a.model.company.name} ${a.model.name}`;
+      const nameB = `${b.model.company.name} ${b.model.name}`;
+      return nameA.localeCompare(nameB);
+    });
   }
 }
 

@@ -283,7 +283,7 @@ const PurchaseOrders = () => {
             icon: <FileTextOutlined />,
             label: 'Create Bill',
             onClick: () => navigate(`/app/finance/vendor-bills/create?purchaseOrderId=${record.id}`),
-            disabled: !['Sent', 'Partial', 'Paid'].includes(record.status) || !hasPermission('finance.create')
+            disabled: !['Sent', 'Partial'].includes(record.status) || !hasPermission('finance.create')
           },
           {
             key: 'download-pdf',

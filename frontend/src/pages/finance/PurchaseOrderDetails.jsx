@@ -341,7 +341,7 @@ const PurchaseOrderDetails = () => {
                 Mark as Delivered
               </Button>
             )}
-            {hasPermission('finance.create') && ['Sent', 'Partial', 'Paid'].includes(purchaseOrder.status) && !purchaseOrder.cancelledAt && (
+            {hasPermission('finance.create') && ['Sent', 'Partial'].includes(purchaseOrder.status) && !purchaseOrder.cancelledAt && (
               <Button
                 type="primary"
                 icon={<FileAddOutlined />}

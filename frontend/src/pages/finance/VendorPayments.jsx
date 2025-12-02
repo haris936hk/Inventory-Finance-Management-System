@@ -192,7 +192,7 @@ const VendorPayments = () => {
       title: 'Method',
       dataIndex: 'method',
       key: 'method',
-      width: 80,
+      width: 110,
       render: (method) => (
         <Space>
           {getMethodIcon(method)}

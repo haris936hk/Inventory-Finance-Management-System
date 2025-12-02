@@ -193,7 +193,7 @@ const VendorBills = () => {
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      width: 55,
+      width: 80,
       render: (status, record) => {
         const overdue = isOverdue(record);
         return (

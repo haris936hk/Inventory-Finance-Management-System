@@ -279,11 +279,11 @@ const RecordVendorPayment = () => {
                     >
                       <InputNumber
                         style={{ width: '100%' }}
-                        precision={2}
-                        min={0.01}
+                        precision={0}
+                        min={1}
                         max={VALIDATION.MAX_AMOUNT}
-                        step={0.01}
-                        placeholder="0.00"
+                        step={1}
+                        placeholder="0"
                       />
                     </Form.Item>
                   </Col>

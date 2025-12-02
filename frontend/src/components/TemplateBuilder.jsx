@@ -87,11 +87,11 @@ const TEMPLATE_PRESETS = {
         options: ['MC4', 'Anderson', 'Ring Terminal', 'Spade', 'Custom'],
         order: 3
       },
-      shielded: {
-        type: 'boolean',
-        label: 'Shielded',
+      shieldingType: {
+        type: 'select',
+        label: 'Shielding Type',
         required: false,
-        defaultValue: false,
+        options: ['Unshielded', 'Braided', 'Foil', 'Both'],
         order: 4
       }
     }
@@ -706,19 +706,6 @@ const TemplatePreview = ({ template }) => {
               <Option key={index} value={option}>{option}</Option>
             ))}
           </Select>
-        );
-
-      case 'boolean':
-        return (
-          <Switch
-            checked={value || false}
-            onChange={(checked) => setPreviewData(prev => ({
-              ...prev,
-              [field.fieldName]: checked
-            }))}
-            checkedChildren="Yes"
-            unCheckedChildren="No"
-          />
         );
 
       default:

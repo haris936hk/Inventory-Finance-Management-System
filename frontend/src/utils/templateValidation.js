@@ -17,7 +17,7 @@ export const FIELD_TYPES = {
     }
   },
   select: {
-    label: 'Select',
+    label: 'Dropdown',
     icon: '📋',
     description: 'Dropdown selection from predefined options',
     supportedValidations: ['required'],
@@ -25,17 +25,6 @@ export const FIELD_TYPES = {
       type: 'select',
       required: false,
       options: ['Option 1', 'Option 2']
-    }
-  },
-  boolean: {
-    label: 'Yes/No',
-    icon: '✅',
-    description: 'True/false toggle switch',
-    supportedValidations: ['required'],
-    defaultConfig: {
-      type: 'boolean',
-      required: false,
-      defaultValue: false
     }
   }
 };

@@ -395,9 +395,10 @@ const AddItem = () => {
               name="purchasePrice"
             >
               <InputNumber
-                min={0}
+                min={1}
+                precision={0}
                 style={{ width: '100%' }}
-                placeholder="Enter purchase price"
+                placeholder="0"
               />
             </Form.Item>
           </Col>
@@ -408,9 +409,10 @@ const AddItem = () => {
               name="sellingPrice"
             >
               <InputNumber
-                min={0}
+                min={1}
+                precision={0}
                 style={{ width: '100%' }}
-                placeholder="Enter selling price"
+                placeholder="0"
               />
             </Form.Item>
           </Col>

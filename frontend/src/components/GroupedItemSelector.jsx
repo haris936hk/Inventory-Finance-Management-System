@@ -39,6 +39,29 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
     setModelFilter('');
   };
 
+  // Normalize specifications for consistent grouping
+  // Must match backend normalization logic
+  const normalizeSpecifications = (specs) => {
+    if (!specs || typeof specs !== 'object') {
+      return '{}';
+    }
+
+    // Sort keys alphabetically and create new object
+    const sortedSpecs = {};
+    Object.keys(specs).sort().forEach(key => {
+      sortedSpecs[key] = specs[key];
+    });
+
+    return JSON.stringify(sortedSpecs);
+  };
+
+  // Create group key for item grouping
+  // Items are grouped ONLY if model, condition, AND all specifications match exactly
+  const createGroupKey = (modelId, condition, specifications) => {
+    const specsKey = normalizeSpecifications(specifications);
+    return `${modelId}_${condition}_${specsKey}`;
+  };
+
   // Fetch filter data
   const { data: categories } = useQuery('categories', async () => {
     const response = await axios.get('/inventory/categories');
@@ -97,7 +120,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
       unitPrice: Number(group.samplePrice) || 0,
       specifications: group.specifications,
       condition: group.condition,
-      groupKey: `${group.modelId}_${group.condition}_${JSON.stringify(group.specifications || {})}`
+      groupKey: createGroupKey(group.modelId, group.condition, group.specifications)
     }));
 
     const updatedItems = [...selectedItems, ...newItems];
@@ -106,6 +129,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
 
     message.success(`Added ${selectedItemsFromGroup.length} items to invoice (items will be reserved when you click "Create Invoice")`);
     setGroupModalVisible(false);
+    setSelectedGroup(null); // Reset selected group
     // Reset all filters after successful selection
     setConditionFilter('');
     setCategoryFilter('');
@@ -228,7 +252,8 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
               // Update all items in this group with the same unit price
               handleGroupPriceChange(record.items, newPrice);
             }}
-            min={0}
+            min={1}
+            precision={0}
             prefix="PKR"
             style={{ width: '100%' }}
             placeholder="0"
@@ -310,6 +335,7 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
         open={groupModalVisible}
         onCancel={() => {
           setGroupModalVisible(false);
+          setSelectedGroup(null); // Reset selected group to prevent quantity modal from auto-opening
           // Reset all filters when modal closes
           setConditionFilter('');
           setCategoryFilter('');
@@ -347,7 +373,6 @@ const GroupedItemSelector = ({ selectedItems, onItemsChange, onTotalChange }) =>
                 <Option value="">All Conditions</Option>
                 <Option value="New">New</Option>
                 <Option value="Used">Used</Option>
-                <Option value="Refurbished">Refurbished</Option>
               </Select>
             </Col>
 

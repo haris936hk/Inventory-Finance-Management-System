@@ -287,11 +287,11 @@ const CreateInvoice = () => {
                     >
                       <InputNumber
                         style={{ width: '100%' }}
-                        precision={2}
+                        precision={form.getFieldValue('discountType') === 'Percentage' ? 2 : 0}
                         min={0}
                         max={form.getFieldValue('discountType') === 'Percentage' ? 100 : subtotal}
-                        step={0.01}
-                        placeholder="0.00"
+                        step={form.getFieldValue('discountType') === 'Percentage' ? 0.01 : 1}
+                        placeholder={form.getFieldValue('discountType') === 'Percentage' ? '0.00' : '0'}
                         onChange={() => {
                           setTimeout(() => calculateTotals(), 0);
                         }}

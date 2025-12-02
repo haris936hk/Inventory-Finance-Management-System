@@ -203,10 +203,10 @@ const PurchaseOrderItemSelector = ({ selectedItems, onItemsChange, onTotalChange
         <InputNumber
           value={record.unitPrice}
           onChange={(value) => updateItem(record.id, 'unitPrice', value || 0)}
-          min={0}
-          precision={2}
+          min={1}
+          precision={0}
           style={{ width: '100%' }}
-          placeholder="0.00"
+          placeholder="0"
         />
       )
     },

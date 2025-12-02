@@ -18,6 +18,8 @@ import { useAuthStore } from '../../stores/authStore';
 import BarcodeScanner from '../../components/BarcodeScanner';
 import HandoverModal from '../../components/HandoverModal';
 import UpdateRepairedStatusModal from '../../components/UpdateRepairedStatusModal';
+import BulkHandoverModal from '../../components/BulkHandoverModal';
+import BulkRepairedStatusModal from '../../components/BulkRepairedStatusModal';
 import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Search } = Input;
@@ -37,6 +39,8 @@ const InventoryList = () => {
   const [repairedModalVisible, setRepairedModalVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [pageSize, setPageSize] = useState(20);
+  const [bulkHandoverModalVisible, setBulkHandoverModalVisible] = useState(false);
+  const [bulkRepairedModalVisible, setBulkRepairedModalVisible] = useState(false);
 
   // Fetch items
   const { data: itemsData, isLoading } = useQuery(
@@ -302,7 +306,7 @@ const InventoryList = () => {
             },
             disabled: !hasPermission('inventory.edit')
           }] : []),
-          ...(isInLab && !isAvailable ? [{
+          ...(record.inventoryStatus === 'Under Repair' && record.status === 'In Lab' && record.repaired === 'No' ? [{
             key: 'repaired',
             label: 'Update Repaired Status',
             icon: <EditOutlined />,
@@ -310,7 +314,7 @@ const InventoryList = () => {
               setSelectedItem(record);
               setRepairedModalVisible(true);
             },
-            disabled: !hasPermission('inventory.edit') || isReturned
+            disabled: !hasPermission('inventory.edit')
           }] : []),
           {
             type: 'divider'
@@ -377,6 +381,70 @@ const InventoryList = () => {
   const rowSelection = {
     selectedRowKeys,
     onChange: (keys) => setSelectedRowKeys(keys),
+  };
+
+  // Get selected items data
+  const selectedItems = itemsData?.filter(item => selectedRowKeys.includes(item.id)) || [];
+
+  // Bulk action validation
+  const canBulkHandover = selectedItems.length > 0 &&
+    selectedItems.every(item => item.inventoryStatus === 'Reserved');
+
+  const canBulkUpdateRepaired = selectedItems.length > 0 &&
+    selectedItems.every(item =>
+      item.inventoryStatus === 'Under Repair' &&
+      item.status === 'In Lab' &&
+      item.repaired === 'No'
+    );
+
+  const canBulkDelete = selectedItems.length > 0 &&
+    selectedItems.every(item =>
+      !['Reserved', 'Sold', 'Delivered'].includes(item.inventoryStatus)
+    );
+
+  // Bulk delete handler
+  const handleBulkDelete = () => {
+    Modal.confirm({
+      title: 'Delete Items',
+      content: `Are you sure you want to delete ${selectedItems.length} item(s)?`,
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await Promise.all(selectedItems.map(item =>
+            axios.delete(`/inventory/items/${item.id}`)
+          ));
+          message.success(`${selectedItems.length} item(s) deleted successfully`);
+          queryClient.invalidateQueries('items');
+          setSelectedRowKeys([]);
+        } catch (error) {
+          const errorMessage = getErrorMessage(error, 'item', 'delete');
+          message.error(errorMessage);
+        }
+      }
+    });
+  };
+
+  // Bulk handover handler
+  const handleBulkHandover = () => {
+    if (selectedItems.length === 1) {
+      setSelectedItem(selectedItems[0]);
+      setHandoverModalVisible(true);
+    } else {
+      // For multiple items, we'll use a bulk modal
+      setBulkHandoverModalVisible(true);
+    }
+  };
+
+  // Bulk repair status update handler
+  const handleBulkRepairUpdate = () => {
+    if (selectedItems.length === 1) {
+      setSelectedItem(selectedItems[0]);
+      setRepairedModalVisible(true);
+    } else {
+      // For multiple items, we'll use a bulk modal
+      setBulkRepairedModalVisible(true);
+    }
   };
 
   return (
@@ -481,6 +549,64 @@ const InventoryList = () => {
             </Col>
           </Row>
         </div>
+
+        {/* Bulk Actions Bar */}
+        {selectedRowKeys.length > 0 && (
+          <div style={{
+            marginBottom: 16,
+            padding: '12px 16px',
+            background: '#e6f7ff',
+            border: '1px solid #91d5ff',
+            borderRadius: '4px'
+          }}>
+            <Row align="middle" justify="space-between">
+              <Col>
+                <Space>
+                  <span style={{ fontWeight: 500 }}>
+                    {selectedRowKeys.length} item(s) selected
+                  </span>
+                  <Button
+                    size="small"
+                    onClick={() => setSelectedRowKeys([])}
+                  >
+                    Clear Selection
+                  </Button>
+                </Space>
+              </Col>
+              <Col>
+                <Space>
+                  {hasPermission('inventory.edit') && canBulkHandover && (
+                    <Button
+                      type="primary"
+                      icon={<TruckOutlined />}
+                      onClick={handleBulkHandover}
+                    >
+                      Handover ({selectedRowKeys.length})
+                    </Button>
+                  )}
+                  {hasPermission('inventory.edit') && canBulkUpdateRepaired && (
+                    <Button
+                      type="primary"
+                      icon={<EditOutlined />}
+                      onClick={handleBulkRepairUpdate}
+                    >
+                      Update Repaired Status ({selectedRowKeys.length})
+                    </Button>
+                  )}
+                  {hasPermission('inventory.delete') && canBulkDelete && (
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={handleBulkDelete}
+                    >
+                      Delete ({selectedRowKeys.length})
+                    </Button>
+                  )}
+                </Space>
+              </Col>
+            </Row>
+          </div>
+        )}
 
         <Table
           rowKey="id"
@@ -650,7 +776,7 @@ const InventoryList = () => {
                         Handover
                       </Button>
                     )}
-                    {selectedItem?.status === 'In Lab' && selectedItem?.inventoryStatus !== 'Available' && (
+                    {selectedItem?.inventoryStatus === 'Under Repair' && selectedItem?.status === 'In Lab' && selectedItem?.repaired === 'No' && (
                       <Button onClick={() => {
                         setRepairedModalVisible(true);
                         setDrawerVisible(false);
@@ -700,6 +826,34 @@ const InventoryList = () => {
           queryClient.invalidateQueries('items');
           setRepairedModalVisible(false);
           setSelectedItem(null);
+        }}
+      />
+
+      {/* Bulk Handover Modal */}
+      <BulkHandoverModal
+        visible={bulkHandoverModalVisible}
+        items={selectedItems}
+        onClose={() => {
+          setBulkHandoverModalVisible(false);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries('items');
+          setBulkHandoverModalVisible(false);
+          setSelectedRowKeys([]);
+        }}
+      />
+
+      {/* Bulk Repaired Status Modal */}
+      <BulkRepairedStatusModal
+        visible={bulkRepairedModalVisible}
+        items={selectedItems}
+        onClose={() => {
+          setBulkRepairedModalVisible(false);
+        }}
+        onSuccess={() => {
+          queryClient.invalidateQueries('items');
+          setBulkRepairedModalVisible(false);
+          setSelectedRowKeys([]);
         }}
       />
     </>

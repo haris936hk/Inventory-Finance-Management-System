@@ -1,7 +1,7 @@
 // ========== src/pages/finance/RecordPayment.jsx ==========
 import React, { useState } from 'react';
 import {
-  Card, Form, Input, Select, DatePicker, Button, Row, Col,
+  Card, Form, Input, InputNumber, Select, DatePicker, Button, Row, Col,
   Typography, Divider, Alert, Space, Table, message
 } from 'antd';
 import {
@@ -276,12 +276,12 @@ const RecordPayment = () => {
                         }
                       ]}
                     >
-                      <Input
-                        type="number"
+                      <InputNumber
+                        style={{ width: '100%' }}
                         prefix="PKR"
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0.01"
+                        placeholder="0"
+                        precision={0}
+                        min={1}
                       />
                     </Form.Item>
                   </Col>

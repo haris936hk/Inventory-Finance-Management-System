@@ -720,9 +720,10 @@ const BulkAddItems = () => {
               name="purchasePrice"
             >
               <InputNumber
-                min={0}
+                min={1}
+                precision={0}
                 style={{ width: '100%' }}
-                placeholder="Enter purchase price per item"
+                placeholder="0"
                 disabled={usePO && selectedPOLineItem}
               />
             </Form.Item>
@@ -734,9 +735,10 @@ const BulkAddItems = () => {
               name="sellingPrice"
             >
               <InputNumber
-                min={0}
+                min={1}
+                precision={0}
                 style={{ width: '100%' }}
-                placeholder="Enter selling price per item"
+                placeholder="0"
               />
             </Form.Item>
           </Col>

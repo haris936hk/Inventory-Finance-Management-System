@@ -2,18 +2,19 @@ import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Descriptions, Table, Button, Space, Tag, Row, Col,
-  Statistic, Divider, Typography, message, Spin, Alert, Progress
+  Statistic, Divider, Typography, message, Spin, Alert, Progress, Modal
 } from 'antd';
 import {
   ArrowLeftOutlined, ShopOutlined,
   CalendarOutlined, FileTextOutlined, DollarOutlined, ExclamationCircleOutlined,
-  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined
+  DollarCircleOutlined, ReconciliationOutlined, ClockCircleOutlined, StopOutlined
 } from '@ant-design/icons';
-import { useQuery, useQueryClient } from 'react-query';
+import { useQuery, useQueryClient, useMutation } from 'react-query';
 import axios from 'axios';
 import { useAuthStore } from '../../stores/authStore';
 import { formatPKR } from '../../config/constants';
-import { subtractAmounts } from '../../utils/decimalUtils';
+import { subtractAmounts, parseAmount } from '../../utils/decimalUtils';
+import { getErrorMessage } from '../../utils/errorMessages';
 
 const { Title, Text } = Typography;
 
@@ -46,6 +47,25 @@ const VendorBillDetails = () => {
     },
     {
       enabled: !!id
+    }
+  );
+
+  // Cancel bill mutation
+  const cancelBillMutation = useMutation(
+    (id) => axios.post(`/finance/vendor-bills/${id}/cancel`),
+    {
+      onSuccess: () => {
+        message.success('Bill cancelled successfully');
+        queryClient.invalidateQueries('vendor-bill');
+        queryClient.invalidateQueries('vendor-bills');
+        queryClient.invalidateQueries('purchase-orders');
+        queryClient.invalidateQueries('vendors');
+        navigate('/app/finance/vendor-bills');
+      },
+      onError: (error) => {
+        const errorMessage = getErrorMessage(error, 'bill', 'cancel');
+        message.error(errorMessage);
+      }
     }
   );
 
@@ -113,6 +133,24 @@ const VendorBillDetails = () => {
 
   const getRemainingAmount = () => {
     return subtractAmounts(vendorBill.total, vendorBill.paidAmount);
+  };
+
+  const handleCancelBill = () => {
+    Modal.confirm({
+      title: 'Cancel Bill',
+      content: (
+        <div>
+          <p>Are you sure you want to cancel bill <strong>{vendorBill.billNumber}</strong>?</p>
+          <p style={{ color: '#ff4d4f', marginTop: 12 }}>
+            This will reverse all amounts and mark the bill as cancelled. This action cannot be undone.
+          </p>
+        </div>
+      ),
+      onOk: () => cancelBillMutation.mutateAsync(id),
+      okText: 'Yes, Cancel Bill',
+      okButtonProps: { danger: true },
+      cancelText: 'No, Keep It'
+    });
   };
 
   const paymentColumns = [
@@ -188,6 +226,17 @@ const VendorBillDetails = () => {
                 onClick={() => navigate(`/app/finance/vendor-payments/record?billId=${vendorBill.id}`)}
               >
                 Record Payment
+              </Button>
+            )}
+            {hasPermission('finance.delete') &&
+             vendorBill.status === 'Unpaid' &&
+             parseAmount(vendorBill.paidAmount || 0) === 0 && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleCancelBill}
+              >
+                Cancel Bill
               </Button>
             )}
           </Space>

@@ -49,6 +49,12 @@ router.post('/items/bulk',
   inventoryController.bulkCreateItems
 );
 
+// Get grouped items for invoice selection (must come BEFORE parameterized routes)
+router.get('/items/grouped',
+  hasPermission(['inventory.view']),
+  inventoryController.getGroupedItems
+);
+
 // Check serial number availability (must come BEFORE parameterized routes)
 router.get('/items/check-serial/:serialNumber',
   hasPermission(['inventory.view']),
