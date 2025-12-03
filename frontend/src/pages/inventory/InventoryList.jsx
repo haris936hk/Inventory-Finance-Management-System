@@ -173,6 +173,18 @@ const InventoryList = () => {
       dataIndex: 'repaired',
       key: 'repaired',
       width: 130,
+      filters: [
+        { text: 'No', value: 'No' },
+        { text: 'Yes', value: 'Yes' },
+        { text: 'Returned', value: 'Returned' },
+        { text: 'N/A', value: 'N/A' },
+      ],
+      onFilter: (value, record) => {
+        if (record.status !== 'In Lab') {
+          return value === 'N/A';
+        }
+        return (record.repaired || 'No') === value;
+      },
       render: (repaired, record) => {
         if (record.status !== 'In Lab') return '-';
         const status = repaired || 'No';
@@ -189,6 +201,11 @@ const InventoryList = () => {
       dataIndex: 'condition',
       key: 'condition',
       width: 100,
+      filters: [
+        { text: 'New', value: 'New' },
+        { text: 'Used', value: 'Used' },
+      ],
+      onFilter: (value, record) => record.condition === value,
       render: (condition) => (
         <Tag color={condition === 'New' ? 'green' : 'orange'}>{condition}</Tag>
       )

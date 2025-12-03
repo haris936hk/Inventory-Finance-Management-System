@@ -1,6 +1,8 @@
 // ========== electron/main.js ==========
 const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
+const backendManager = require('./backend-manager');
+
 const isDev = process.env.ELECTRON_IS_DEV === '1';
 
 // Disable GPU acceleration on Windows to prevent crashes
@@ -10,6 +12,26 @@ if (process.platform === 'win32') {
 }
 
 let mainWindow;
+let backendStarted = false;
+
+async function startBackend() {
+  console.log('🚀 Initializing backend server...');
+  const result = await backendManager.start();
+
+  if (result.success) {
+    backendStarted = true;
+    if (result.alreadyRunning) {
+      console.log('ℹ️ Backend was already running');
+    }
+    return true;
+  } else {
+    dialog.showErrorBox(
+      'Backend Server Error',
+      `Failed to start backend server:\n\n${result.error}\n\nThe application cannot function without the backend. Please restart the application.`
+    );
+    return false;
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -22,21 +44,52 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    icon: path.join(__dirname, '../build/icon.png'),
-    show: false
+    // icon: path.join(__dirname, '../build/icon.png'),
+    show: false,
+    backgroundColor: '#ffffff' // Prevent flash of unstyled content
   });
 
   // Load the app
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    // Development mode - load from React dev server
+    const startUrl = 'http://localhost:3000';
+
+    console.log('🚀 Loading development server from:', startUrl);
+
+    mainWindow.loadURL(startUrl).catch(err => {
+      console.error('❌ Failed to load dev server:', err);
+      dialog.showErrorBox(
+        'Development Server Not Running',
+        'Please make sure the React development server is running on http://localhost:3000\n\n' +
+        'Run "npm start" in the frontend directory first, then run "npm run electron-dev".\n\n' +
+        'Or use the automated script that starts both together.'
+      );
+    });
+
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../build/index.html'));
+    // Production mode - load from built files
+    const indexPath = path.join(__dirname, '../build/index.html');
+    console.log('📦 Loading production build from:', indexPath);
+    mainWindow.loadFile(indexPath);
   }
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
+    console.log('✅ Window ready to show');
     mainWindow.show();
+  });
+
+  // Debug logging for navigation events
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('❌ Failed to load:', errorCode, errorDescription);
+    if (isDev && errorCode === -102) {
+      console.error('💡 Tip: Make sure React dev server is running on http://localhost:3000');
+    }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('✅ Content loaded successfully');
   });
 
   mainWindow.on('closed', () => {
@@ -132,7 +185,18 @@ function createMenu() {
 }
 
 // App event handlers
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  // Start backend server first
+  const backendOk = await startBackend();
+
+  if (backendOk) {
+    // Create window after backend is ready
+    createWindow();
+  } else {
+    // Backend failed to start, quit app
+    app.quit();
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -143,6 +207,19 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
+  }
+});
+
+// Cleanup: Stop backend when app quits
+app.on('will-quit', async (event) => {
+  if (backendStarted) {
+    event.preventDefault(); // Prevent quit until backend stops
+
+    console.log('🛑 Application quitting, stopping backend...');
+    await backendManager.stop();
+
+    // Now actually quit
+    app.exit(0);
   }
 });
 

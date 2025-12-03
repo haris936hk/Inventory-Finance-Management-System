@@ -101,7 +101,7 @@ const LoginPage = () => {
 
       <div style={{ textAlign: 'center', marginTop: 16 }}>
         <Text type="secondary">
-          Default: admin / admin123
+          Mady by Haris Khan
         </Text>
       </div>
     </Card>

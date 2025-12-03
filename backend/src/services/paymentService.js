@@ -426,6 +426,10 @@ async function getPaymentsForBill(billId) {
  * @param {Object} filters - Query filters
  * @param {string} filters.vendorId - Filter by vendor
  * @param {string} filters.billId - Filter by bill
+ * @param {string} filters.startDate - Filter by start date
+ * @param {string} filters.endDate - Filter by end date
+ * @param {string} filters.method - Filter by payment method
+ * @param {string} filters.search - Search by payment number or vendor name
  * @returns {Promise<Array>} Payments
  */
 async function getVendorPayments(filters = {}) {
@@ -437,6 +441,42 @@ async function getVendorPayments(filters = {}) {
 
   if (filters.billId) {
     where.billId = filters.billId;
+  }
+
+  // Date range filter
+  if (filters.startDate || filters.endDate) {
+    where.paymentDate = {};
+    if (filters.startDate) {
+      where.paymentDate.gte = new Date(filters.startDate);
+    }
+    if (filters.endDate) {
+      where.paymentDate.lte = new Date(filters.endDate);
+    }
+  }
+
+  // Payment method filter
+  if (filters.method) {
+    where.method = filters.method;
+  }
+
+  // Search filter (payment number or vendor name)
+  if (filters.search) {
+    where.OR = [
+      {
+        paymentNumber: {
+          contains: filters.search,
+          mode: 'insensitive'
+        }
+      },
+      {
+        vendor: {
+          name: {
+            contains: filters.search,
+            mode: 'insensitive'
+          }
+        }
+      }
+    ];
   }
 
   const payments = await db.prisma.vendorPayment.findMany({

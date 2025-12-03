@@ -3,13 +3,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Button, Space, Tag, Input, Select, DatePicker,
-  Row, Col, Statistic, Dropdown, message, Modal
+  Row, Col, Statistic, message, Modal
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, EyeOutlined, EditOutlined,
-  DeleteOutlined, DollarCircleOutlined, PrinterOutlined,
-  MoreOutlined, BankOutlined, CreditCardOutlined, MoneyCollectOutlined,
-  ShopOutlined, FileTextOutlined, StopOutlined, ExclamationCircleOutlined
+  PlusOutlined, DollarCircleOutlined,
+  BankOutlined, CreditCardOutlined, MoneyCollectOutlined,
+  ShopOutlined, StopOutlined, ExclamationCircleOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import axios from 'axios';
@@ -20,7 +19,6 @@ import { getErrorMessage } from '../../utils/errorMessages';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-const { TextArea } = Input;
 
 const VendorPayments = () => {
   const navigate = useNavigate();
@@ -353,8 +351,8 @@ const VendorPayments = () => {
               onChange={(dates) => {
                 setFilters({
                   ...filters,
-                  dateFrom: dates?.[0]?.format('YYYY-MM-DD'),
-                  dateTo: dates?.[1]?.format('YYYY-MM-DD')
+                  startDate: dates?.[0]?.format('YYYY-MM-DD'),
+                  endDate: dates?.[1]?.format('YYYY-MM-DD')
                 });
               }}
             />

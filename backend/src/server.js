@@ -1,5 +1,25 @@
 // ========== src/server.js ==========
 require('dotenv').config();
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'DATABASE_URL',
+  'DIRECT_URL',
+  'JWT_SECRET',
+  'SUPABASE_URL',
+  'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_KEY'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error('ERROR: Missing required environment variables:');
+  missingEnvVars.forEach(varName => console.error(`  - ${varName}`));
+  console.error('\nPlease check your .env file and ensure all required variables are set.');
+  console.error('See .env.example for reference.');
+  process.exit(1);
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -27,7 +47,7 @@ const PORT = process.env.PORT || 3001;
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: ['http://localhost:3000'], // Electron app
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000'], // Electron app
   credentials: true
 }));
 
@@ -103,5 +123,4 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-startServer();/* trigger restart */
-// trigger restart
+startServer();

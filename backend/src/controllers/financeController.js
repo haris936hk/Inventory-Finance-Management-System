@@ -554,7 +554,11 @@ const getBillPayments = asyncHandler(async (req, res) => {
 const getVendorPayments = asyncHandler(async (req, res) => {
   const filters = {
     vendorId: req.query.vendorId,
-    billId: req.query.billId
+    billId: req.query.billId,
+    startDate: req.query.startDate,
+    endDate: req.query.endDate,
+    method: req.query.method,
+    search: req.query.search
   };
 
   const payments = await paymentService.getVendorPayments(filters);

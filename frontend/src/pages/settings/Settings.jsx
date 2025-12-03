@@ -43,9 +43,6 @@ const Settings = () => {
           companyFBR: '',
           language: 'en'
         },
-        inventory: {
-          lowStockThreshold: 10
-        },
         finance: {
           defaultPaymentTerms: 30,
           taxRate: 0,
@@ -199,54 +196,6 @@ const Settings = () => {
             <Alert
               message="System Configuration"
               description="This system is configured for Pakistan operations with PKR currency and Asia/Karachi timezone. These settings cannot be changed."
-              type="info"
-              showIcon
-            />
-          </Col>
-        </Row>
-      )
-    },
-    {
-      key: 'inventory',
-      label: (
-        <span>
-          <DatabaseOutlined />
-          Inventory
-        </span>
-      ),
-      children: isEditMode ? (
-        <Row gutter={24}>
-          <Col span={12}>
-            <Form.Item
-              label="Low Stock Threshold"
-              name={['inventory', 'lowStockThreshold']}
-              rules={[{ required: true, message: 'Low stock threshold is required' }]}
-            >
-              <InputNumber min={1} placeholder="Enter threshold quantity" style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Alert
-              message="Inventory Settings"
-              description="These settings control how inventory items are managed and tracked in the system."
-              type="info"
-              showIcon
-            />
-          </Col>
-        </Row>
-      ) : (
-        <Row gutter={24}>
-          <Col span={12}>
-            <Descriptions column={1} bordered>
-              <Descriptions.Item label="Low Stock Threshold">
-                <Text strong>{settings?.inventory?.lowStockThreshold}</Text>
-              </Descriptions.Item>
-            </Descriptions>
-          </Col>
-          <Col span={12}>
-            <Alert
-              message="Inventory Settings"
-              description="These settings control how inventory items are managed and tracked in the system."
               type="info"
               showIcon
             />

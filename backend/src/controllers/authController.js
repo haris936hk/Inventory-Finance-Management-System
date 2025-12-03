@@ -22,24 +22,7 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Refresh token
-// @route   POST /api/auth/refresh
-// @access  Public
-const refresh = asyncHandler(async (req, res) => {
-  const { refreshToken } = req.body;
-
-  if (!refreshToken) {
-    res.status(400);
-    throw new Error('Refresh token required');
-  }
-
-  const result = await authService.refreshToken(refreshToken);
-
-  res.json({
-    success: true,
-    ...result
-  });
-});
+// Refresh endpoint removed - not needed for desktop app with long-lived tokens
 
 // @desc    Change password
 // @route   POST /api/auth/change-password
@@ -91,8 +74,7 @@ const getMe = asyncHandler(async (req, res) => {
 // @access  Private
 const logout = asyncHandler(async (req, res) => {
   // In a JWT setup, logout is handled client-side by removing tokens
-  // Optionally, you can maintain a token blacklist in Redis/DB
-  
+
   res.json({
     success: true,
     message: 'Logged out successfully'
@@ -101,7 +83,6 @@ const logout = asyncHandler(async (req, res) => {
 
 module.exports = {
   login,
-  refresh,
   changePassword,
   getMe,
   logout

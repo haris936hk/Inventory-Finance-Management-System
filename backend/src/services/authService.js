@@ -1,4 +1,4 @@
-    // ========== src/services/authService.js ==========
+// ========== src/services/authService.js ==========
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
@@ -156,7 +156,7 @@ class AuthService {
   async login(username, password) {
     // Find user
     const user = await db.prisma.user.findUnique({
-      where: { 
+      where: {
         username,
         deletedAt: null,
         isActive: true
@@ -186,9 +186,8 @@ class AuthService {
       throw error;
     }
 
-    // Generate tokens
+    // Generate long-lived access token (no refresh token needed for desktop app)
     const accessToken = this.generateAccessToken(user);
-    const refreshToken = this.generateRefreshToken(user);
 
     // Update last login
     await db.prisma.user.update({
@@ -207,91 +206,28 @@ class AuthService {
         role: user.role.name,
         permissions: user.role.permissions
       },
-      accessToken,
-      refreshToken
+      accessToken
     };
   }
 
   /**
-   * Generate access token
+   * Generate long-lived access token for desktop app
+   * Desktop apps don't need short-lived tokens since they run locally
    */
   generateAccessToken(user) {
     return jwt.sign(
-      { 
-        id: user.id, 
+      {
+        id: user.id,
         username: user.username,
-        role: user.role.name 
+        role: user.role.name
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
     );
   }
 
-  /**
-   * Generate refresh token
-   */
-  generateRefreshToken(user) {
-    return jwt.sign(
-      { 
-        id: user.id,
-        type: 'refresh'
-      },
-      process.env.REFRESH_TOKEN_SECRET,
-      { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' }
-    );
-  }
-
-  /**
-   * Refresh access token
-   */
-  async refreshToken(refreshToken) {
-    try {
-      // Verify refresh token
-      const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-
-      if (decoded.type !== 'refresh') {
-        throw new Error('Invalid token type');
-      }
-
-      // Get user
-      const user = await db.prisma.user.findUnique({
-        where: { 
-          id: decoded.id,
-          deletedAt: null,
-          isActive: true
-        },
-        include: {
-          role: {
-            select: {
-              name: true,
-              permissions: true
-            }
-          }
-        }
-      });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Generate new access token
-      const accessToken = this.generateAccessToken(user);
-
-      return {
-        accessToken,
-        user: {
-          id: user.id,
-          username: user.username,
-          fullName: user.fullName,
-          role: user.role.name,
-          permissions: user.role.permissions
-        }
-      };
-    } catch (error) {
-      logger.error('Refresh token error:', error);
-      throw new Error('Invalid refresh token');
-    }
-  }
+  // Refresh token methods removed - not needed for desktop app
+  // Desktop apps use long-lived JWT tokens (30 days) instead
 
   /**
    * Change password

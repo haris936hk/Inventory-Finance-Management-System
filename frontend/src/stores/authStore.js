@@ -8,28 +8,26 @@ export const useAuthStore = create(
     (set, get) => ({
       user: null,
       token: null,
-      refreshToken: null,
       isAuthenticated: false,
       permissions: [],
 
       login: async (username, password) => {
         try {
           const response = await axios.post('/auth/login', { username, password });
-          const { user, accessToken, refreshToken } = response.data;
-          
+          const { user, accessToken } = response.data;
+
           set({
             user,
             token: accessToken,
-            refreshToken,
             isAuthenticated: true,
             permissions: user.permissions || []
           });
 
           return { success: true };
         } catch (error) {
-          return { 
-            success: false, 
-            error: error.response?.data?.message || 'Login failed' 
+          return {
+            success: false,
+            error: error.response?.data?.message || 'Login failed'
           };
         }
       },
@@ -38,32 +36,12 @@ export const useAuthStore = create(
         set({
           user: null,
           token: null,
-          refreshToken: null,
           isAuthenticated: false,
           permissions: []
         });
       },
 
-      refreshAccessToken: async () => {
-        const { refreshToken } = get();
-        if (!refreshToken) return false;
-
-        try {
-          const response = await axios.post('/auth/refresh', { refreshToken });
-          const { accessToken, user } = response.data;
-          
-          set({
-            token: accessToken,
-            user,
-            permissions: user.permissions || []
-          });
-
-          return true;
-        } catch (error) {
-          get().logout();
-          return false;
-        }
-      },
+      // Refresh logic removed - using long-lived tokens (30 days) for desktop app
 
       checkAuth: () => {
         const { token } = get();
@@ -107,7 +85,6 @@ export const useAuthStore = create(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
-        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
         permissions: state.permissions
       })

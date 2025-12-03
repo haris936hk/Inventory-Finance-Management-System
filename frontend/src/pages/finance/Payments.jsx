@@ -356,8 +356,8 @@ const Payments = () => {
               onChange={(dates) => {
                 setFilters({
                   ...filters,
-                  dateFrom: dates?.[0]?.format('YYYY-MM-DD'),
-                  dateTo: dates?.[1]?.format('YYYY-MM-DD')
+                  startDate: dates?.[0]?.format('YYYY-MM-DD'),
+                  endDate: dates?.[1]?.format('YYYY-MM-DD')
                 });
               }}
             />

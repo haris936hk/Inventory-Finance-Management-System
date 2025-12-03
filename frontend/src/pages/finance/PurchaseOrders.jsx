@@ -2,12 +2,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Card, Table, Button, Space, Tag, Input, Select, DatePicker,
+  Card, Table, Button, Space, Tag, Input, Select,
   Row, Col, Statistic, Badge, Dropdown, message, Modal, Alert
 } from 'antd';
 import {
-  PlusOutlined, SearchOutlined, FilterOutlined,
-  EyeOutlined, ShopOutlined,
+  PlusOutlined, EyeOutlined, ShopOutlined,
   FilePdfOutlined, MoreOutlined, CheckOutlined,
   SendOutlined, StopOutlined, FileTextOutlined
 } from '@ant-design/icons';
@@ -18,7 +17,6 @@ import { formatPKR } from '../../config/constants';
 import { parseAmount, addAmounts } from '../../utils/decimalUtils';
 import { getErrorMessage } from '../../utils/errorMessages';
 
-const { RangePicker } = DatePicker;
 const { Search } = Input;
 
 const PurchaseOrders = () => {
@@ -448,18 +446,6 @@ const PurchaseOrders = () => {
               <Select.Option value="Delivered">Delivered</Select.Option>
               <Select.Option value="Cancelled">Cancelled</Select.Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={8} md={6}>
-            <RangePicker
-              style={{ width: '100%' }}
-              onChange={(dates) => {
-                setFilters({
-                  ...filters,
-                  dateFrom: dates?.[0]?.format('YYYY-MM-DD'),
-                  dateTo: dates?.[1]?.format('YYYY-MM-DD')
-                });
-              }}
-            />
           </Col>
         </Row>
 
