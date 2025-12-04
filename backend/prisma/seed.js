@@ -6,53 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Create roles
-  const inventoryRole = await prisma.role.upsert({
-    where: { name: 'Inventory Operator' },
-    update: {
-      permissions: [
-        'inventory.view',
-        'inventory.create',
-        'inventory.edit',
-        'reports.view',
-        'settings.view'
-      ]
-    },
-    create: {
-      name: 'Inventory Operator',
-      description: 'Access to inventory module only',
-      permissions: [
-        'inventory.view',
-        'inventory.create',
-        'inventory.edit',
-        'reports.view',
-        'settings.view'
-      ]
-    }
-  });
-
-  const operatorRole = await prisma.role.upsert({
-    where: { name: 'Financial + Inventory Operator' },
-    update: {
-      permissions: [
-        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
-        'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
-        'reports.view', 'reports.export',
-        'settings.view'
-      ]
-    },
-    create: {
-      name: 'Financial + Inventory Operator',
-      description: 'Full access to inventory and finance modules',
-      permissions: [
-        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
-        'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
-        'reports.view', 'reports.export',
-        'settings.view'
-      ]
-    }
-  });
-
+  // Create Admin role with all permissions
   const adminRole = await prisma.role.upsert({
     where: { name: 'Admin' },
     update: {
@@ -67,7 +21,7 @@ async function main() {
     },
     create: {
       name: 'Admin',
-      description: 'Administrator with full system access including user management, roles, and settings',
+      description: 'Administrator with full system access',
       permissions: [
         'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
         'finance.view', 'finance.create', 'finance.edit', 'finance.delete',
@@ -79,7 +33,7 @@ async function main() {
     }
   });
 
-  // Create users
+  // Create admin user
   const hashedPassword = await bcrypt.hash('admin123', 10);
 
   await prisma.user.upsert({
@@ -94,49 +48,16 @@ async function main() {
     }
   });
 
-  await prisma.user.upsert({
-    where: { username: 'inventory' },
-    update: { roleId: inventoryRole.id },
-    create: {
-      username: 'inventory',
-      password: hashedPassword,
-      fullName: 'Inventory Manager',
-      email: 'inventory@company.com',
-      phone: '+92-300-1234567',
-      roleId: inventoryRole.id
-    }
-  });
-
-  await prisma.user.upsert({
-    where: { username: 'operator' },
-    update: { roleId: operatorRole.id },
-    create: {
-      username: 'operator',
-      password: hashedPassword,
-      fullName: 'Finance & Inventory Operator',
-      email: 'operator@company.com',
-      phone: '+92-300-7654321',
-      roleId: operatorRole.id
-    }
-  });
-
-  console.log('✅ Users created:');
-  console.log('   Username: admin     | Password: admin123 | Role: Admin');
-  console.log('   Username: inventory | Password: admin123 | Role: Inventory Operator');
-  console.log('   Username: operator  | Password: admin123 | Role: Financial + Inventory Operator');
-
- 
-
   console.log('\n========================================');
   console.log('✅ SEEDING COMPLETED SUCCESSFULLY!');
   console.log('========================================');
   console.log('\n📊 Summary:');
-  console.log('   - 3 Roles (Admin, Inventory Operator, Financial + Inventory Operator)');
-  console.log('   - 3 Users (admin, inventory, operator)');
+  console.log('   - 1 Role (Admin)');
+  console.log('   - 1 User (admin)');
   console.log('\n🔐 Login Credentials:');
-  console.log('   Username: admin     | Password: admin123 | Role: Admin');
-  console.log('   Username: inventory | Password: admin123 | Role: Inventory Operator');
-  console.log('   Username: operator  | Password: admin123 | Role: Financial + Inventory Operator');
+  console.log('   Username: admin');
+  console.log('   Password: admin123');
+  console.log('   Role: Admin (Full System Access)');
   console.log('========================================\n');
 }
 
