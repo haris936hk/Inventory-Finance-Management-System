@@ -18,8 +18,7 @@ import {
 } from 'antd';
 import {
   SaveOutlined,
-  ArrowLeftOutlined,
-  UserAddOutlined
+  ArrowLeftOutlined
 } from '@ant-design/icons';
 import { useMutation, useQuery } from 'react-query';
 import axios from 'axios';
@@ -192,20 +191,6 @@ const CreateInvoice = () => {
                     placeholder="Select customer"
                     showSearch
                     optionFilterProp="children"
-                    dropdownRender={(menu) => (
-                      <>
-                        {menu}
-                        <Divider style={{ margin: '8px 0' }} />
-                        <Button
-                          type="text"
-                          icon={<UserAddOutlined />}
-                          onClick={() => setCustomerModalVisible(true)}
-                          style={{ width: '100%' }}
-                        >
-                          Add New Customer
-                        </Button>
-                      </>
-                    )}
                   >
                     {customers?.map(customer => (
                       <Select.Option key={customer.id} value={customer.id}>
