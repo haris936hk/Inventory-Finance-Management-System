@@ -1,5 +1,5 @@
 // This is your Prisma schema file for Inventory & Finance Management System
-// Using PostgreSQL via Supabase
+// PostgreSQL database for local and production deployments.
 
 
 

@@ -8,6 +8,8 @@
     "start": "node src/server.js",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:setup": "prisma db push && prisma generate && npm run db:seed",
+    "db:reset": "prisma db push --force-reset && npm run db:seed",
     "db:seed": "node prisma/seed.js",
     "db:studio": "prisma studio",
     "test": "jest"

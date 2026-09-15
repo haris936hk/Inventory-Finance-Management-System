@@ -2,7 +2,6 @@
 const XLSX = require('xlsx');
 const db = require('../config/database');
 const logger = require('../config/logger');
-const supabaseStorage = require('../config/supabase');
 
 class ImportExportService {
   /**

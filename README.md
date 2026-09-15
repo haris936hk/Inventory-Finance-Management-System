@@ -58,13 +58,13 @@ This full-stack desktop application combines inventory tracking with integrated 
 ├─────────────────────────────────────────┤
 │   Node.js/Express Backend (Bundled)     │
 ├─────────────────────────────────────────┤
-│   PostgreSQL Database (Supabase Cloud)  │
+│   PostgreSQL Database (Local Podman)    │
 └─────────────────────────────────────────┘
 ```
 
 - **Frontend**: React 18 + Electron (Desktop UI)
 - **Backend**: Node.js + Express (Bundled with app)
-- **Database**: PostgreSQL via Supabase (Cloud-hosted)
+- **Database**: PostgreSQL via a local Podman container; Supabase is optional for production/storage
 - **ORM**: Prisma for type-safe database access
 - **State Management**: Zustand + React Query
 - **UI Library**: Ant Design
@@ -85,7 +85,7 @@ This full-stack desktop application combines inventory tracking with integrated 
 - **Node.js** - Runtime environment
 - **Express** - Web framework
 - **Prisma ORM** - Database toolkit
-- **PostgreSQL** - Database
+- **PostgreSQL** - Local development database
 - **JWT** - Authentication
 - **bcrypt** - Password hashing
 - **Winston** - Logging
@@ -97,7 +97,7 @@ This full-stack desktop application combines inventory tracking with integrated 
 - **Node.js** 18.x or higher
 - **npm** or **yarn**
 - **Windows** (for building Windows installer)
-- **PostgreSQL database** (Supabase account)
+- **Podman** (for the local PostgreSQL container)
 - **Git** (for version control)
 
 ## Installation
@@ -125,12 +125,12 @@ npm install
 
 ### 3. Configure Environment Variables
 
-Create a `.env` file in the `backend/` directory:
+Copy `backend/.env.example` to `backend/.env`, or use the local development values below:
 
 ```env
-# Database
-DATABASE_URL="postgresql://user:password@host:5432/database?pgbouncer=true"
-DIRECT_URL="postgresql://user:password@host:5432/database"
+# Local PostgreSQL container (port 5433)
+DATABASE_URL="postgresql://inventory:inventory_dev_password@127.0.0.1:5433/inventory_finance?schema=public"
+DIRECT_URL="postgresql://inventory:inventory_dev_password@127.0.0.1:5433/inventory_finance?schema=public"
 
 # JWT
 JWT_SECRET="your-super-secret-jwt-key"
@@ -141,9 +141,20 @@ JWT_REFRESH_EXPIRES_IN="30d"
 PORT=3001
 NODE_ENV="development"
 
-# Supabase Storage (Optional)
-SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_KEY="your-anon-key"
+# Supabase Storage is optional and not needed for local development.
+```
+
+Start the local PostgreSQL container once:
+
+```bash
+podman volume create inventory-finance-postgres-data
+podman run -d --name inventory-finance-postgres \
+  -e POSTGRES_USER=inventory \
+  -e POSTGRES_PASSWORD=inventory_dev_password \
+  -e POSTGRES_DB=inventory_finance \
+  -p 127.0.0.1:5433:5432 \
+  -v inventory-finance-postgres-data:/var/lib/postgresql/data \
+  docker.io/library/postgres:17-alpine
 ```
 
 ### 4. Setup Database
@@ -151,11 +162,8 @@ SUPABASE_KEY="your-anon-key"
 ```bash
 cd backend
 
-# Run migrations
-npm run db:migrate
-
-# Seed initial data (roles and default admin user)
-npm run db:seed
+# Create/update the local database and seed the default admin user
+npm run db:setup
 ```
 
 **Default Admin Credentials** (after seeding):
@@ -205,6 +213,9 @@ npm run db:migrate
 
 # Push schema changes without migration
 npm run db:push
+
+# Reset the local database and reseed it
+npm run db:reset
 
 # Seed database
 npm run db:seed
@@ -389,9 +400,9 @@ npm install
 - Verify backend is running (Task Manager → node.exe)
 
 **Database connection fails**:
-- Verify internet connection
-- Check Supabase credentials in `.env`
-- Test connection string directly
+- Verify the Podman container is running with `podman ps`
+- Verify `backend/.env` points to PostgreSQL on port `5433` and contains `JWT_SECRET`
+- Run `npm run db:setup` from `backend/`
 
 ### Common Commands
 

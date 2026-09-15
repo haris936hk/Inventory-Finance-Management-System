@@ -5,10 +5,7 @@ require('dotenv').config();
 const requiredEnvVars = [
   'DATABASE_URL',
   'DIRECT_URL',
-  'JWT_SECRET',
-  'SUPABASE_URL',
-  'SUPABASE_ANON_KEY',
-  'SUPABASE_SERVICE_KEY'
+  'JWT_SECRET'
 ];
 
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
